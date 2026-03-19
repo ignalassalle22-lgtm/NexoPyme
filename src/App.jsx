@@ -333,6 +333,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   const [modificaStock, setModificaStock] = useState(preload?.modificaStock || false);
   const [imprimirPDF, setImprimirPDF] = useState(true);
   const [observaciones, setObservaciones] = useState(preload?.observaciones || "");
+  const [vendedor, setVendedor] = useState(preload?.vendedor || "");
   const [stockAlert, setStockAlert] = useState(null);
 
   const currSymbol = moneda === "USD" ? "US$" : "$";
@@ -411,7 +412,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
       </div>
       <div class="row">
         <div class="block"><strong>Cliente</strong>${cli?.name || clientId}${cli?.cuit ? `<br>CUIT: ${cli.cuit}` : ""}${cli?.direccion ? `<br>${cli.direccion}` : ""}${cli?.email ? `<br>${cli.email}` : ""}</div>
-        <div class="block" style="text-align:right"><strong>Código cliente</strong>${cli?.codigo || "—"}</div>
+        <div class="block" style="text-align:right"><strong>Código cliente</strong>${cli?.codigo || "—"}${vendedor ? `<br><strong>Vendedor:</strong> ${vendedor}` : ""}</div>
       </div>
       <table>
         <thead><tr><th>Código</th><th>Producto</th><th>Cant.</th><th>P. Unit. s/IVA</th><th>IVA</th><th>Subtotal</th></tr></thead>
@@ -431,7 +432,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   };
 
   const doSave = () => {
-    onSave({ lines, total, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda });
+    onSave({ lines, total, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor, editingId: preload?.editingId || null, oldLines: preload?.lines || null });
     setDone(true);
   };
 
@@ -975,6 +976,15 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
                 <div style={{ fontSize: 11, color: T.muted }}>Se abrirá el diálogo de impresión del navegador con el documento listo</div>
               </div>
             </label>
+          </div>
+
+          {/* Vendedor */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>
+              VENDEDOR <span style={{ fontWeight: 400, color: T.faint }}>(opcional · aparece en el documento)</span>
+            </label>
+            <input value={vendedor} onChange={e => setVendedor(e.target.value)} placeholder="Nombre del vendedor responsable"
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${vendedor ? T.accent + "60" : T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
           </div>
 
           {/* Observaciones */}
@@ -1600,7 +1610,7 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
 }
 
 // ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
-function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA }) {
+function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
   const [tab, setTab] = useState("docs");
   const [filterType, setFilterType] = useState("all");
   const [searchDocNum, setSearchDocNum] = useState("");
@@ -1867,6 +1877,9 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
       if (!porCliente[inv.clientId]) porCliente[inv.clientId] = [];
       porCliente[inv.clientId].push(inv);
     });
+    // Descargar PDF de cada factura seleccionada
+    seleccionadas.forEach(inv => descargarHTMLFactura(inv));
+    // Abrir compose por cliente
     let mailsAbiertos = 0;
     Object.entries(porCliente).forEach(([clientId, facturas]) => {
       const url = generarMailReclamoCliente(clientId, facturas);
@@ -1875,10 +1888,40 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     setReclamoSent(prev => { const next = {...prev}; selectedReclamos.forEach(id => next[id] = true); return next; });
     const clientesCount = Object.keys(porCliente).length;
     setReclaimMsg(
-      "Se generó " + (clientesCount === 1 ? "1 mail" : clientesCount + " mails") +
-      "Adjuntá los PDFs antes de enviar."
+      (seleccionadas.length === 1 ? "1 PDF descargado" : seleccionadas.length + " PDFs descargados") +
+      " · " + (clientesCount === 1 ? "1 borrador abierto" : clientesCount + " borradores abiertos") +
+      ". Adjuntá cada PDF al borrador antes de enviar."
     );
     setSelectedReclamos([]);
+  };
+
+  const descargarHTMLFactura = (inv) => {
+    const client = clients.find(c => c.id === inv.clientId);
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Factura ${inv.id}</title>
+    <style>body{font-family:Arial,sans-serif;padding:32px;color:#222;max-width:800px;margin:0 auto}
+    h1{font-size:22px;margin-bottom:4px}table{width:100%;border-collapse:collapse;margin:16px 0}
+    th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:12px}
+    td{padding:8px 12px;border-bottom:1px solid #eee;font-size:13px}
+    .total{font-size:18px;font-weight:700;text-align:right;padding:12px 0}
+    .badge{display:inline-block;background:#fff3cd;color:#856404;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700}
+    @media print{body{padding:0}}</style></head>
+    <body>
+    <h1>FACTURA — ${inv.id}</h1>
+    <p style="color:#666;margin:0">Fecha: ${inv.date} · Vence: ${inv.due} · <span class="badge">PENDIENTE DE PAGO</span></p>
+    <hr style="margin:16px 0;border:none;border-top:2px solid #eee"/>
+    <p><strong>Cliente:</strong> ${client?.name || inv.clientName}${client?.cuit ? " · CUIT: " + client.cuit : ""}</p>
+    ${client?.direccion ? "<p><strong>Dirección:</strong> " + client.direccion + "</p>" : ""}
+    <table><thead><tr><th>Código</th><th>Descripción</th><th>Cant.</th><th>Precio unit.</th><th>Total</th></tr></thead>
+    <tbody>${(inv.lines || []).map(l => "<tr><td>" + (l.clientCode || l.sku || "—") + "</td><td>" + l.name + "</td><td>" + l.qty + "</td><td>" + fmt(l.unitPrice) + "</td><td>" + fmt(l.subtotal) + "</td></tr>").join("")}</tbody></table>
+    <div class="total">TOTAL: ${fmt(inv.total)}</div>
+    <script>window.onload=()=>window.print()<\/script></body></html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Factura_" + inv.id + ".html";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const generarPDFFactura = (inv) => {
@@ -2164,8 +2207,11 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                   <td style={{ padding: "12px 15px", fontSize: 14, fontWeight: 800 }}>{fmt(inv.total)}</td>
                   <td style={{ padding: "12px 15px" }}><Badge status={inv.status} /></td>
                   <td style={{ padding: "12px 15px" }}>
-                    {inv.type === "factura" && inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => markCobrada(inv.id)}>Marcar cobrada</Btn>}
-                    {inv.type === "factura" && inv.status === "cobrada" && <Btn sm v="ghost" onClick={() => unmarkCobrada(inv.id)}>↩ Revertir a pendiente</Btn>}
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {inv.type === "factura" && inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => markCobrada(inv.id)}>Marcar cobrada</Btn>}
+                      {inv.type === "factura" && inv.status === "cobrada" && <Btn sm v="ghost" onClick={() => unmarkCobrada(inv.id)}>↩ Revertir</Btn>}
+                      <Btn sm v="ghost" onClick={() => onEditDoc(inv)}>✏ Editar</Btn>
+                    </div>
                   </td>
                 </tr>
               ))}</tbody>
@@ -2381,10 +2427,10 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                                   🖨 PDF
                                 </button>
                                 {mailUrl && (
-                                  <a href={mailUrl} target="_blank" rel="noreferrer"
-                                    style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.red}40`, background: T.redLight, color: T.red, fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
+                                  <button onClick={() => { descargarHTMLFactura(inv); window.open(mailUrl, "_blank"); setReclamoSent(p => ({ ...p, [inv.id]: true })); }}
+                                    style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.red}40`, background: T.redLight, color: T.red, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                                     ✉ Reclamar
-                                  </a>
+                                  </button>
                                 )}
                                 <Btn sm v="ghost" onClick={() => markCobrada(inv.id)}>Cobrada</Btn>
                               </div>
@@ -2398,7 +2444,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
               ))}
 
               <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 16px", fontSize: 12, color: T.muted, lineHeight: 1.7 }}>
-                <strong style={{ color: T.ink }}>Cómo funciona el reclamo:</strong> seleccioná tu cliente de correo con el toggle <strong>Gmail / Outlook</strong> y luego presioná "✉ Enviar reclamos". Se abrirá una nueva pestaña con el borrador pre-armado — asunto, destinatario y cuerpo ya completados. Adjuntá el PDF de la factura usando el botón 🖨 PDF antes de enviar.
+                <strong style={{ color: T.ink }}>Cómo funciona el reclamo:</strong> seleccioná el cliente de correo con el toggle <strong>Gmail / Outlook</strong> y presioná "✉ Enviar reclamos" o el botón individual. El PDF de cada factura se <strong>descarga automáticamente</strong> a tu carpeta de Descargas como archivo HTML (abrilo y guardalo como PDF con Ctrl+P). Simultáneamente se abre el borrador en tu cliente de correo — adjuntá el PDF antes de enviar.
               </div>
             </div>
           )}
@@ -2908,6 +2954,8 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists }) {
   const [selectedList, setSelectedList] = useState(priceLists[0]?.id || "");
   const [showNewList, setShowNewList] = useState(false);
   const [newListLabel, setNewListLabel] = useState("");
+  const [editingListId, setEditingListId] = useState(null);
+  const [editingListLabel, setEditingListLabel] = useState("");
   const [importError, setImportError] = useState("");
   const [importSuccess, setImportSuccess] = useState("");
   const [editingPrice, setEditingPrice] = useState(null); // { productId, ars, usd }
@@ -2937,6 +2985,13 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists }) {
     setPriceLists(prev => [...prev, { id, label: newListLabel.trim() }]);
     setSelectedList(id);
     setNewListLabel(""); setShowNewList(false);
+  };
+
+  const renameList = () => {
+    if (!editingListLabel.trim() || !editingListId) return;
+    setPriceLists(prev => prev.map(l => l.id === editingListId ? { ...l, label: editingListLabel.trim() } : l));
+    setEditingListId(null);
+    setEditingListLabel("");
   };
 
   const savePrice = (productId, ars, usd) => {
@@ -3014,12 +3069,28 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists }) {
     <div>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, gap: 16, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {priceLists.map(l => (
-            <button key={l.id} onClick={() => setSelectedList(l.id)}
-              style={{ padding: "7px 16px", borderRadius: 8, border: `1px solid ${selectedList === l.id ? T.accent : T.border}`, background: selectedList === l.id ? T.accentLight : "transparent", color: selectedList === l.id ? T.accent : T.muted, fontWeight: selectedList === l.id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-              {l.label}
-            </button>
+            <div key={l.id} style={{ display: "flex", alignItems: "center" }}>
+              {editingListId === l.id ? (
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  <input autoFocus value={editingListLabel} onChange={e => setEditingListLabel(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") renameList(); if (e.key === "Escape") setEditingListId(null); }}
+                    style={{ padding: "5px 10px", borderRadius: 7, border: `1px solid ${T.accent}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", width: 160 }} />
+                  <button onClick={renameList} style={{ background: T.accent, border: "none", color: "#fff", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>✓</button>
+                  <button onClick={() => setEditingListId(null)} style={{ background: "none", border: "none", color: T.muted, fontSize: 14, cursor: "pointer" }}>✕</button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <button onClick={() => setSelectedList(l.id)}
+                    style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${selectedList === l.id ? T.accent : T.border}`, background: selectedList === l.id ? T.accentLight : "transparent", color: selectedList === l.id ? T.accent : T.muted, fontWeight: selectedList === l.id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                    {l.label}
+                  </button>
+                  <button title="Renombrar lista" onClick={() => { setEditingListId(l.id); setEditingListLabel(l.label); }}
+                    style={{ background: "none", border: "none", color: T.muted, fontSize: 12, cursor: "pointer", padding: "0 2px", opacity: 0.5 }}>✏</button>
+                </div>
+              )}
+            </div>
           ))}
           <button onClick={() => setShowNewList(v => !v)}
             style={{ padding: "7px 14px", borderRadius: 8, border: `1px dashed ${T.border}`, background: "transparent", color: T.muted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
@@ -3219,6 +3290,89 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
   const [searchSupName, setSearchSupName] = useState("");
   const [searchSupCuit, setSearchSupCuit] = useState("");
 
+  // ── IA PDF Import ─────────────────────────────────────────────────────────
+  const [showIAImport, setShowIAImport] = useState(false);
+  const [iaPdfFile, setIaPdfFile] = useState(null);
+  const [iaPdfLoading, setIaPdfLoading] = useState(false);
+  const [iaPdfError, setIaPdfError] = useState("");
+  const [iaPdfResult, setIaPdfResult] = useState(null);
+  const [iaApiKey, setIaApiKey] = useState(() => localStorage.getItem("nexo_api_key") || "");
+
+  const saveApiKey = (k) => { setIaApiKey(k); localStorage.setItem("nexo_api_key", k); };
+
+  const procesarPDFconIA = async () => {
+    if (!iaPdfFile) return;
+    if (!iaApiKey.trim()) { setIaPdfError("Ingresá tu API Key de Anthropic para continuar."); return; }
+    setIaPdfLoading(true); setIaPdfError(""); setIaPdfResult(null);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64 = e.target.result.split(",")[1];
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": iaApiKey.trim(),
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-allow-browser": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 2000,
+            messages: [{
+              role: "user",
+              content: [{
+                type: "document",
+                source: { type: "base64", media_type: "application/pdf", data: base64 }
+              }, {
+                type: "text",
+                text: `Extraé los datos de esta factura y devolvé SOLO un JSON con este formato exacto (sin texto extra, sin markdown):
+{"nroFactura":"0012-00014202","fecha":"2026-03-18","vencimiento":"2026-03-19","proveedor":"MADERWIL S.A.","cuitProveedor":"30-70725102-2","condicionPago":"CCTE 1 DIAS FF","vendedor":"ELIU PEREZ","subtotal":1301940.51,"iva21":273407.51,"iva105":0,"percepciones":26038.81,"total":1601386.82,"items":[{"codigo":"MON70","cantidad":129,"descripcion":"MONTANTE 70MM X 2.60 MTS","precioUnitario":3790.08,"importe":488920.66}]}`
+              }]
+            }]
+          })
+        });
+        const data = await res.json();
+        if (data.error) { setIaPdfError("Error API: " + data.error.message); setIaPdfLoading(false); return; }
+        const text = (data.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
+        const parsed = JSON.parse(text);
+        setIaPdfResult(parsed);
+        setIaPdfLoading(false);
+      };
+      reader.onerror = () => { setIaPdfError("No se pudo leer el archivo."); setIaPdfLoading(false); };
+      reader.readAsDataURL(iaPdfFile);
+    } catch (err) {
+      setIaPdfError("Error al procesar el PDF: " + err.message);
+      setIaPdfLoading(false);
+    }
+  };
+
+  const confirmarImportacion = () => {
+    if (!iaPdfResult) return;
+    const r = iaPdfResult;
+    const internalId = "OC-" + String(Date.now()).slice(-6);
+    const lines = (r.items || []).map((it, i) => ({
+      productId: null, supplierCode: it.codigo, name: it.descripcion,
+      sku: it.codigo, qty: it.cantidad, unitPrice: it.precioUnitario,
+      neto: it.importe, ivaImporte: 0, subtotal: it.importe, iva: 0
+    }));
+    const existingSup = suppliers.find(s => s.cuit === r.cuitProveedor);
+    let supplierId = existingSup?.id || null;
+    let supplierName = r.proveedor;
+    if (!existingSup && r.proveedor) {
+      const newSup = { id: "s" + Date.now(), name: r.proveedor, cuit: r.cuitProveedor || "", contact: "", email: "", phone: "", paymentDays: 0, bank: "", cbu: "", productCodes: [] };
+      setSuppliers(prev => [...prev, newSup]);
+      supplierId = newSup.id;
+    }
+    setPurchaseInvoices(prev => [{
+      id: internalId, nroFactura: r.nroFactura, supplierId, supplierName,
+      date: r.fecha || today, dueDate: r.vencimiento || today,
+      total: r.total, totalNeto: r.subtotal, totalIva: r.iva21,
+      status: "pendiente", lines, condicionPago: r.condicionPago, vendedor: r.vendedor
+    }, ...prev]);
+    setShowIAImport(false); setIaPdfFile(null); setIaPdfResult(null);
+  };
+
   const filteredInvoices = purchaseInvoices.filter(inv => {
     if (searchInvNum && !inv.id?.toLowerCase().includes(searchInvNum.toLowerCase()) && !inv.nroFactura?.toLowerCase().includes(searchInvNum.toLowerCase())) return false;
     if (searchInvSupplier && !inv.supplierName?.toLowerCase().includes(searchInvSupplier.toLowerCase())) return false;
@@ -3242,7 +3396,10 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div><div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Compras</div><div style={{ fontSize: 13, color: T.muted }}>Proveedores, facturas y listas de precios</div></div>
-        <Btn onClick={onNewPurchase}>+ Nueva factura de compra</Btn>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn v="ghost" onClick={() => { setShowIAImport(true); setIaPdfResult(null); setIaPdfFile(null); setIaPdfError(""); }}>✦ Importar PDF con IA</Btn>
+          <Btn onClick={onNewPurchase}>+ Nueva factura de compra</Btn>
+        </div>
       </div>
       <div style={{ display: "flex", gap: 4, marginBottom: 22, background: T.surface, borderRadius: 10, padding: 4, width: "fit-content" }}>
         {[["invoices", "Facturas a pagar"], ["suppliers", "Proveedores"], ["prices", "Listas de precios"]].map(([v, l]) => (
@@ -3361,6 +3518,111 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
 
       {tab === "prices" && (
         <PriceListsTab products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} />
+      )}
+
+      {/* Modal IA PDF Import */}
+      {showIAImport && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: T.paper, borderRadius: 18, padding: 32, width: 580, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.4)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: T.ink }}>✦ Importar factura con IA</div>
+              <button onClick={() => setShowIAImport(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: T.muted }}>✕</button>
+            </div>
+
+            {/* API Key */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>API KEY DE ANTHROPIC</label>
+              <input type="password" value={iaApiKey} onChange={e => saveApiKey(e.target.value)}
+                placeholder="sk-ant-api03-..."
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${iaApiKey ? T.accent : T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+              <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Se guarda localmente en tu navegador. Obtené tu key en console.anthropic.com</div>
+            </div>
+
+            {/* File Upload */}
+            {!iaPdfResult && (
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>FACTURA EN PDF</label>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 10, border: `2px dashed ${iaPdfFile ? T.accent : T.border}`, background: T.surface, cursor: "pointer" }}>
+                  <span style={{ fontSize: 24 }}>📄</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: iaPdfFile ? T.ink : T.muted }}>{iaPdfFile ? iaPdfFile.name : "Hacer clic para seleccionar PDF"}</div>
+                    {iaPdfFile && <div style={{ fontSize: 11, color: T.muted }}>{(iaPdfFile.size / 1024).toFixed(0)} KB</div>}
+                  </div>
+                  <input type="file" accept="application/pdf" onChange={e => { setIaPdfFile(e.target.files[0] || null); setIaPdfResult(null); setIaPdfError(""); }} style={{ display: "none" }} />
+                </label>
+              </div>
+            )}
+
+            {iaPdfError && <div style={{ background: T.redLight, color: T.red, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 14 }}>⚠ {iaPdfError}</div>}
+
+            {/* Loading */}
+            {iaPdfLoading && (
+              <div style={{ textAlign: "center", padding: "32px 0" }}>
+                <div style={{ fontSize: 28, marginBottom: 12 }}>⏳</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>Leyendo la factura...</div>
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 6 }}>La IA está extrayendo los datos del PDF</div>
+              </div>
+            )}
+
+            {/* Preview resultado */}
+            {iaPdfResult && !iaPdfLoading && (
+              <div>
+                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 12, letterSpacing: 0.8 }}>DATOS EXTRAÍDOS</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                    {[
+                      ["Proveedor", iaPdfResult.proveedor],
+                      ["CUIT", iaPdfResult.cuitProveedor],
+                      ["N° Factura", iaPdfResult.nroFactura],
+                      ["Fecha", iaPdfResult.fecha],
+                      ["Vencimiento", iaPdfResult.vencimiento],
+                      ["Cond. de pago", iaPdfResult.condicionPago],
+                      ["Vendedor", iaPdfResult.vendedor],
+                      ["Total", "$" + (iaPdfResult.total || 0).toLocaleString("es-AR")],
+                    ].filter(([, v]) => v).map(([k, v]) => (
+                      <div key={k} style={{ fontSize: 12 }}>
+                        <span style={{ color: T.muted }}>{k}: </span>
+                        <span style={{ fontWeight: 700, color: T.ink }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, marginBottom: 8, letterSpacing: 0.8 }}>ÍTEMS ({(iaPdfResult.items || []).length})</div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <thead><tr style={{ background: T.surface2 }}>
+                      {["Código", "Descripción", "Cant.", "P. Unit.", "Importe"].map(h => <th key={h} style={{ padding: "5px 8px", textAlign: "left", color: T.muted, fontWeight: 700 }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{(iaPdfResult.items || []).map((it, i) => (
+                      <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+                        <td style={{ padding: "5px 8px", fontFamily: "monospace", fontSize: 10 }}>{it.codigo}</td>
+                        <td style={{ padding: "5px 8px" }}>{it.descripcion}</td>
+                        <td style={{ padding: "5px 8px" }}>{it.cantidad}</td>
+                        <td style={{ padding: "5px 8px" }}>${(it.precioUnitario || 0).toLocaleString("es-AR")}</td>
+                        <td style={{ padding: "5px 8px", fontWeight: 700 }}>${(it.importe || 0).toLocaleString("es-AR")}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "flex-end", gap: 20, fontSize: 12 }}>
+                    <span style={{ color: T.muted }}>Subtotal: <strong>${(iaPdfResult.subtotal || 0).toLocaleString("es-AR")}</strong></span>
+                    <span style={{ color: T.muted }}>IVA 21%: <strong>${(iaPdfResult.iva21 || 0).toLocaleString("es-AR")}</strong></span>
+                    {iaPdfResult.percepciones > 0 && <span style={{ color: T.muted }}>Percepciones: <strong>${(iaPdfResult.percepciones || 0).toLocaleString("es-AR")}</strong></span>}
+                    <span style={{ color: T.ink, fontWeight: 800, fontSize: 14 }}>Total: ${(iaPdfResult.total || 0).toLocaleString("es-AR")}</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 14 }}>
+                  Si el proveedor no existe en el sistema se creará automáticamente con los datos del PDF.
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <Btn v="ghost" onClick={() => { setShowIAImport(false); setIaPdfFile(null); setIaPdfResult(null); }}>Cancelar</Btn>
+              {!iaPdfResult
+                ? <Btn disabled={!iaPdfFile || iaPdfLoading} onClick={procesarPDFconIA}>✦ Analizar PDF</Btn>
+                : <Btn onClick={confirmarImportacion}>✓ Confirmar e importar</Btn>
+              }
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -4981,6 +5243,326 @@ Devolveme el orden óptimo como JSON array de índices.`
   );
 }
 
+// ─── MODULE: REPORTES ────────────────────────────────────────────────────────
+function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, suppliers }) {
+  const [openLayer, setOpenLayer] = useState({ op: true, ta: false, es: false });
+  const [activeReport, setActiveReport] = useState(null);
+
+  const toggleLayer = (k) => setOpenLayer(prev => ({ ...prev, [k]: !prev[k] }));
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const facturas = saleInvoices.filter(i => i.type === "factura");
+  const hoy = todayReal;
+
+  const diasAtras = (n) => { const d = new Date(hoy); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+  const ym = (date) => date?.slice(0, 7) || "";
+
+  const facturasHoy = facturas.filter(i => i.date === hoy);
+  const facturasSemanaAnterior = facturas.filter(i => i.date >= diasAtras(14) && i.date <= diasAtras(7));
+  const ventasHoy = facturasHoy.reduce((s, i) => s + i.total, 0);
+  const ventasSemAnt = facturasSemanaAnterior.reduce((s, i) => s + i.total, 0);
+
+  const pendientes = facturas.filter(i => i.status === "pendiente");
+  const cobradas = facturas.filter(i => i.status === "cobrada");
+
+  const aging = (days) => pendientes.filter(i => {
+    const d = Math.round((new Date(hoy) - new Date(i.due)) / 86400000);
+    return d > 0 && (days === "+90" ? d > 90 : days === "61-90" ? d > 60 && d <= 90 : days === "31-60" ? d > 30 && d <= 60 : d <= 30);
+  });
+
+  const stockBajo = products.filter(p => p.tracksStock !== false && p.stock < p.minStock);
+
+  const last6Months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(hoy); d.setDate(1); d.setMonth(d.getMonth() - i);
+    return d.toISOString().slice(0, 7);
+  }).reverse();
+
+  const ventasPorMes = last6Months.map(m => ({
+    label: m,
+    total: facturas.filter(i => ym(i.date) === m).reduce((s, i) => s + i.total, 0),
+    count: facturas.filter(i => ym(i.date) === m).length,
+  }));
+
+  const rankingProductos = (() => {
+    const map = {};
+    facturas.forEach(inv => (inv.lines || []).forEach(l => {
+      if (!l.name) return;
+      map[l.name] = (map[l.name] || 0) + l.subtotal;
+    }));
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  })();
+
+  const rankingClientes = (() => {
+    const map = {};
+    facturas.forEach(inv => { map[inv.clientName] = (map[inv.clientName] || 0) + inv.total; });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  })();
+
+  const totalVentas = facturas.reduce((s, i) => s + i.total, 0);
+  const totalCompras = purchaseInvoices.reduce((s, i) => s + i.total, 0);
+  const totalCobrado = cobradas.reduce((s, i) => s + i.total, 0);
+  const totalPendiente = pendientes.reduce((s, i) => s + i.total, 0);
+
+  // ── Reports data ──────────────────────────────────────────────────────────
+  const reports = {
+    // OPERATIVOS
+    ventas_dia: {
+      title: "Resumen de ventas del día", layer: "op", mvp: true, tag: "Ventas",
+      render: () => (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
+            {[
+              { l: "Total vendido hoy", v: fmt(ventasHoy), c: T.accent },
+              { l: "Operaciones", v: facturasHoy.length },
+              { l: "Ticket promedio", v: facturasHoy.length > 0 ? fmt(ventasHoy / facturasHoy.length) : "—" },
+            ].map((k, i) => <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 18px" }}><div style={{ fontSize: 10, color: T.muted, marginBottom: 6, fontWeight: 700 }}>{k.l}</div><div style={{ fontSize: 22, fontWeight: 800, color: k.c || T.ink }}>{k.v}</div></div>)}
+          </div>
+          <div style={{ fontSize: 13, color: T.muted }}>Semana anterior (mismo período): <strong style={{ color: T.ink }}>{fmt(ventasSemAnt)}</strong></div>
+        </div>
+      )
+    },
+    cobranzas_dia: {
+      title: "Cobranzas del día", layer: "op", mvp: true, tag: "Ventas",
+      render: () => (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+            {[
+              { l: "Facturas cobradas total", v: fmt(totalCobrado), c: T.accent },
+              { l: "Saldo pendiente total", v: fmt(totalPendiente), c: T.red },
+            ].map((k, i) => <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 18px" }}><div style={{ fontSize: 10, color: T.muted, marginBottom: 6, fontWeight: 700 }}>{k.l}</div><div style={{ fontSize: 22, fontWeight: 800, color: k.c }}>{k.v}</div></div>)}
+          </div>
+          <div style={{ fontSize: 13, color: T.muted }}>{cobradas.length} facturas cobradas · {pendientes.length} facturas pendientes</div>
+        </div>
+      )
+    },
+    aging: {
+      title: "Facturas pendientes (aging)", layer: "op", mvp: true, tag: "Ventas",
+      render: () => (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
+            {[["0-30 días", aging("0-30"), T.accent], ["31-60 días", aging("31-60"), T.yellow], ["61-90 días", aging("61-90"), T.orange], ["+90 días", aging("+90"), T.red]].map(([label, items, color]) => (
+              <div key={label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
+                <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 6 }}>{label}</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color }}>{fmt(items.reduce((s, i) => s + i.total, 0))}</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>{items.length} facturas</div>
+              </div>
+            ))}
+          </div>
+          {pendientes.slice(0, 8).map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: `1px solid ${T.border}`, fontSize: 13 }}><span>{i.clientName}</span><span style={{ fontWeight: 700 }}>{fmt(i.total)}</span></div>)}
+        </div>
+      )
+    },
+    stock_alertas: {
+      title: "Stock actual + alertas", layer: "op", mvp: true, tag: "Inventario",
+      render: () => (
+        <div>
+          <div style={{ marginBottom: 14, fontSize: 13, color: stockBajo.length > 0 ? T.red : T.accent, fontWeight: 700 }}>{stockBajo.length > 0 ? `⚠ ${stockBajo.length} producto(s) con stock bajo mínimo` : "✓ Todos los productos con stock suficiente"}</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead><tr style={{ background: T.surface }}>{["Producto", "SKU", "Stock actual", "Mínimo", "Estado"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <tbody>{products.filter(p => p.tracksStock !== false).slice(0, 15).map(p => {
+              const bajo = p.stock < p.minStock;
+              return <tr key={p.id} style={{ borderTop: `1px solid ${T.border}`, background: bajo ? T.redLight + "20" : "transparent" }}>
+                <td style={{ padding: "8px 12px" }}>{p.name}</td>
+                <td style={{ padding: "8px 12px", fontFamily: "monospace", fontSize: 11 }}>{p.sku}</td>
+                <td style={{ padding: "8px 12px", fontWeight: 700, color: bajo ? T.red : T.ink }}>{p.stock} {p.unit}</td>
+                <td style={{ padding: "8px 12px", color: T.muted }}>{p.minStock}</td>
+                <td style={{ padding: "8px 12px" }}>{bajo ? <span style={{ color: T.red, fontSize: 11, fontWeight: 700 }}>⚠ Reponer</span> : <span style={{ color: T.accent, fontSize: 11 }}>✓ OK</span>}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      )
+    },
+    mov_dia: { title: "Movimientos del día", layer: "op", tag: "Inventario", render: () => <div style={{ color: T.muted, fontSize: 13, padding: 20 }}>Mostrando movimientos de inventario del día (entradas por compras, salidas por ventas).<br /><br />{saleInvoices.filter(i => i.date === hoy).map(i => <div key={i.id} style={{ padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>{i.type === "factura" ? "📤 Salida" : "📋"} · {i.clientName} · {fmt(i.total)}</div>)}{purchaseInvoices.filter(i => i.date === hoy).map(i => <div key={i.id} style={{ padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>📥 Entrada · {i.supplierName} · {fmt(i.total)}</div>)}</div> },
+    morosos: { title: "Clientes morosos", layer: "op", tag: "Clientes", render: () => { const venc = pendientes.filter(i => i.due < hoy); const porCliente = {}; venc.forEach(i => { porCliente[i.clientName] = (porCliente[i.clientName] || 0) + i.total; }); return <div>{Object.entries(porCliente).sort((a,b)=>b[1]-a[1]).map(([n,t]) => <div key={n} style={{ display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${T.border}`,fontSize:13 }}><span style={{fontWeight:600}}>{n}</span><span style={{color:T.red,fontWeight:700}}>{fmt(t)}</span></div>)}</div>; } },
+    entregas_dia: { title: "Entregas del día", layer: "op", tag: "Logística", render: () => <div style={{ color: T.muted, fontSize: 13, padding: 20, textAlign: "center" }}>Datos de entregas disponibles en el módulo Logística.</div> },
+    pipeline: { title: "Pipeline de pedidos", layer: "op", tag: "Logística", render: () => <div style={{ color: T.muted, fontSize: 13, padding: 20, textAlign: "center" }}>Pipeline de pedidos disponible en el módulo Logística.</div> },
+    alertas_op: {
+      title: "Alertas operativas", layer: "op", mvp: true, tag: "Cross",
+      render: () => (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {stockBajo.length > 0 && <div style={{ background: T.redLight, border: `1px solid ${T.red}30`, borderRadius: 10, padding: "12px 16px", fontSize: 13 }}><strong style={{ color: T.red }}>⚠ Stock bajo:</strong> {stockBajo.map(p => p.name).join(", ")}</div>}
+          {pendientes.filter(i => i.due === hoy).length > 0 && <div style={{ background: T.redLight, border: `1px solid ${T.red}30`, borderRadius: 10, padding: "12px 16px", fontSize: 13 }}><strong style={{ color: T.red }}>⚠ Vencen hoy:</strong> {pendientes.filter(i => i.due === hoy).map(i => i.clientName).join(", ")}</div>}
+          {aging("+90").length > 0 && <div style={{ background: T.orangeLight || T.redLight, border: `1px solid ${T.orange}30`, borderRadius: 10, padding: "12px 16px", fontSize: 13 }}><strong style={{ color: T.orange }}>⚠ Más de 90 días vencidas:</strong> {aging("+90").length} facturas</div>}
+          {stockBajo.length === 0 && pendientes.filter(i => i.due === hoy).length === 0 && aging("+90").length === 0 && <div style={{ color: T.accent, fontWeight: 700, fontSize: 14 }}>✓ Sin alertas críticas hoy</div>}
+        </div>
+      )
+    },
+    // TÁCTICOS
+    evolucion_ventas: {
+      title: "Evolución de ventas", layer: "ta", mvp: true, tag: "Ventas",
+      render: () => {
+        const maxVal = Math.max(...ventasPorMes.map(m => m.total), 1);
+        return (
+          <div>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", height: 160, marginBottom: 20 }}>
+              {ventasPorMes.map(m => (
+                <div key={m.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 10, color: T.muted }}>{fmt(m.total)}</div>
+                  <div style={{ width: "100%", background: T.accent, borderRadius: "4px 4px 0 0", height: Math.max((m.total / maxVal) * 120, 4) }}></div>
+                  <div style={{ fontSize: 10, color: T.muted }}>{m.label.slice(5)}/{m.label.slice(2,4)}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 13, color: T.muted }}>Total período: <strong style={{ color: T.ink }}>{fmt(ventasPorMes.reduce((s,m) => s+m.total,0))}</strong> · {ventasPorMes.reduce((s,m) => s+m.count,0)} facturas</div>
+          </div>
+        );
+      }
+    },
+    ranking_productos: {
+      title: "Ranking de productos", layer: "ta", mvp: true, tag: "Ventas",
+      render: () => (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead><tr style={{ background: T.surface }}>{["#","Producto","Facturado"].map(h=><th key={h} style={{ padding:"8px 12px",textAlign:"left",fontSize:10,color:T.muted,fontWeight:700 }}>{h}</th>)}</tr></thead>
+          <tbody>{rankingProductos.map(([name,total],i)=><tr key={name} style={{borderTop:`1px solid ${T.border}`}}><td style={{padding:"8px 12px",color:T.muted,fontWeight:700}}>{i+1}</td><td style={{padding:"8px 12px"}}>{name}</td><td style={{padding:"8px 12px",fontWeight:700,color:T.accent}}>{fmt(total)}</td></tr>)}</tbody>
+        </table>
+      )
+    },
+    margenes: {
+      title: "Análisis de márgenes", layer: "ta", mvp: true, tag: "Ventas",
+      render: () => (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead><tr style={{ background: T.surface }}>{["Producto","Costo","Lista A","Margen %"].map(h=><th key={h} style={{ padding:"8px 12px",textAlign:"left",fontSize:10,color:T.muted,fontWeight:700 }}>{h}</th>)}</tr></thead>
+          <tbody>{products.filter(p=>p.cost>0).map(p=>{const precio=p.prices?.lista_a||0;const margen=precio>0?((precio-p.cost)/precio*100).toFixed(1):0;return<tr key={p.id} style={{borderTop:`1px solid ${T.border}`}}><td style={{padding:"8px 12px"}}>{p.name}</td><td style={{padding:"8px 12px",color:T.muted}}>{fmt(p.cost)}</td><td style={{padding:"8px 12px"}}>{fmt(precio)}</td><td style={{padding:"8px 12px",fontWeight:700,color:margen>30?T.accent:margen>15?T.yellow:T.red}}>{margen}%</td></tr>;})}</tbody>
+        </table>
+      )
+    },
+    abc_ventas: { title: "ABC de ventas (Pareto)", layer: "ta", tag: "Ventas", render: () => { const tot = rankingProductos.reduce((s,[,t])=>s+t,0); let acum=0; return <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{background:T.surface}}>{["Producto","Monto","Acum.%","Clase"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,color:T.muted,fontWeight:700}}>{h}</th>)}</tr></thead><tbody>{rankingProductos.map(([name,t])=>{acum+=t;const pct=(acum/tot*100);const cls=pct<=80?"A":pct<=95?"B":"C";return<tr key={name} style={{borderTop:`1px solid ${T.border}`}}><td style={{padding:"8px 12px"}}>{name}</td><td style={{padding:"8px 12px",fontWeight:700}}>{fmt(t)}</td><td style={{padding:"8px 12px",color:T.muted}}>{(acum/tot*100).toFixed(1)}%</td><td style={{padding:"8px 12px",fontWeight:700,color:cls==="A"?T.accent:cls==="B"?T.yellow:T.muted}}>{cls}</td></tr>;})}</tbody></table>; } },
+    pago_medio: { title: "Ventas por medio de pago", layer: "ta", tag: "Ventas", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Este reporte requiere registrar el medio de pago en cada factura. Próximamente.</div> },
+    rotacion: { title: "Rotación de inventario", layer: "ta", tag: "Inventario", render: () => { const costoVentas = facturas.reduce((s,i)=>(i.lines||[]).reduce((ss,l)=>{const p=products.find(x=>x.id===l.productId);return ss+(p?.cost||0)*l.qty;},s),0); const valorStock=products.reduce((s,p)=>s+(p.cost||0)*p.stock,0); const rot=valorStock>0?(costoVentas/valorStock).toFixed(2):0; return <div style={{textAlign:"center",padding:20}}><div style={{fontSize:48,fontWeight:800,color:T.accent}}>{rot}x</div><div style={{fontSize:13,color:T.muted,marginTop:8}}>Índice de rotación · Costo de ventas {fmt(costoVentas)} / Valor stock {fmt(valorStock)}</div></div>; } },
+    valorizacion: { title: "Valorización de stock", layer: "ta", tag: "Inventario", render: () => { const aCosto=products.reduce((s,p)=>s+(p.cost||0)*p.stock,0); const aVenta=products.reduce((s,p)=>s+(p.prices?.lista_a||0)*p.stock,0); return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}><div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:6}}>VALOR A COSTO</div><div style={{fontSize:24,fontWeight:800,color:T.ink}}>{fmt(aCosto)}</div></div><div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:6}}>VALOR A PRECIO LISTA A</div><div style={{fontSize:24,fontWeight:800,color:T.accent}}>{fmt(aVenta)}</div></div></div>; } },
+    merma: { title: "Merma y desperdicio", layer: "ta", tag: "Inventario", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Registrá ajustes negativos de stock para calcular mermas. Próximamente.</div> },
+    ranking_clientes: {
+      title: "Ranking de clientes", layer: "ta", mvp: true, tag: "Clientes",
+      render: () => (
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{background:T.surface}}>{["#","Cliente","Facturado"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,color:T.muted,fontWeight:700}}>{h}</th>)}</tr></thead>
+          <tbody>{rankingClientes.map(([name,total],i)=><tr key={name} style={{borderTop:`1px solid ${T.border}`}}><td style={{padding:"8px 12px",color:T.muted,fontWeight:700}}>{i+1}</td><td style={{padding:"8px 12px"}}>{name}</td><td style={{padding:"8px 12px",fontWeight:700,color:T.accent}}>{fmt(total)}</td></tr>)}</tbody>
+        </table>
+      )
+    },
+    antiguedad_saldos: { title: "Antigüedad de saldos", layer: "ta", tag: "Clientes", render: () => { const a0=aging("0-30"),a1=aging("31-60"),a2=aging("61-90"),a3=aging("+90"); return <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>{[[`0-30d`,a0,T.accent],[`31-60d`,a1,T.yellow],[`61-90d`,a2,T.orange],[`+90d`,a3,T.red]].map(([l,items,c])=><div key={l} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 14px"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:6}}>{l}</div><div style={{fontSize:20,fontWeight:800,color:c}}>{fmt(items.reduce((s,i)=>s+i.total,0))}</div><div style={{fontSize:11,color:T.muted}}>{items.length} fact.</div></div>)}</div>; } },
+    clientes_nuevos: { title: "Clientes nuevos vs perdidos", layer: "ta", tag: "Clientes", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Requiere registro de fecha de alta de clientes. Próximamente.</div> },
+    eficiencia_log: { title: "Eficiencia logística", layer: "ta", tag: "Logística", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Conectado al módulo Logística. Próximamente.</div> },
+    ciclos: { title: "Tiempos de ciclo", layer: "ta", tag: "Logística", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Conectado al módulo Logística. Próximamente.</div> },
+    // ESTRATÉGICOS
+    pyl: {
+      title: "P&L simplificado", layer: "es", mvp: true, tag: "Cross",
+      render: () => {
+        const costoVentas = facturas.reduce((s,i)=>(i.lines||[]).reduce((ss,l)=>{const p=products.find(x=>x.id===l.productId);return ss+(p?.cost||0)*l.qty;},s),0);
+        const ganancia = totalVentas - costoVentas;
+        return (
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {[["Ingresos (ventas)", totalVentas, T.accent,true],["Costo de ventas", -costoVentas, T.red,false],["Ganancia bruta", ganancia, ganancia>=0?T.accent:T.red,true]].map(([l,v,c,bold])=>(
+              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"12px 16px",background:T.surface,borderRadius:10,fontSize:bold?15:13,fontWeight:bold?800:500}}>
+                <span>{l}</span><span style={{color:c}}>{fmt(Math.abs(v))}</span>
+              </div>
+            ))}
+            <div style={{fontSize:12,color:T.muted,marginTop:8}}>Margen bruto: {totalVentas>0?((ganancia/totalVentas)*100).toFixed(1):0}%</div>
+          </div>
+        );
+      }
+    },
+    equilibrio: { title: "Punto de equilibrio", layer: "es", tag: "Ventas", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Requiere registrar costos fijos. Próximamente.</div> },
+    cashflow: {
+      title: "Cash flow proyectado", layer: "es", mvp: true, tag: "Cross",
+      render: () => {
+        const cobros = pendientes.filter(i => i.due >= hoy && i.due <= diasAtras(-30)).reduce((s,i)=>s+i.total,0);
+        const pagos = purchaseInvoices.filter(i => i.status === "pendiente" && i.dueDate >= hoy && i.dueDate <= diasAtras(-30)).reduce((s,i)=>s+i.total,0);
+        return (
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {[["Cobros esperados (30d)", cobros, T.accent],["Pagos comprometidos (30d)", pagos, T.red],["Saldo proyectado", cobros-pagos, cobros>=pagos?T.accent:T.red]].map(([l,v,c])=>(
+              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"12px 16px",background:T.surface,borderRadius:10,fontSize:13}}><span>{l}</span><span style={{color:c,fontWeight:700}}>{fmt(Math.abs(v))}</span></div>
+            ))}
+          </div>
+        );
+      }
+    },
+    estacionalidad: { title: "Estacionalidad", layer: "es", tag: "Ventas", render: () => <div style={{display:"flex",gap:8,alignItems:"flex-end",height:120,marginBottom:10}}>{ventasPorMes.map(m=>{const maxV=Math.max(...ventasPorMes.map(x=>x.total),1);return<div key={m.label} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}><div style={{width:"100%",background:T.accent,borderRadius:"3px 3px 0 0",height:Math.max((m.total/maxV)*100,4)}}></div><div style={{fontSize:9,color:T.muted}}>{m.label.slice(5)}/{m.label.slice(2,4)}</div></div>;})}></div> },
+    rentabilidad_cliente: { title: "Rentabilidad por cliente", layer: "es", tag: "Clientes", render: () => <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{background:T.surface}}>{["Cliente","Facturado","% del total"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,color:T.muted,fontWeight:700}}>{h}</th>)}</tr></thead><tbody>{rankingClientes.map(([n,t])=><tr key={n} style={{borderTop:`1px solid ${T.border}`}}><td style={{padding:"8px 12px"}}>{n}</td><td style={{padding:"8px 12px",fontWeight:700}}>{fmt(t)}</td><td style={{padding:"8px 12px",color:T.muted}}>{totalVentas>0?(t/totalVentas*100).toFixed(1):0}%</td></tr>)}</tbody></table> },
+    concentracion: { title: "Concentración de ingresos", layer: "es", tag: "Clientes", render: () => { const top5=rankingClientes.slice(0,5).reduce((s,[,t])=>s+t,0); const pct=totalVentas>0?(top5/totalVentas*100).toFixed(1):0; return <div style={{textAlign:"center",padding:20}}><div style={{fontSize:48,fontWeight:800,color:pct>80?T.red:T.accent}}>{pct}%</div><div style={{fontSize:13,color:T.muted,marginTop:8}}>de los ingresos concentrados en los top 5 clientes</div></div>; } },
+    mix_productos: { title: "Mix óptimo de productos", layer: "es", tag: "Ventas", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Análisis de matriz volumen × margen. Próximamente.</div> },
+    scorecard: {
+      title: "Scorecard PyME", layer: "es", mvp: true, tag: "Cross",
+      render: () => {
+        const kpis = [
+          ["Ventas totales", fmt(totalVentas), T.accent],
+          ["Pendiente cobrar", fmt(totalPendiente), T.red],
+          ["Facturas cobradas", cobradas.length, T.accent],
+          ["Facturas vencidas", pendientes.filter(i=>i.due<hoy).length, T.red],
+          ["Stock bajo mínimo", stockBajo.length, stockBajo.length>0?T.red:T.accent],
+          ["Proveedores activos", suppliers.length, T.ink],
+          ["Clientes activos", clients.filter(c=>c.status==="activo").length, T.accent],
+          ["Compras totales", fmt(totalCompras), T.orange],
+        ];
+        return <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>{kpis.map(([l,v,c])=><div key={l} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:6}}>{l}</div><div style={{fontSize:20,fontWeight:800,color:c}}>{v}</div></div>)}</div>;
+      }
+    },
+  };
+
+  const layers = [
+    { id: "op", label: "Capa 1 — Operativos", freq: "Diario", color: "#0F6E56", colorLight: "#E1F5EE", reports: ["ventas_dia","cobranzas_dia","aging","stock_alertas","mov_dia","morosos","entregas_dia","pipeline","alertas_op"] },
+    { id: "ta", label: "Capa 2 — Tácticos", freq: "Semanal / Mensual", color: "#185FA5", colorLight: "#E6F1FB", reports: ["evolucion_ventas","ranking_productos","margenes","abc_ventas","pago_medio","rotacion","valorizacion","merma","ranking_clientes","antiguedad_saldos","clientes_nuevos","eficiencia_log","ciclos"] },
+    { id: "es", label: "Capa 3 — Estratégicos", freq: "Trimestral / Anual", color: "#534AB7", colorLight: "#EEEDFE", reports: ["pyl","equilibrio","cashflow","estacionalidad","rentabilidad_cliente","concentracion","mix_productos","scorecard"] },
+  ];
+
+  const tagColors = { Ventas: { bg: T.blueLight, c: T.blue }, Clientes: { bg: "#EEEDFE", c: "#534AB7" }, Inventario: { bg: T.accentLight, c: T.accent }, Logística: { bg: T.yellowLight || "#FFF8E1", c: T.yellow || "#B45309" }, Cross: { bg: T.surface2, c: T.muted } };
+
+  return (
+    <div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Reportes</div>
+        <div style={{ fontSize: 13, color: T.muted }}>32 reportes organizados en 3 capas · Datos en tiempo real del sistema</div>
+      </div>
+
+      {activeReport && (
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 24, marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{reports[activeReport]?.title}</div>
+            <button onClick={() => setActiveReport(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: T.muted }}>✕</button>
+          </div>
+          {reports[activeReport]?.render()}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {layers.map(layer => (
+          <div key={layer.id} style={{ border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+            <div onClick={() => toggleLayer(layer.id)} style={{ padding: "14px 20px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", background: layer.color, color: layer.colorLight }}>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>{layer.label}</span>
+              <span style={{ fontSize: 12, opacity: 0.8, marginLeft: "auto" }}>{layer.freq}</span>
+              <span style={{ fontSize: 12, background: "rgba(255,255,255,0.2)", padding: "2px 8px", borderRadius: 10 }}>{layer.reports.length} reportes</span>
+              <span style={{ fontSize: 14, opacity: 0.8 }}>{openLayer[layer.id] ? "▲" : "▼"}</span>
+            </div>
+            {openLayer[layer.id] && (
+              <div style={{ padding: "16px 20px", background: T.paper }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px,1fr))", gap: 10 }}>
+                  {layer.reports.map(rId => {
+                    const r = reports[rId];
+                    if (!r) return null;
+                    const tc = tagColors[r.tag] || tagColors.Cross;
+                    const isActive = activeReport === rId;
+                    return (
+                      <div key={rId} onClick={() => setActiveReport(isActive ? null : rId)}
+                        style={{ background: isActive ? T.accentLight : T.surface, border: `1px solid ${isActive ? T.accent : T.border}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer", position: "relative" }}>
+                        {r.mvp && <span style={{ position: "absolute", top: 6, right: 8, fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: T.yellowLight || "#FEF3C7", color: T.yellow || "#92400E" }}>MVP</span>}
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, marginBottom: 4, paddingRight: r.mvp ? 32 : 0 }}>{r.title}</div>
+                        <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                          <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: tc.bg, color: tc.c }}>{r.tag}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 const NAV = [
   { id: "hub",        label: "Inicio",     icon: "⬡" },
@@ -4989,7 +5571,7 @@ const NAV = [
   { id: "compras",    label: "Compras",    icon: "◉" },
   { id: "inventario", label: "Inventario", icon: "▦" },
   { id: "logistica",  label: "Logística",  icon: "🚚" },
-  { id: "metricas",   label: "Métricas",   icon: "◎" },
+  { id: "reportes",   label: "Reportes",   icon: "◎" },
 ];
 
 export default function App() {
@@ -5018,10 +5600,29 @@ export default function App() {
     openDoc(typeMap[action] || "factura");
   };
 
-  const handleSaveDoc = ({ lines, total, totalNeto, totalIva, clientId, clientName, docType, originPresupuestoId, originRemitoIds, modificaStock, imprimirPDF, generarPDF }) => {
+  const handleSaveDoc = ({ lines, total, totalNeto, totalIva, clientId, clientName, docType, originPresupuestoId, originRemitoIds, modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor = "", editingId, oldLines }) => {
+    const debeDescontarStock = docType === "factura" || (docType === "presupuesto" && modificaStock) || docType === "remito";
+
+    if (editingId) {
+      // Editing existing doc: revert old stock, apply new stock
+      if (debeDescontarStock && oldLines) {
+        setProducts(prev => prev.map(p => {
+          const oldL = oldLines.find(l => l.productId === p.id);
+          const newL = lines.find(l => l.productId === p.id);
+          let stock = p.stock;
+          if (oldL) stock += oldL.qty; // revert old
+          if (newL) stock -= newL.qty; // apply new
+          return oldL || newL ? { ...p, stock } : p;
+        }));
+      }
+      setSaleInvoices(prev => prev.map(i => i.id === editingId ? { ...i, clientId, clientName, total, totalNeto, totalIva, lines, observaciones, moneda, modificaStock, vendedor } : i));
+      setShowDocBuilder(false);
+      return;
+    }
+
+    // New doc
     const prefix = { factura: "FAC", presupuesto: "PRE", remito: "REM" }[docType];
     const id = nextId(prefix);
-    const debeDescontarStock = docType === "factura" || (docType === "presupuesto" && modificaStock);
     if (debeDescontarStock) {
       setProducts(prev => prev.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock - l.qty } : p; }));
     }
@@ -5032,7 +5633,7 @@ export default function App() {
       setSaleInvoices(prev => prev.map(i => originRemitoIds.includes(i.id) ? { ...i, status: "facturado" } : i));
     }
     const due = new Date(today); due.setDate(due.getDate() + 15);
-    setSaleInvoices(prev => [{ id, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock }, ...prev]);
+    setSaleInvoices(prev => [{ id, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock, observaciones, moneda, vendedor }, ...prev]);
     setShowDocBuilder(false);
     if (imprimirPDF && generarPDF) generarPDF(id);
   };
@@ -5085,12 +5686,12 @@ export default function App() {
       {/* Main */}
       <div style={{ flex: 1, overflowY: "auto", padding: "32px 36px" }}>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
-        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} />}
+        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones })} />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
         {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} onNewPurchase={() => setShowPurchaseBuilder(true)} />}
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
-        {module === "metricas" && <MetricasModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} />}
+        {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} />}
       </div>
 
       {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} />}
