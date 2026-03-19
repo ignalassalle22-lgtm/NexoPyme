@@ -1778,6 +1778,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
   const [selectedReclamos, setSelectedReclamos] = useState([]); // ids de facturas tildadas
   const [reclamoSent, setReclamoSent] = useState({}); // { invoiceId: true }
   const [reclaimMsg, setReclaimMsg] = useState(null); // feedback
+  const [emailProvider, setEmailProvider] = useState("gmail"); // "gmail" | "outlook"
 
   // Días hábiles: lunes a viernes
   const addBusinessDays = (dateStr, days) => {
@@ -1845,6 +1846,9 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
       "Saludos cordiales."
     );
 
+    if (emailProvider === "gmail") {
+      return "https://mail.google.com/mail/?view=cm&to=" + encodeURIComponent(client.email) + "&su=" + subject + "&body=" + body;
+    }
     return "mailto:" + client.email + "?subject=" + subject + "&body=" + body;
   };
 
@@ -1866,7 +1870,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     let mailsAbiertos = 0;
     Object.entries(porCliente).forEach(([clientId, facturas]) => {
       const url = generarMailReclamoCliente(clientId, facturas);
-      if (url) { window.location.href = url; mailsAbiertos++; }
+      if (url) { window.open(url, "_blank"); mailsAbiertos++; }
     });
     setReclamoSent(prev => { const next = {...prev}; selectedReclamos.forEach(id => next[id] = true); return next; });
     const clientesCount = Object.keys(porCliente).length;
@@ -2286,7 +2290,16 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                     ? <span style={{ color: T.red, fontWeight: 700 }}>{selectedReclamos.length} factura(s) seleccionada(s) para reclamar</span>
                     : "Tildá las facturas que querés reclamar"}
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {/* Toggle Gmail / Outlook */}
+                  <div style={{ display: "flex", borderRadius: 7, overflow: "hidden", border: `1px solid ${T.border}` }}>
+                    {[["gmail", "Gmail"], ["outlook", "Outlook"]].map(([val, label]) => (
+                      <button key={val} onClick={() => setEmailProvider(val)}
+                        style={{ padding: "7px 12px", border: "none", background: emailProvider === val ? T.accent : T.surface, color: emailProvider === val ? "#fff" : T.muted, fontSize: 11, fontWeight: emailProvider === val ? 700 : 400, cursor: "pointer", fontFamily: "inherit" }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <button onClick={() => setSelectedReclamos(facturasVencidas.map(i => i.id))}
                     style={{ padding: "7px 14px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
                     Seleccionar todas
@@ -2385,7 +2398,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
               ))}
 
               <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 16px", fontSize: 12, color: T.muted, lineHeight: 1.7 }}>
-                <strong style={{ color: T.ink }}>Cómo funciona el reclamo:</strong> al presionar "✉ Enviar reclamos" se abre tu cliente de correo (Outlook, Gmail, etc.) con un borrador pre-armado para cada factura seleccionada — con asunto, destinatario y texto de reclamo ya completados. Adjuntá el PDF de la factura usando el botón 🖨 PDF antes de enviar.
+                <strong style={{ color: T.ink }}>Cómo funciona el reclamo:</strong> seleccioná tu cliente de correo con el toggle <strong>Gmail / Outlook</strong> y luego presioná "✉ Enviar reclamos". Se abrirá una nueva pestaña con el borrador pre-armado — asunto, destinatario y cuerpo ya completados. Adjuntá el PDF de la factura usando el botón 🖨 PDF antes de enviar.
               </div>
             </div>
           )}
