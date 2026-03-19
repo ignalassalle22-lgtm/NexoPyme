@@ -84,6 +84,8 @@ const initPurchaseInvoices = [
   { id: "OC-0002", supplierId: "s2", supplierName: "Materiales Norte S.R.L.", date: "2026-03-01", dueDate: "2026-03-16", total: 63000, status: "pendiente", lines: [{ productId: "p2", supplierCode: "MN-CEM50", name: "Cemento Portland 50kg", qty: 18, unitPrice: 3500 }] },
 ];
 
+const initVendedores = [];
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const fmt = (n) => `$${Number(n).toLocaleString("es-AR")}`;
 const today = "2026-03-11";
@@ -163,7 +165,7 @@ function Modal({ title, onClose, children, wide, xl }) {
 }
 
 // ─── DOCUMENT BUILDER (Factura / Presupuesto / Remito) ────────────────────────
-function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload, onSave, onClose, priceLists }) {
+function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload, onSave, onClose, priceLists, vendedores }) {
   const isPresupuesto = type === "presupuesto";
   const [origin, setOrigin] = useState(preload ? "scratch" : (isPresupuesto ? "scratch" : null));
   const [selectedPresupuestoId, setSelectedPresupuestoId] = useState("");
@@ -412,7 +414,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
       </div>
       <div class="row">
         <div class="block"><strong>Cliente</strong>${cli?.name || clientId}${cli?.cuit ? `<br>CUIT: ${cli.cuit}` : ""}${cli?.direccion ? `<br>${cli.direccion}` : ""}${cli?.email ? `<br>${cli.email}` : ""}</div>
-        <div class="block" style="text-align:right"><strong>Código cliente</strong>${cli?.codigo || "—"}${vendedor ? `<br><strong>Vendedor:</strong> ${vendedor}` : ""}</div>
+        <div class="block" style="text-align:right"><strong>Código cliente</strong>${cli?.codigo || "—"}${vendedor ? `<br><strong>Vendedor:</strong> ${(() => { const vend = (vendedores||[]).find(v=>v.id===vendedor); return vend ? vend.codigo+" · "+vend.nombre : vendedor; })()}` : ""}</div>
       </div>
       <table>
         <thead><tr><th>Código</th><th>Producto</th><th>Cant.</th><th>P. Unit. s/IVA</th><th>IVA</th><th>Subtotal</th></tr></thead>
@@ -983,8 +985,19 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
             <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>
               VENDEDOR <span style={{ fontWeight: 400, color: T.faint }}>(opcional · aparece en el documento)</span>
             </label>
-            <input value={vendedor} onChange={e => setVendedor(e.target.value)} placeholder="Nombre del vendedor responsable"
-              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${vendedor ? T.accent + "60" : T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            {vendedores && vendedores.length > 0 ? (
+              <select value={vendedor} onChange={e => setVendedor(e.target.value)}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${vendedor ? T.accent + "60" : T.border}`, background: vendedor ? T.accentLight : T.surface, color: vendedor ? T.accent : T.muted, fontSize: 13, fontFamily: "inherit", outline: "none", fontWeight: vendedor ? 700 : 400 }}>
+                <option value="">— Sin vendedor asignado —</option>
+                {vendedores.map(v => (
+                  <option key={v.id} value={v.id}>{v.codigo} · {v.nombre}</option>
+                ))}
+              </select>
+            ) : (
+              <div style={{ padding: "10px 14px", borderRadius: 10, border: `1px dashed ${T.border}`, background: T.surface, color: T.muted, fontSize: 12 }}>
+                No hay vendedores cargados. Agregá vendedores en <strong>Ventas → Vendedores</strong>.
+              </div>
+            )}
           </div>
 
           {/* Observaciones */}
@@ -1609,8 +1622,102 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
   );
 }
 
+// ─── VENDEDORES TAB ───────────────────────────────────────────────────────────
+const EMPTY_VENDEDOR = { codigo: "", nombre: "", comision: "" };
+
+function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(EMPTY_VENDEDOR);
+  const [editingId, setEditingId] = useState(null);
+
+  const facturas = saleInvoices.filter(i => i.type === "factura");
+
+  const ventasPorVendedor = (vid) =>
+    facturas.filter(i => i.vendedor === vid).reduce((s, i) => s + i.total, 0);
+
+  const openNew = () => { setForm(EMPTY_VENDEDOR); setEditingId(null); setShowForm(true); };
+  const openEdit = (v) => { setForm({ codigo: v.codigo, nombre: v.nombre, comision: String(v.comision) }); setEditingId(v.id); setShowForm(true); };
+
+  const save = () => {
+    if (!form.codigo.trim() || !form.nombre.trim()) return;
+    if (editingId) {
+      setVendedores(prev => prev.map(v => v.id === editingId ? { ...v, ...form, comision: parseFloat(form.comision) || 0 } : v));
+    } else {
+      setVendedores(prev => [...prev, { id: "vend-" + Date.now(), ...form, comision: parseFloat(form.comision) || 0 }]);
+    }
+    setShowForm(false); setEditingId(null); setForm(EMPTY_VENDEDOR);
+  };
+
+  const remove = (id) => setVendedores(prev => prev.filter(v => v.id !== id));
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>Vendedores</div>
+        <Btn sm onClick={openNew}>+ Nuevo vendedor</Btn>
+      </div>
+
+      {showForm && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 14 }}>{editingId ? "Editar vendedor" : "Nuevo vendedor"}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1fr", gap: 12, marginBottom: 14 }}>
+            <Input label="CÓDIGO" value={form.codigo} onChange={v => setForm(f => ({ ...f, codigo: v }))} placeholder="V001" />
+            <Input label="NOMBRE COMPLETO" value={form.nombre} onChange={v => setForm(f => ({ ...f, nombre: v }))} placeholder="Juan Pérez" />
+            <Input label="COMISIÓN %" type="number" value={form.comision} onChange={v => setForm(f => ({ ...f, comision: v }))} placeholder="5" />
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Btn v="ghost" sm onClick={() => { setShowForm(false); setEditingId(null); }}>Cancelar</Btn>
+            <Btn sm disabled={!form.codigo.trim() || !form.nombre.trim()} onClick={save}>Guardar</Btn>
+          </div>
+        </div>
+      )}
+
+      {vendedores.length === 0 ? (
+        <div style={{ background: T.surface, border: `1px dashed ${T.border}`, borderRadius: 12, padding: 40, textAlign: "center", color: T.muted, fontSize: 13 }}>
+          No hay vendedores cargados.<br />Agregá vendedores para asignarlos a facturas, presupuestos y remitos.
+        </div>
+      ) : (
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: T.surface }}>
+                {["Código", "Nombre", "Comisión", "Ventas asignadas", "Comisión estimada", ""].map(h => (
+                  <th key={h} style={{ padding: "11px 16px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {vendedores.map(v => {
+                const ventas = ventasPorVendedor(v.id);
+                const comisionEstimada = ventas * (v.comision / 100);
+                return (
+                  <tr key={v.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                    <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.accent }}>{v.codigo}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 600, color: T.ink }}>{v.nombre}</td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <span style={{ background: T.accentLight, color: T.accent, padding: "3px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700 }}>{v.comision}%</span>
+                    </td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700 }}>{fmt(ventas)}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700, color: T.accent }}>{fmt(comisionEstimada)}</td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Btn sm v="ghost" onClick={() => openEdit(v)}>Editar</Btn>
+                        <Btn sm v="ghost" onClick={() => remove(v.id)}>Eliminar</Btn>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
-function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
+function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
   const [tab, setTab] = useState("docs");
   const [filterType, setFilterType] = useState("all");
   const [searchDocNum, setSearchDocNum] = useState("");
@@ -2162,7 +2269,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
         </div>
       </div>
       <div style={{ display: "flex", gap: 4, marginBottom: 22, background: T.surface, borderRadius: 10, padding: 4, width: "fit-content" }}>
-        {[["docs", "Documentos"], ["clients", "Clientes"], ["cobranzas", "💰 Cobranzas"]].map(([v, l]) => (
+        {[["docs", "Documentos"], ["clients", "Clientes"], ["vendedores", "Vendedores"], ["cobranzas", "💰 Cobranzas"]].map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)}
             style={{ padding: "7px 16px", borderRadius: 7, border: "none", background: tab === v ? T.paper : "transparent", color: tab === v ? T.ink : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
         ))}
@@ -2295,6 +2402,10 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
             ))}
           </div>
         </>
+      )}
+
+      {tab === "vendedores" && (
+        <VendedoresTab vendedores={vendedores} setVendedores={setVendedores} saleInvoices={saleInvoices} />
       )}
 
       {tab === "cobranzas" && (
@@ -5580,6 +5691,7 @@ export default function App() {
   const [clients, setClients] = useState(initClients);
   const [suppliers, setSuppliers] = useState(initSuppliers);
   const [priceLists, setPriceLists] = useState(initPriceLists);
+  const [vendedores, setVendedores] = useState(initVendedores);
   const [tipoCambio, setTipoCambio] = useState(1200); // ARS por USD
   const [saleInvoices, setSaleInvoices] = useState(initSaleInvoices);
   const [purchaseInvoices, setPurchaseInvoices] = useState(initPurchaseInvoices);
@@ -5686,7 +5798,7 @@ export default function App() {
       {/* Main */}
       <div style={{ flex: 1, overflowY: "auto", padding: "32px 36px" }}>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
-        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones })} />}
+        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor })} />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
         {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} onNewPurchase={() => setShowPurchaseBuilder(true)} />}
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} />}
@@ -5694,7 +5806,7 @@ export default function App() {
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} />}
       </div>
 
-      {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} priceLists={priceLists} />}
+      {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} priceLists={priceLists} vendedores={vendedores} />}
       {showPurchaseBuilder && <PurchaseBuilder suppliers={suppliers} products={products} onSave={handleSavePurchase} onClose={() => setShowPurchaseBuilder(false)} />}
     </div>
   );
