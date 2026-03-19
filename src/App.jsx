@@ -163,7 +163,7 @@ function Modal({ title, onClose, children, wide, xl }) {
 }
 
 // ─── DOCUMENT BUILDER (Factura / Presupuesto / Remito) ────────────────────────
-function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload, onSave, onClose }) {
+function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload, onSave, onClose, priceLists }) {
   const isPresupuesto = type === "presupuesto";
   const [origin, setOrigin] = useState(preload ? "scratch" : (isPresupuesto ? "scratch" : null));
   const [selectedPresupuestoId, setSelectedPresupuestoId] = useState("");
@@ -252,7 +252,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
     const ov = prod.clientOverrides?.find(o => o.clientId === clientId);
     if (ov?.price != null) return { price: ov.price, source: "Precio fijo cliente", code: ov.customCode || prod.sku };
     const listId = selectedPriceList || client?.priceList || "lista_a";
-    const listLabel = initPriceLists.find(l => l.id === listId)?.label || listId;
+    const listLabel = (priceLists || initPriceLists).find(l => l.id === listId)?.label || listId;
     const code = ov?.customCode || prod.sku;
     if (ov?.discount != null) {
       const base = prod.prices[listId] || 0;
@@ -778,7 +778,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
           <select value={selectedPriceList} onChange={e => { setSelectedPriceList(e.target.value); setLines([]); setPriceInput(""); }}
             style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${selectedPriceList ? T.accent : T.border}`, background: selectedPriceList ? T.accentLight : T.surface, color: selectedPriceList ? T.accent : T.muted, fontSize: 13, fontFamily: "inherit", outline: "none", fontWeight: selectedPriceList ? 700 : 400 }}>
             <option value="">Predeterminada del cliente</option>
-            {initPriceLists.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
+            {(priceLists || initPriceLists).map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
           </select>
         </div>
 
@@ -3631,7 +3631,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
 // ─── MODULE: INVENTARIO ───────────────────────────────────────────────────────
 const EMPTY_FORM = { name: "", sku: "", category: "", unit: "unidad", minStock: 10, cost: 0, iva: 21, tracksStock: true, prices: { lista_a: 0, lista_b: 0, lista_c: 0 }, clientCodes: [] };
 
-function InventarioModule({ products, setProducts, clients, suppliers }) {
+function InventarioModule({ products, setProducts, clients, suppliers, priceLists }) {
   const [showForm, setShowForm] = useState(false);
   const [adjustProd, setAdjustProd] = useState(null);
   const [adjustQty, setAdjustQty] = useState(0);
@@ -3888,12 +3888,12 @@ function InventarioModule({ products, setProducts, clients, suppliers }) {
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>PRECIOS DE VENTA (S/IVA)</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-              {initPriceLists.map(pl => (
+              {(priceLists || initPriceLists).map(pl => (
                 <Input key={pl.id} label={pl.label.toUpperCase() + " · ARS"} type="number"
                   value={editingProduct.prices?.[pl.id] || 0}
                   onChange={v => setEditingProduct(p => ({...p, prices: {...(p.prices||{}), [pl.id]: parseFloat(v)||0}}))} />
               ))}
-              {initPriceLists.map(pl => (
+              {(priceLists || initPriceLists).map(pl => (
                 <Input key={pl.id + "_usd"} label={pl.label.toUpperCase() + " · USD"} type="number"
                   value={editingProduct.pricesUsd?.[pl.id] || 0}
                   onChange={v => setEditingProduct(p => ({...p, pricesUsd: {...(p.pricesUsd||{}), [pl.id]: parseFloat(v)||0}}))} />
@@ -5689,12 +5689,12 @@ export default function App() {
         {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones })} />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
         {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} onNewPurchase={() => setShowPurchaseBuilder(true)} />}
-        {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} />}
+        {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} />}
       </div>
 
-      {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} />}
+      {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} priceLists={priceLists} />}
       {showPurchaseBuilder && <PurchaseBuilder suppliers={suppliers} products={products} onSave={handleSavePurchase} onClose={() => setShowPurchaseBuilder(false)} />}
     </div>
   );
