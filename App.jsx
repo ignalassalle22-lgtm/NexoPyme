@@ -1,0 +1,5087 @@
+import { useState, useMemo } from "react";
+import * as XLSX from 'xlsx';
+
+// ─── THEME ────────────────────────────────────────────────────────────────────
+const T = {
+  bg: "#0d1117", sidebar: "#0a0e14", paper: "#161b22", surface: "#1c2333",
+  surface2: "#212836", border: "#2a3441", border2: "#1e2d3d",
+  ink: "#e6edf3", muted: "#7d8590", faint: "#3d4a5c",
+  accent: "#2ea043", accentLight: "#0d2818", accentGlow: "#2ea04360",
+  blue: "#388bfd", blueLight: "#0d1f3c",
+  orange: "#f0883e", orangeLight: "#2b1a0e",
+  red: "#f85149", redLight: "#2d0f0e",
+  yellow: "#e3b341", yellowLight: "#2b2008",
+  purple: "#a371f7", purpleLight: "#1e1240",
+};
+
+// ─── INITIAL DATA ─────────────────────────────────────────────────────────────
+const initPriceLists = [
+  { id: "lista_a", label: "Lista A · Minorista" },
+  { id: "lista_b", label: "Lista B · Mayorista" },
+  { id: "lista_c", label: "Lista C · Distribuidor" },
+];
+
+const initProducts = [
+  { id: "p1", name: "Pintura látex blanca 20L", sku: "PIN-001", stock: 45, minStock: 20, unit: "unidad", category: "Pinturas", cost: 12800, iva: 21, prices: { lista_a: 18500, lista_b: 15800, lista_c: 13500 }, clientOverrides: [{ clientId: "c2", customCode: "VIDAL-PLA20", price: 14200 }, { clientId: "c3", customCode: "DSM-P001", discount: 8 }] },
+  { id: "p2", name: "Cemento Portland 50kg", sku: "CEM-002", stock: 8, minStock: 15, unit: "bolsa", category: "Materiales", cost: 3400, iva: 10.5, prices: { lista_a: 4200, lista_b: 3600, lista_c: 3100 }, clientOverrides: [{ clientId: "c1", customCode: "DL-CEM50", discount: 5 }] },
+  { id: "p3", name: "Caño PVC 4\" x 3m", sku: "PVC-003", stock: 120, minStock: 30, unit: "unidad", category: "Plomería", cost: 2100, iva: 21, prices: { lista_a: 2800, lista_b: 2400, lista_c: 2100 }, clientOverrides: [] },
+  { id: "p4", name: "Cable eléctrico 2.5mm rollo", sku: "ELE-004", stock: 3, minStock: 10, unit: "rollo", category: "Electricidad", cost: 9200, iva: 21, prices: { lista_a: 12600, lista_b: 10800, lista_c: 9500 }, clientOverrides: [{ clientId: "c2", customCode: "VIDAL-CAB25", price: 9900 }] },
+  { id: "p5", name: "Tornillo autoperforante c/500", sku: "TOR-005", stock: 67, minStock: 25, unit: "caja", category: "Ferretería", cost: 1450, iva: 21, prices: { lista_a: 1850, lista_b: 1550, lista_c: 1300 }, clientOverrides: [] },
+];
+
+const initClients = [
+  { id: "c1", codigo: "FDL-001", name: "Ferretería Don Luis", cuit: "20-18234567-3", direccion: "Av. Corrientes 1234, CABA", email: "luis@ferreteria.com", phone: "11-4523-8901", priceList: "lista_b", lastPurchase: "2026-02-28", status: "activo", nextFollowUp: "2026-03-15" },
+  { id: "c2", codigo: "CV-002", name: "Constructora Vidal", cuit: "30-71882341-9", direccion: "Av. San Martín 4500, GBA Norte", email: "marta@vidal.com", phone: "11-3344-7722", priceList: "lista_c", lastPurchase: "2026-01-10", status: "en riesgo", nextFollowUp: "2026-03-12" },
+  { id: "c3", codigo: "DSM-003", name: "Depósito San Martín", cuit: "30-65412300-1", direccion: "Ruta 8 Km 42, GBA Oeste", email: "jorge@deposito.com", phone: "11-5566-1234", priceList: "lista_b", lastPurchase: "2026-03-01", status: "activo", nextFollowUp: "2026-03-20" },
+  { id: "c4", codigo: "TH-004", name: "TecnoHogar S.R.L.", cuit: "", direccion: "", email: "ana@tecnohog.com", phone: "11-2233-9988", priceList: "lista_a", lastPurchase: "2025-12-15", status: "inactivo", nextFollowUp: "2026-03-11" },
+];
+
+const initSuppliers = [
+  { id: "s1", name: "Pinturas del Sur S.A.", cuit: "30-71234567-8", contact: "Roberto Cano", email: "ventas@pinturasdelsur.com", phone: "11-4455-6677", paymentDays: 30, cbu: "0720123400000012345678", bank: "Santander", productCodes: [{ productId: "p1", supplierCode: "PDS-LAT20B", lastPrice: 12800 }, { productId: "p5", supplierCode: "PDS-TOR500", lastPrice: 1450 }] },
+  { id: "s2", name: "Materiales Norte S.R.L.", cuit: "30-68901234-5", contact: "Claudia Herrera", email: "compras@matnorte.com", phone: "11-3322-1100", paymentDays: 15, cbu: "0140234500000098765432", bank: "Nación", productCodes: [{ productId: "p2", supplierCode: "MN-CEM50", lastPrice: 3400 }, { productId: "p3", supplierCode: "MN-PVC4X3", lastPrice: 2100 }] },
+  { id: "s3", name: "ElectroDistribuidora S.R.L.", cuit: "30-55443322-1", contact: "Marcelo Vega", email: "info@electrodist.com", phone: "11-6677-8899", paymentDays: 0, cbu: "0170345600000011223344", bank: "BBVA", productCodes: [{ productId: "p4", supplierCode: "ED-CAB25R", lastPrice: 9200 }, { productId: "p2", supplierCode: "ED-CEM50K", lastPrice: 3650 }] },
+];
+
+const initSaleInvoices = [
+  // ── Existentes ──────────────────────────────────────────────────────────────
+  { id: "FAC-0001", type: "factura", clientId: "c1", clientName: "Ferretería Don Luis", date: "2026-03-08", due: "2026-03-23", total: 85000, status: "pendiente", lines: [{ productId: "p1", clientCode: "PIN-001", name: "Pintura látex blanca 20L", qty: 4, unitPrice: 18500, iva: 21, neto: 74000, ivaImporte: 15540, subtotal: 89540 }, { productId: "p5", clientCode: "TOR-005", name: "Tornillo autoperforante c/500", qty: 6, unitPrice: 1850, iva: 21, neto: 11100, ivaImporte: 2331, subtotal: 13431 }] },
+  { id: "FAC-0002", type: "factura", clientId: "c2", clientName: "Constructora Vidal", date: "2026-03-05", due: "2026-03-20", total: 340000, status: "pendiente", lines: [{ productId: "p1", clientCode: "VIDAL-PLA20", name: "Pintura látex blanca 20L", qty: 24, unitPrice: 14200, iva: 21, neto: 340800, ivaImporte: 71568, subtotal: 412368 }] },
+  { id: "FAC-0003", type: "factura", clientId: "c3", clientName: "Depósito San Martín", date: "2026-02-20", due: "2026-03-07", total: 47500, status: "cobrada", lines: [] },
+  { id: "PRE-0001", type: "presupuesto", clientId: "c4", clientName: "TecnoHogar S.R.L.", date: "2026-03-10", due: "2026-03-17", total: 63000, status: "pendiente", lines: [] },
+
+  // ── VENCIDAS (para probar Cobranzas — due anterior al 12/03) ────────────────
+  // Ferretería Don Luis — 2 facturas vencidas
+  { id: "FAC-0004", type: "factura", clientId: "c1", clientName: "Ferretería Don Luis", date: "2026-02-01", due: "2026-02-16", total: 124300, status: "pendiente", lines: [{ productId: "p1", clientCode: "PIN-001", name: "Pintura látex blanca 20L", qty: 6, unitPrice: 18500, iva: 21, neto: 111000, ivaImporte: 23310, subtotal: 134310 }, { productId: "p3", clientCode: "PVC-003", name: "Caño PVC 4\" x 3m", qty: 5, unitPrice: 2800, iva: 21, neto: 14000, ivaImporte: 2940, subtotal: 16940 }] },
+  { id: "FAC-0005", type: "factura", clientId: "c1", clientName: "Ferretería Don Luis", date: "2026-02-15", due: "2026-03-02", total: 55800, status: "pendiente", lines: [{ productId: "p4", clientCode: "ELE-004", name: "Cable eléctrico 2.5mm rollo", qty: 3, unitPrice: 12600, iva: 21, neto: 37800, ivaImporte: 7938, subtotal: 45738 }, { productId: "p5", clientCode: "TOR-005", name: "Tornillo autoperforante c/500", qty: 9, unitPrice: 1850, iva: 21, neto: 16650, ivaImporte: 3496, subtotal: 20146 }] },
+
+  // Constructora Vidal — 1 factura muy vencida
+  { id: "FAC-0006", type: "factura", clientId: "c2", clientName: "Constructora Vidal", date: "2026-01-10", due: "2026-01-25", total: 612000, status: "pendiente", lines: [{ productId: "p1", clientCode: "VIDAL-PLA20", name: "Pintura látex blanca 20L", qty: 36, unitPrice: 14200, iva: 21, neto: 511200, ivaImporte: 107352, subtotal: 618552 }, { productId: "p2", clientCode: "CEM-002", name: "Cemento Portland 50kg", qty: 30, unitPrice: 3600, iva: 10.5, neto: 108000, ivaImporte: 11340, subtotal: 119340 }] },
+  { id: "FAC-0007", type: "factura", clientId: "c2", clientName: "Constructora Vidal", date: "2026-02-03", due: "2026-02-18", total: 189500, status: "pendiente", lines: [{ productId: "p3", clientCode: "MN-PVC4X3", name: "Caño PVC 4\" x 3m", qty: 40, unitPrice: 2400, iva: 21, neto: 96000, ivaImporte: 20160, subtotal: 116160 }, { productId: "p4", clientCode: "VIDAL-CAB25", name: "Cable eléctrico 2.5mm rollo", qty: 10, unitPrice: 9900, iva: 21, neto: 99000, ivaImporte: 20790, subtotal: 119790 }] },
+
+  // Depósito San Martín — 1 factura vencida
+  { id: "FAC-0008", type: "factura", clientId: "c3", clientName: "Depósito San Martín", date: "2026-02-10", due: "2026-02-25", total: 93200, status: "pendiente", lines: [{ productId: "p2", clientCode: "DSM-CEM", name: "Cemento Portland 50kg", qty: 20, unitPrice: 3600, iva: 10.5, neto: 72000, ivaImporte: 7560, subtotal: 79560 }, { productId: "p1", clientCode: "DSM-P001", name: "Pintura látex blanca 20L", qty: 5, unitPrice: 17020, iva: 21, neto: 85100, ivaImporte: 17871, subtotal: 102971 }] },
+
+  // TecnoHogar — sin email, para mostrar el caso
+  { id: "FAC-0009", type: "factura", clientId: "c4", clientName: "TecnoHogar S.R.L.", date: "2026-01-20", due: "2026-02-04", total: 38700, status: "pendiente", lines: [{ productId: "p4", clientCode: "ELE-004", name: "Cable eléctrico 2.5mm rollo", qty: 2, unitPrice: 12600, iva: 21, neto: 25200, ivaImporte: 5292, subtotal: 30492 }, { productId: "p5", clientCode: "TOR-005", name: "Tornillo autoperforante c/500", qty: 5, unitPrice: 1850, iva: 21, neto: 9250, ivaImporte: 1942, subtotal: 11192 }] },
+
+  // ── Recientes cobradas (para métricas) ───────────────────────────────────────
+  { id: "FAC-0010", type: "factura", clientId: "c1", clientName: "Ferretería Don Luis", date: "2026-01-15", due: "2026-01-30", total: 74000, status: "cobrada", lines: [{ productId: "p1", clientCode: "PIN-001", name: "Pintura látex blanca 20L", qty: 4, unitPrice: 18500, iva: 21, neto: 74000, ivaImporte: 15540, subtotal: 89540 }] },
+  { id: "FAC-0011", type: "factura", clientId: "c3", clientName: "Depósito San Martín", date: "2026-01-22", due: "2026-02-06", total: 126000, status: "cobrada", lines: [{ productId: "p3", clientCode: "DSM-PVC", name: "Caño PVC 4\" x 3m", qty: 45, unitPrice: 2800, iva: 21, neto: 126000, ivaImporte: 26460, subtotal: 152460 }] },
+  { id: "FAC-0012", type: "factura", clientId: "c2", clientName: "Constructora Vidal", date: "2026-02-28", due: "2026-03-15", total: 284000, status: "cobrada", lines: [{ productId: "p1", clientCode: "VIDAL-PLA20", name: "Pintura látex blanca 20L", qty: 20, unitPrice: 14200, iva: 21, neto: 284000, ivaImporte: 59640, subtotal: 343640 }] },
+
+  // ── Remitos disponibles ───────────────────────────────────────────────────────
+  { id: "REM-0001", type: "remito", clientId: "c1", clientName: "Ferretería Don Luis", date: "2026-03-10", due: "2026-03-10", total: 37000, status: "emitido", lines: [{ productId: "p1", clientCode: "PIN-001", name: "Pintura látex blanca 20L", qty: 2, unitPrice: 18500, iva: 21, neto: 37000, ivaImporte: 7770, subtotal: 44770 }] },
+  { id: "REM-0002", type: "remito", clientId: "c1", clientName: "Ferretería Don Luis", date: "2026-03-14", due: "2026-03-14", total: 11100, status: "emitido", lines: [{ productId: "p5", clientCode: "TOR-005", name: "Tornillo autoperforante c/500", qty: 6, unitPrice: 1850, iva: 21, neto: 11100, ivaImporte: 2331, subtotal: 13431 }] },
+  { id: "REM-0003", type: "remito", clientId: "c3", clientName: "Depósito San Martín", date: "2026-03-12", due: "2026-03-12", total: 25200, status: "emitido", lines: [{ productId: "p4", clientCode: "CAB-001", name: "Cable eléctrico 2.5mm rollo", qty: 2, unitPrice: 12600, iva: 21, neto: 25200, ivaImporte: 5292, subtotal: 30492 }] },
+
+  // ── Presupuestos pendientes ────────────────────────────────────────────────────
+  { id: "PRE-0002", type: "presupuesto", clientId: "c2", clientName: "Constructora Vidal", date: "2026-03-15", due: "2026-03-30", total: 520000, status: "pendiente", lines: [{ productId: "p1", clientCode: "VIDAL-PLA20", name: "Pintura látex blanca 20L", qty: 36, unitPrice: 14200, iva: 21, neto: 511200, ivaImporte: 107352, subtotal: 618552 }] },
+  { id: "PRE-0003", type: "presupuesto", clientId: "c3", clientName: "Depósito San Martín", date: "2026-03-17", due: "2026-04-01", total: 84000, status: "pendiente", lines: [{ productId: "p3", clientCode: "DSM-PVC", name: "Caño PVC 4\" x 3m", qty: 30, unitPrice: 2800, iva: 21, neto: 84000, ivaImporte: 17640, subtotal: 101640 }] },
+];
+
+const initPurchaseInvoices = [
+  { id: "OC-0001", supplierId: "s1", supplierName: "Pinturas del Sur S.A.", date: "2026-02-15", dueDate: "2026-03-17", total: 192000, status: "pagada", lines: [{ productId: "p1", supplierCode: "PDS-LAT20B", name: "Pintura látex blanca 20L", qty: 15, unitPrice: 12800 }] },
+  { id: "OC-0002", supplierId: "s2", supplierName: "Materiales Norte S.R.L.", date: "2026-03-01", dueDate: "2026-03-16", total: 63000, status: "pendiente", lines: [{ productId: "p2", supplierCode: "MN-CEM50", name: "Cemento Portland 50kg", qty: 18, unitPrice: 3500 }] },
+];
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const fmt = (n) => `$${Number(n).toLocaleString("es-AR")}`;
+const today = "2026-03-11";
+
+function getClientPrice(product, clientId, clients) {
+  const client = clients.find(c => c.id === clientId);
+  const ov = product.clientOverrides.find(o => o.clientId === clientId);
+  let base = product.prices[client?.priceList || "lista_a"];
+  if (ov?.price != null) return { price: ov.price, source: "Precio fijo", code: ov.customCode || product.sku };
+  if (ov?.discount != null) return { price: Math.round(base * (1 - ov.discount / 100)), source: `Desc. ${ov.discount}%`, code: ov.customCode || product.sku };
+  return { price: base, source: initPriceLists.find(l => l.id === client?.priceList)?.label || "Lista A", code: product.sku };
+}
+
+function getClientCode(product, clientId) {
+  const ov = product.clientOverrides.find(o => o.clientId === clientId);
+  return ov?.customCode || product.sku;
+}
+
+// ─── UI ATOMS ─────────────────────────────────────────────────────────────────
+const Badge = ({ status }) => {
+  const m = {
+    activo: [T.accent, T.accentLight], cobrada: [T.accent, T.accentLight], pagada: [T.accent, T.accentLight], convertido: [T.accent, T.accentLight],
+    "en riesgo": [T.yellow, T.yellowLight], pendiente: [T.yellow, T.yellowLight],
+    inactivo: [T.red, T.redLight], vencida: [T.red, T.redLight],
+    presupuesto: [T.blue, T.blueLight], factura: [T.purple, T.purpleLight], remito: [T.orange, T.orangeLight],
+  };
+  const [color, bg] = m[status] || [T.muted, T.surface];
+  return <span style={{ background: bg, color, padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{status.charAt(0).toUpperCase() + status.slice(1)}</span>;
+};
+
+const Btn = ({ children, onClick, v = "primary", sm, disabled, full }) => {
+  const s = {
+    primary: { bg: T.accent, color: "#fff", border: `1px solid ${T.accent}` },
+    ghost: { bg: "transparent", color: T.ink, border: `1px solid ${T.border}` },
+    blue: { bg: T.blueLight, color: T.blue, border: `1px solid #1a3a6a` },
+    orange: { bg: T.orangeLight, color: T.orange, border: `1px solid #5a2e0e` },
+    danger: { bg: T.redLight, color: T.red, border: `1px solid #5a1a1a` },
+  }[v];
+  return <button onClick={onClick} disabled={disabled} style={{ background: s.bg, color: s.color, border: s.border, borderRadius: 8, padding: sm ? "5px 12px" : "9px 18px", fontWeight: 700, fontSize: sm ? 11 : 13, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, fontFamily: "inherit", width: full ? "100%" : "auto" }}>{children}</button>;
+};
+
+function Input({ label, value, onChange, placeholder, mono, type = "text", small }) {
+  return (
+    <div>
+      {label && <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>{label}</label>}
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: "100%", padding: small ? "7px 10px" : "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: small ? 12 : 13, fontFamily: mono ? "monospace" : "inherit", outline: "none" }} />
+    </div>
+  );
+}
+
+function Select({ label, value, onChange, options }) {
+  return (
+    <div>
+      {label && <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>{label}</label>}
+      <select value={value} onChange={e => onChange(e.target.value)}
+        style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children, wide, xl }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#00000080", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 16, width: xl ? 960 : wide ? 760 : 540, maxHeight: "92vh", overflowY: "auto", boxShadow: "0 32px 80px #000000a0" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 26px", borderBottom: `1px solid ${T.border}`, position: "sticky", top: 0, background: T.paper, zIndex: 1 }}>
+          <span style={{ fontWeight: 800, fontSize: 16, color: T.ink }}>{title}</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: T.muted }}>×</button>
+        </div>
+        <div style={{ padding: 26 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── DOCUMENT BUILDER (Factura / Presupuesto / Remito) ────────────────────────
+function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload, onSave, onClose }) {
+  const isPresupuesto = type === "presupuesto";
+  const [origin, setOrigin] = useState(preload ? "scratch" : (isPresupuesto ? "scratch" : null));
+  const [selectedPresupuestoId, setSelectedPresupuestoId] = useState("");
+  const [selectedRemitoIds, setSelectedRemitoIds] = useState([]);
+  const [remitoClientFilter, setRemitoClientFilter] = useState("");
+
+  // Step 2: doc data
+  const [clientId, setClientId] = useState(preload?.clientId || "");
+  const [docType] = useState(type || "factura");
+  const [lines, setLines] = useState(preload?.lines || []);
+  const [codeInput, setCodeInput] = useState("");
+  const [qtyInput, setQtyInput] = useState(1);
+  const [priceInput, setPriceInput] = useState("");
+  const [codeError, setCodeError] = useState("");
+  const [done, setDone] = useState(false);
+  const [moneda, setMoneda] = useState(preload?.moneda || "ARS");
+  const [selectedPriceList, setSelectedPriceList] = useState("");
+
+  const client = clients.find(c => c.id === clientId);
+  const presupuestos = saleInvoices.filter(i => i.type === "presupuesto" && i.status === "pendiente" && i.lines?.length > 0);
+  const remitos = saleInvoices.filter(i => i.type === "remito" && i.status !== "facturado" && i.lines?.length > 0);
+
+  const loadPresupuesto = (id) => {
+    const pre = saleInvoices.find(i => i.id === id);
+    if (!pre) return;
+    setSelectedPresupuestoId(id);
+    setClientId(pre.clientId);
+    setLines(pre.lines.map(l => ({ ...l })));
+    setPriceInput("");
+  };
+
+  const toggleRemito = (id) => {
+    const rem = saleInvoices.find(i => i.id === id);
+    if (!rem) return;
+    setSelectedRemitoIds(prev => {
+      if (prev.includes(id)) return prev.filter(r => r !== id);
+      // Cuando es el primero, fija el cliente
+      if (prev.length === 0) setRemitoClientFilter(rem.clientId);
+      return [...prev, id];
+    });
+  };
+
+  const loadRemitos = () => {
+    const selected = saleInvoices.filter(i => selectedRemitoIds.includes(i.id));
+    if (selected.length === 0) return;
+    const firstClientId = selected[0].clientId;
+    setClientId(firstClientId);
+    // Combinar líneas de todos los remitos, agrupando por productId
+    const combined = [];
+    selected.forEach(rem => {
+      (rem.lines || []).forEach(l => {
+        const existing = combined.findIndex(x => x.productId === l.productId && x.unitPrice === l.unitPrice);
+        if (existing >= 0) {
+          const e = combined[existing];
+          const qty = e.qty + l.qty;
+          const neto = qty * e.unitPrice;
+          const ivaImporte = Math.round(neto * e.iva) / 100;
+          combined[existing] = { ...e, qty, neto, ivaImporte, subtotal: neto + ivaImporte };
+        } else {
+          combined.push({ ...l, isManualPrice: false });
+        }
+      });
+    });
+    setLines(combined);
+    // Guardar los ids de remitos origen para marcarlos como facturados al guardar
+    setSelectedPresupuestoId(""); // no viene de presupuesto
+    setPriceInput("");
+    setOrigin("remito_loaded");
+  };
+
+  const findProduct = (code) => {
+    const n = code.trim().toUpperCase();
+    for (const p of products) {
+      if (p.sku.toUpperCase() === n) return p;
+      const ov = p.clientOverrides.find(o => o.clientId === clientId && o.customCode?.toUpperCase() === n);
+      if (ov) return p;
+    }
+    return null;
+  };
+
+  // Resuelve precio según lista, moneda y tipo de cambio
+  // Acepta moneda como parámetro para poder usarla antes de que se actualice el estado
+  const getPriceForLine = (prod, overrideMoneda) => {
+    if (!prod) return { price: 0, source: "", code: "" };
+    const m = overrideMoneda !== undefined ? overrideMoneda : moneda;
+    const ov = prod.clientOverrides?.find(o => o.clientId === clientId);
+    if (ov?.price != null) return { price: ov.price, source: "Precio fijo cliente", code: ov.customCode || prod.sku };
+    const listId = selectedPriceList || client?.priceList || "lista_a";
+    const listLabel = initPriceLists.find(l => l.id === listId)?.label || listId;
+    const code = ov?.customCode || prod.sku;
+    if (ov?.discount != null) {
+      const base = prod.prices[listId] || 0;
+      const discounted = Math.round(base * (1 - ov.discount / 100));
+      if (m === "USD") {
+        const usdBase = prod.pricesUsd?.[listId];
+        const usdPrice = usdBase > 0 ? Math.round(usdBase * (1 - ov.discount / 100) * 100) / 100 : Math.round(discounted / tipoCambio * 100) / 100;
+        return { price: usdPrice, source: "Desc. " + ov.discount + "% · USD", code };
+      }
+      return { price: discounted, source: "Desc. " + ov.discount + "%", code };
+    }
+    if (m === "USD") {
+      const usdPrice = prod.pricesUsd?.[listId];
+      if (usdPrice > 0) return { price: usdPrice, source: listLabel + " · USD", code };
+      const arsPrice = prod.prices[listId] || 0;
+      const converted = Math.round(arsPrice / tipoCambio * 100) / 100;
+      return { price: converted, source: listLabel + " · conv. TC " + fmt(tipoCambio), code };
+    }
+    return { price: prod.prices[listId] || 0, source: listLabel, code };
+  };
+
+  // When code changes, auto-fill price input with list price
+  const handleCodeChange = (v) => {
+    setCodeInput(v);
+    setCodeError("");
+    const prod = findProduct(v);
+    if (prod && clientId) {
+      const { price } = getPriceForLine(prod);
+      setPriceInput(String(price));
+    } else {
+      setPriceInput("");
+    }
+  };
+
+  const addLine = () => {
+    if (!clientId) { setCodeError("Seleccioná un cliente primero."); return; }
+    const prod = findProduct(codeInput);
+    if (!prod) { setCodeError(`Código "${codeInput}" no encontrado.`); return; }
+    if (docType === "factura" && prod.stock < qtyInput + (lines.find(l => l.productId === prod.id)?.qty || 0)) {
+      setCodeError(`Stock insuficiente (${prod.stock} disponibles).`); return;
+    }
+    setCodeError("");
+    const { price: listPrice, source, code } = getPriceForLine(prod);
+    const unitPrice = parseFloat(priceInput) || listPrice;
+    const isManualPrice = !!(priceInput && parseFloat(priceInput) !== listPrice);
+    const iva = prod.iva ?? 21;
+    const existing = lines.findIndex(l => l.productId === prod.id);
+    if (existing >= 0) {
+      setLines(lines.map((l, i) => i === existing ? { ...l, qty: l.qty + qtyInput, neto: (l.qty + qtyInput) * l.unitPrice, ivaImporte: Math.round((l.qty + qtyInput) * l.unitPrice * iva) / 100, subtotal: Math.round((l.qty + qtyInput) * l.unitPrice * (1 + iva / 100)) } : l));
+    } else {
+      const neto = qtyInput * unitPrice;
+      const ivaImporte = Math.round(neto * iva) / 100;
+      setLines([...lines, { productId: prod.id, clientCode: code, name: prod.name, sku: prod.sku, qty: qtyInput, unitPrice, listPrice, isManualPrice, source, unit: prod.unit, iva, neto, ivaImporte, subtotal: neto + ivaImporte }]);
+    }
+    setCodeInput(""); setQtyInput(1); setPriceInput("");
+  };
+
+  const updateLineQty = (i, qty) => {
+    setLines(lines.map((l, j) => {
+      if (j !== i) return l;
+      const neto = qty * l.unitPrice;
+      const ivaImporte = Math.round(neto * l.iva) / 100;
+      return { ...l, qty, neto, ivaImporte, subtotal: neto + ivaImporte };
+    }));
+  };
+
+  const updateLinePrice = (i, newPrice) => {
+    setLines(lines.map((l, j) => {
+      if (j !== i) return l;
+      const unitPrice = parseFloat(newPrice) || l.unitPrice;
+      const isManualPrice = unitPrice !== l.listPrice;
+      const neto = l.qty * unitPrice;
+      const ivaImporte = Math.round(neto * l.iva) / 100;
+      return { ...l, unitPrice, isManualPrice, neto, ivaImporte, subtotal: neto + ivaImporte };
+    }));
+  };
+
+  const [modificaStock, setModificaStock] = useState(preload?.modificaStock || false);
+  const [imprimirPDF, setImprimirPDF] = useState(true);
+  const [observaciones, setObservaciones] = useState(preload?.observaciones || "");
+  const [stockAlert, setStockAlert] = useState(null);
+
+  const currSymbol = moneda === "USD" ? "US$" : "$";
+  const fmtM = (v) => `${currSymbol} ${Number(v || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const handleMonedaChange = (m) => {
+    setMoneda(m);
+    setPriceInput("");
+    if (lines.length > 0) {
+      setLines(prev => prev.map(l => {
+        const iva = l.iva ?? 21;
+        if (l.isManualPrice) {
+          // Precio manual: mantener el monto, solo recalcular neto/IVA/subtotal
+          const neto = l.qty * l.unitPrice;
+          const ivaImporte = Math.round(neto * iva) / 100;
+          return { ...l, neto, ivaImporte, subtotal: neto + ivaImporte };
+        }
+        // Precio de lista: recalcular con la nueva moneda
+        const prod = products.find(p => p.id === l.productId);
+        if (!prod) return l;
+        const { price: newPrice, source } = getPriceForLine(prod, m);
+        const neto = l.qty * newPrice;
+        const ivaImporte = Math.round(neto * iva) / 100;
+        return { ...l, unitPrice: newPrice, listPrice: newPrice, source, neto, ivaImporte, subtotal: neto + ivaImporte };
+      }));
+    }
+    if (codeInput) {
+      const prod = findProduct(codeInput);
+      if (prod && clientId) {
+        const { price } = getPriceForLine(prod, m);
+        setPriceInput(String(price));
+      }
+    }
+    if (m === "USD") {
+      setObservaciones(prev => {
+        const leyenda = "Moneda cotizada: Dólar estadounidense.";
+        if (prev.includes(leyenda)) return prev;
+        return prev ? prev + "\n" + leyenda : leyenda;
+      });
+    } else {
+      setObservaciones(prev => prev.replace(/\n?Moneda cotizada: Dólar estadounidense\.?/g, "").trim());
+    }
+  };
+
+  const totalNeto = lines.reduce((s, l) => s + l.neto, 0);
+  const totalIva = lines.reduce((s, l) => s + l.ivaImporte, 0);
+  const total = totalNeto + totalIva;
+
+  const generarPDF = (docId) => {
+    const win = window.open("", "_blank");
+    const cli = clients.find(c => c.id === clientId);
+    const docLabel2 = { factura: "FACTURA", presupuesto: "PRESUPUESTO", remito: "REMITO" }[docType];
+    win.document.write(`
+      <html><head><title>${docLabel2} ${docId}</title>
+      <style>
+        body { font-family: 'Segoe UI', sans-serif; color: #1a1a2e; padding: 40px; max-width: 800px; margin: 0 auto; }
+        h1 { font-size: 28px; font-weight: 900; margin: 0; color: #2ea043; }
+        .sub { color: #888; font-size: 13px; margin-bottom: 24px; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 32px; }
+        .block { font-size: 13px; line-height: 1.8; }
+        .block strong { display: block; font-size: 11px; color: #888; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+        th { background: #f0f4f8; padding: 10px 12px; text-align: left; font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 0.8px; }
+        td { padding: 11px 12px; border-bottom: 1px solid #e8ecf0; font-size: 13px; }
+        .total-box { float: right; width: 260px; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; }
+        .total-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #555; }
+        .total-final { display: flex; justify-content: space-between; font-size: 18px; font-weight: 800; border-top: 2px solid #2ea043; padding-top: 10px; margin-top: 8px; color: #2ea043; }
+        .footer { clear: both; margin-top: 60px; font-size: 11px; color: #aaa; text-align: center; border-top: 1px solid #eee; padding-top: 16px; }
+      </style></head><body>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px">
+        <div><h1>NexoPyME</h1><div class="sub">${docLabel2} N° ${docId}</div></div>
+        <div style="text-align:right;font-size:13px;color:#555">
+          <div><strong>Fecha:</strong> ${today}</div>
+          ${moneda === "USD" ? `<div style="margin-top:6px;display:inline-block;background:#1a3a5c;color:#60a5fa;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:0.5px">🇺🇸 USD</div>` : ""}
+        </div>
+      </div>
+      <div class="row">
+        <div class="block"><strong>Cliente</strong>${cli?.name || clientId}${cli?.cuit ? `<br>CUIT: ${cli.cuit}` : ""}${cli?.direccion ? `<br>${cli.direccion}` : ""}${cli?.email ? `<br>${cli.email}` : ""}</div>
+        <div class="block" style="text-align:right"><strong>Código cliente</strong>${cli?.codigo || "—"}</div>
+      </div>
+      <table>
+        <thead><tr><th>Código</th><th>Producto</th><th>Cant.</th><th>P. Unit. s/IVA</th><th>IVA</th><th>Subtotal</th></tr></thead>
+        <tbody>${lines.map(l => `<tr><td style="font-family:monospace;font-weight:700">${l.clientCode}</td><td>${l.name}</td><td>${l.qty} ${l.unit}</td><td>${currSymbol} ${Number(l.unitPrice).toLocaleString("es-AR")}</td><td style="color:#888">IVA ${l.iva}% · ${currSymbol} ${Number(l.ivaImporte).toLocaleString("es-AR")}</td><td style="font-weight:700">${currSymbol} ${Number(l.subtotal).toLocaleString("es-AR")}</td></tr>`).join("")}</tbody>
+      </table>
+      <div class="total-box">
+        <div class="total-row"><span>Subtotal s/IVA</span><span>${currSymbol} ${Number(totalNeto).toLocaleString("es-AR")}</span></div>
+        ${Object.entries(lines.reduce((acc, l) => { const k = l.iva; acc[k] = (acc[k] || 0) + l.ivaImporte; return acc; }, {})).map(([r, v]) => `<div class="total-row"><span>IVA ${r}%</span><span>${currSymbol} ${Number(v).toLocaleString("es-AR")}</span></div>`).join("")}
+        <div class="total-final"><span>TOTAL</span><span>${currSymbol} ${Number(total).toLocaleString("es-AR")}</span></div>
+      </div>
+      ${observaciones ? `<div style="clear:both;margin-top:32px;border:1px solid #e0e0e0;border-radius:8px;padding:16px"><div style="font-size:11px;color:#888;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Observaciones</div><div style="font-size:13px;color:#333;line-height:1.7;white-space:pre-wrap">${observaciones}</div></div>` : ""}
+      <div class="footer">Documento generado por NexoPyME · ${today}</div>
+      <script>window.onload = () => { window.print(); }<\/script>
+      </body></html>
+    `);
+    win.document.close();
+  };
+
+  const doSave = () => {
+    onSave({ lines, total, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda });
+    setDone(true);
+  };
+
+  const confirm = () => {
+    // Check for items that would go negative (only when stock is actually modified)
+    const willModifyStock = docType === "factura" || docType === "remito" || (docType === "presupuesto" && modificaStock);
+    if (willModifyStock) {
+      const negativeItems = lines
+        .map(l => {
+          const prod = products.find(p => p.id === l.productId);
+          if (!prod || prod.tracksStock === false) return null;
+          const resulting = prod.stock - l.qty;
+          return resulting < 0 ? { name: l.name, current: prod.stock, qty: l.qty, resulting } : null;
+        })
+        .filter(Boolean);
+      if (negativeItems.length > 0) {
+        setStockAlert({ items: negativeItems });
+        return;
+      }
+    }
+    doSave();
+  };
+
+  // ── DONE SCREEN ──
+  if (done) return (
+    <Modal title="Documento generado" onClose={onClose}>
+      <div style={{ textAlign: "center", padding: "20px 0" }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>✓</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: T.accent, marginBottom: 8 }}>
+          {docType.charAt(0).toUpperCase() + docType.slice(1)} creada exitosamente
+        </div>
+        {docType === "factura" && <p style={{ color: T.muted, fontSize: 13, marginBottom: 20 }}>Stock descontado automáticamente.</p>}
+        {docType === "presupuesto" && <p style={{ color: T.muted, fontSize: 13, marginBottom: 20 }}>Podés convertirlo en factura o remito cuando el cliente acepte.</p>}
+        {docType === "remito" && <p style={{ color: T.muted, fontSize: 13, marginBottom: 20 }}>Remito emitido correctamente.</p>}
+        <Btn onClick={onClose}>Cerrar</Btn>
+      </div>
+    </Modal>
+  );
+
+  // ── ORIGIN CHOOSER (only for factura) ──
+  if (!isPresupuesto && origin === null) {
+    const docLabel = docType === "factura" ? "Factura" : "Remito";
+    const remitosCount = remitos.length;
+    return (
+      <Modal title={"Nueva " + docLabel} onClose={onClose}>
+        <div style={{ marginBottom: 20, color: T.muted, fontSize: 13 }}>
+          ¿Cómo querés generar esta {docLabel.toLowerCase()}?
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: docType === "factura" ? "1fr 1fr 1fr" : "1fr 1fr", gap: 14, marginBottom: 24 }}>
+          {/* Desde presupuesto */}
+          <button onClick={() => setOrigin("presupuesto")}
+            style={{ background: T.blueLight, border: "2px solid " + T.blue + "40", borderRadius: 14, padding: "22px 18px", cursor: "pointer", textAlign: "left" }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = T.blue}
+            onMouseLeave={e => e.currentTarget.style.borderColor = T.blue + "40"}>
+            <div style={{ fontSize: 26, marginBottom: 10 }}>📋</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.blue, marginBottom: 4 }}>Desde presupuesto</div>
+            <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.5 }}>Convertí un presupuesto aprobado en {docLabel.toLowerCase()}.</div>
+            <div style={{ marginTop: 8, fontSize: 11, color: presupuestos.length > 0 ? T.blue : T.muted, fontWeight: 700 }}>
+              {presupuestos.length > 0 ? presupuestos.length + " disponible(s)" : "Sin presupuestos pendientes"}
+            </div>
+          </button>
+
+          {/* Desde remito(s) — solo para facturas */}
+          {docType === "factura" && (
+            <button onClick={() => setOrigin("remito")}
+              style={{ background: T.orangeLight, border: "2px solid " + T.orange + "40", borderRadius: 14, padding: "22px 18px", cursor: "pointer", textAlign: "left" }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = T.orange}
+              onMouseLeave={e => e.currentTarget.style.borderColor = T.orange + "40"}>
+              <div style={{ fontSize: 26, marginBottom: 10 }}>📦</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: T.orange, marginBottom: 4 }}>Desde remito(s)</div>
+              <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.5 }}>Facturá uno o varios remitos del mismo cliente en una sola factura.</div>
+              <div style={{ marginTop: 8, fontSize: 11, color: remitosCount > 0 ? T.orange : T.muted, fontWeight: 700 }}>
+                {remitosCount > 0 ? remitosCount + " remito(s) disponible(s)" : "Sin remitos pendientes"}
+              </div>
+            </button>
+          )}
+
+          {/* Desde cero */}
+          <button onClick={() => setOrigin("scratch")}
+            style={{ background: T.surface, border: "2px solid " + T.border, borderRadius: 14, padding: "22px 18px", cursor: "pointer", textAlign: "left" }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = T.accent}
+            onMouseLeave={e => e.currentTarget.style.borderColor = T.border}>
+            <div style={{ fontSize: 26, marginBottom: 10 }}>✏️</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 4 }}>Desde cero</div>
+            <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.5 }}>Creá la {docLabel.toLowerCase()} manualmente eligiendo los productos.</div>
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ── REMITO SELECTOR ──
+  if (origin === "remito" && docType === "factura") {
+    const clientsWithRemitos = [...new Set(remitos.map(r => r.clientId))];
+    const filteredRemitos = remitoClientFilter
+      ? remitos.filter(r => r.clientId === remitoClientFilter)
+      : remitos;
+    const allSameClient = selectedRemitoIds.length === 0 || remitos.filter(r => selectedRemitoIds.includes(r.id)).every(r => r.clientId === remitos.find(x => x.id === selectedRemitoIds[0])?.clientId);
+
+    return (
+      <Modal title="Seleccionar remito(s) a facturar" onClose={onClose} wide>
+        <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>
+          Seleccioná uno o más remitos del mismo cliente. Sus líneas se combinarán en una sola factura.
+        </div>
+
+        {/* Filtro por cliente */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>FILTRAR POR CLIENTE</label>
+          <select value={remitoClientFilter} onChange={e => { setRemitoClientFilter(e.target.value); setSelectedRemitoIds([]); }}
+            style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid " + T.border, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+            <option value="">Todos los clientes</option>
+            {clientsWithRemitos.map(cid => {
+              const c = clients.find(x => x.id === cid);
+              return <option key={cid} value={cid}>{c?.name || cid}</option>;
+            })}
+          </select>
+        </div>
+
+        {filteredRemitos.length === 0 ? (
+          <div style={{ padding: 32, textAlign: "center", color: T.muted, background: T.surface, borderRadius: 12, border: "1px dashed " + T.border }}>
+            No hay remitos disponibles{remitoClientFilter ? " para este cliente" : ""}.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 8, marginBottom: 20, maxHeight: 380, overflowY: "auto" }}>
+            {filteredRemitos.map(rem => {
+              const isSelected = selectedRemitoIds.includes(rem.id);
+              const cli = clients.find(c => c.id === rem.clientId);
+              // Deshabilitar si hay selección de otro cliente
+              const firstSelected = selectedRemitoIds.length > 0 ? remitos.find(r => r.id === selectedRemitoIds[0]) : null;
+              const disabled = firstSelected && rem.clientId !== firstSelected.clientId;
+              return (
+                <div key={rem.id} onClick={() => !disabled && toggleRemito(rem.id)}
+                  style={{ background: isSelected ? T.orangeLight : T.surface, border: "2px solid " + (isSelected ? T.orange : disabled ? T.faint : T.border), borderRadius: 10, padding: "14px 18px", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 18, height: 18, borderRadius: 4, border: "2px solid " + (isSelected ? T.orange : T.border), background: isSelected ? T.orange : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      {isSelected && <span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>✓</span>}
+                    </div>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{rem.id}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{rem.clientName}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>Emitido: {rem.date} · {rem.lines.length} ítem(s)</div>
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                        {rem.lines.slice(0, 4).map((l, i) => (
+                          <span key={i} style={{ background: T.surface2, color: T.muted, padding: "1px 7px", borderRadius: 5, fontSize: 10 }}>{l.clientCode} × {l.qty}</span>
+                        ))}
+                        {rem.lines.length > 4 && <span style={{ fontSize: 10, color: T.muted }}>+{rem.lines.length - 4} más</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 16 }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: isSelected ? T.orange : T.ink }}>{fmt(rem.total)}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {selectedRemitoIds.length > 0 && (
+          <div style={{ background: T.orangeLight, border: "1px solid " + T.orange + "40", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: T.orange, fontWeight: 600 }}>
+            {selectedRemitoIds.length} remito(s) seleccionado(s) · {remitos.filter(r => selectedRemitoIds.includes(r.id)).reduce((s, r) => s + r.total, 0).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button onClick={() => setOrigin(null)} style={{ background: "none", border: "none", color: T.muted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Volver</button>
+          <Btn disabled={selectedRemitoIds.length === 0} onClick={loadRemitos}>
+            Cargar {selectedRemitoIds.length > 0 ? selectedRemitoIds.length + " remito(s)" : ""} →
+          </Btn>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ── PRESUPUESTO SELECTOR ──
+  if (origin === "presupuesto" && !selectedPresupuestoId) {
+    return (
+      <Modal title={`Seleccionar presupuesto`} onClose={onClose} wide>
+        <div style={{ marginBottom: 16, color: T.muted, fontSize: 13 }}>
+          Presupuestos pendientes disponibles para convertir en {docType === "factura" ? "factura" : "remito"}:
+        </div>
+        {presupuestos.length === 0 ? (
+          <div style={{ padding: 32, textAlign: "center", color: T.muted, background: T.surface, borderRadius: 12, border: `1px dashed ${T.border}` }}>
+            No hay presupuestos pendientes con ítems cargados.
+            <div style={{ marginTop: 14 }}><Btn v="ghost" onClick={() => setOrigin("scratch")}>Crear desde cero</Btn></div>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "grid", gap: 10, marginBottom: 20 }}>
+              {presupuestos.map(pre => {
+                const cli = clients.find(c => c.id === pre.clientId);
+                return (
+                  <div key={pre.id}
+                    onClick={() => loadPresupuesto(pre.id)}
+                    style={{ background: T.surface, border: `2px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", cursor: "pointer", transition: "all 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = T.blue; e.currentTarget.style.background = T.blueLight; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.surface; }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                          <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{pre.id}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{pre.clientName}</span>
+                          {cli?.codigo && <span style={{ fontSize: 11, color: T.muted, fontFamily: "monospace" }}>{cli.codigo}</span>}
+                        </div>
+                        <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>
+                          Emitido: {pre.date} · Vence: {pre.due}
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {pre.lines.map((l, i) => (
+                            <span key={i} style={{ background: T.surface2, color: T.muted, padding: "2px 8px", borderRadius: 6, fontSize: 11 }}>
+                              {l.clientCode} × {l.qty}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 16 }}>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: T.accent }}>{fmt(pre.total)}</div>
+                        <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{pre.lines.length} ítem(s)</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <button onClick={() => setOrigin("scratch")} style={{ background: "none", border: "none", color: T.muted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                ← Crear desde cero
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
+    );
+  }
+
+  // ── MAIN DOC FORM ──
+  const docLabel = { factura: "Factura", presupuesto: "Presupuesto", remito: "Remito" }[docType];
+  const fromPre = !!selectedPresupuestoId;
+  const fromRemitos = selectedRemitoIds.length > 0;
+  const sourcePre = fromPre ? saleInvoices.find(i => i.id === selectedPresupuestoId) : null;
+  const sourceRemitos = fromRemitos ? saleInvoices.filter(i => selectedRemitoIds.includes(i.id)) : [];
+
+  const modalTitle = fromPre ? docLabel + " desde " + selectedPresupuestoId
+    : fromRemitos ? "Factura desde " + selectedRemitoIds.length + " remito(s)"
+    : "Nuevo/a " + docLabel;
+
+  return (
+    <Modal title={modalTitle} onClose={onClose} xl>
+
+      {/* ── STOCK ALERT MODAL ── */}
+      {stockAlert && (
+        <div style={{ position: "fixed", inset: 0, background: "#000000a0", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: T.paper, border: `2px solid ${T.orange}60`, borderRadius: 16, width: 480, boxShadow: "0 32px 80px #000000c0", padding: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+              <span style={{ fontSize: 32 }}>⚠️</span>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: T.orange }}>Stock insuficiente</div>
+                <div style={{ fontSize: 13, color: T.muted, marginTop: 2 }}>Los siguientes ítems quedarían con stock negativo</div>
+              </div>
+            </div>
+            <div style={{ background: T.surface, borderRadius: 10, marginBottom: 20, overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: T.surface2 }}>
+                    {["Producto", "Stock actual", "Cantidad", "Resultado"].map(h => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockAlert.items.map((item, i) => (
+                    <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+                      <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600 }}>{item.name}</td>
+                      <td style={{ padding: "10px 12px", fontSize: 13, color: T.muted }}>{item.current}</td>
+                      <td style={{ padding: "10px 12px", fontSize: 13, color: T.muted }}>−{item.qty}</td>
+                      <td style={{ padding: "10px 12px", fontSize: 14, fontWeight: 800, color: T.red }}>{item.resulting}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 13, color: T.muted, marginBottom: 20, lineHeight: 1.6 }}>
+              Podés igualmente emitir el documento. El stock quedará en negativo y podrás ajustarlo desde Inventario.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <Btn v="ghost" onClick={() => setStockAlert(null)}>Cancelar</Btn>
+              <button onClick={() => { setStockAlert(null); doSave(); }}
+                style={{ padding: "10px 22px", borderRadius: 8, border: `1px solid ${T.orange}`, background: T.orangeLight, color: T.orange, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                Emitir igualmente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Origin banner — presupuesto */}
+      {fromPre && (
+        <div style={{ background: T.blueLight, border: `1px solid ${T.blue}40`, borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 13, color: T.blue }}>
+            <strong>Presupuesto base:</strong> {selectedPresupuestoId} · {sourcePre?.clientName} · {fmt(sourcePre?.total)}
+          </div>
+          <div style={{ fontSize: 12, color: T.muted }}>Podés modificar ítems antes de confirmar</div>
+        </div>
+      )}
+
+      {/* Origin banner — remitos */}
+      {fromRemitos && (
+        <div style={{ background: T.orangeLight, border: `1px solid ${T.orange}40`, borderRadius: 10, padding: "12px 16px", marginBottom: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.orange, marginBottom: 6 }}>REMITOS INCLUIDOS EN ESTA FACTURA</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {sourceRemitos.map(r => (
+              <span key={r.id} style={{ fontFamily: "monospace", fontSize: 11, background: T.surface2, color: T.orange, padding: "2px 10px", borderRadius: 6, fontWeight: 700 }}>
+                {r.id} · {fmt(r.total)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Client selector — locked if from presupuesto */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.5fr auto auto 1fr", gap: 14, marginBottom: 20, alignItems: "end" }}>
+        <div>
+          <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>CLIENTE</label>
+          {fromPre ? (
+            <div style={{ padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, fontSize: 13, color: T.ink, fontWeight: 600, display: "flex", justifyContent: "space-between" }}>
+              <span>{client?.name}</span>
+              {client?.codigo && <span style={{ fontFamily: "monospace", fontSize: 11, color: T.muted }}>{client.codigo}</span>}
+            </div>
+          ) : (
+            <select value={clientId} onChange={v => { setClientId(v.target.value); setLines([]); setSelectedPriceList(""); }}
+              style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+              <option value="">Seleccionar cliente...</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}{c.codigo ? ` (${c.codigo})` : ""}</option>)}
+            </select>
+          )}
+        </div>
+
+        {/* Lista de precios */}
+        <div>
+          <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>LISTA DE PRECIOS</label>
+          <select value={selectedPriceList} onChange={e => { setSelectedPriceList(e.target.value); setLines([]); setPriceInput(""); }}
+            style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${selectedPriceList ? T.accent : T.border}`, background: selectedPriceList ? T.accentLight : T.surface, color: selectedPriceList ? T.accent : T.muted, fontSize: 13, fontFamily: "inherit", outline: "none", fontWeight: selectedPriceList ? 700 : 400 }}>
+            <option value="">Predeterminada del cliente</option>
+            {initPriceLists.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
+          </select>
+        </div>
+
+        {/* Moneda selector */}
+        <div>
+          <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>MONEDA</label>
+          <div style={{ display: "flex", borderRadius: 8, border: `1px solid ${T.border}`, overflow: "hidden" }}>
+            {[["ARS", "$ ARS"], ["USD", "🇺🇸 USD"]].map(([val, label]) => (
+              <button key={val} onClick={() => handleMonedaChange(val)}
+                style={{ flex: 1, padding: "10px 14px", border: "none", background: moneda === val ? (val === "USD" ? T.blueLight : T.accentLight) : T.surface, color: moneda === val ? (val === "USD" ? T.blue : T.accent) : T.muted, fontWeight: moneda === val ? 800 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "background 0.15s" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+          {client && <div style={{ fontSize: 12, color: T.muted, padding: "4px 0" }}>
+            {[client.cuit && "CUIT: " + client.cuit, client.direccion].filter(Boolean).join(" · ")}
+          </div>}
+          {selectedPriceList && client && (
+            <div style={{ fontSize: 11, color: T.accent }}>
+              Lista seleccionada — ignorando predeterminada del cliente
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Add product line */}
+      {clientId && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 18, marginBottom: 20 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>
+            {fromPre ? "MODIFICAR / AGREGAR PRODUCTOS" : "AGREGAR PRODUCTO"}
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <div style={{ flex: 2 }}>
+              <Input label="CÓDIGO (interno o del cliente)" value={codeInput} onChange={handleCodeChange} placeholder="ej: VIDAL-PLA20 o PIN-001" mono />
+            </div>
+            <div style={{ flex: 0.6 }}>
+              <Input label="CANTIDAD" type="number" value={qtyInput} onChange={v => setQtyInput(parseInt(v) || 1)} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>PRECIO UNIT. S/IVA</label>
+                <div style={{ position: "relative" }}>
+                  {(() => {
+                    const p = findProduct(codeInput);
+                    const placeholder = (p && clientId) ? String(getPriceForLine(p).price) : "0.00";
+                    return (
+                      <input type="number" value={priceInput} onChange={e => setPriceInput(e.target.value)}
+                        placeholder={placeholder}
+                        style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: "1px solid " + (priceInput && p && clientId && parseFloat(priceInput) !== getPriceForLine(p).price ? T.yellow : T.border), background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                    );
+                  })()}
+                </div>
+                {(() => {
+                  const p = findProduct(codeInput);
+                  if (!p || !clientId) return null;
+                  const { price, source } = getPriceForLine(p);
+                  const custom = priceInput && parseFloat(priceInput) !== price;
+                  return <div style={{ fontSize: 10, color: custom ? T.yellow : T.muted, marginTop: 3 }}>{custom ? "⚠ Lista: " + fmtM(price) : "Lista: " + fmtM(price) + " (" + source + ")"}</div>;
+                })()}
+              </div>
+            </div>
+            <Btn onClick={addLine}>Agregar</Btn>
+          </div>
+          {codeError && <div style={{ fontSize: 12, color: T.red, marginTop: 8 }}>⚠ {codeError}</div>}
+          {/* Searchable product dropdown */}
+          {clientId && (() => {
+            const q = codeInput.trim().toLowerCase();
+            if (!q) return (
+              <div style={{ marginTop: 10, fontSize: 11, color: T.faint, padding: "6px 0" }}>
+                Escribí un código o nombre para buscar productos
+              </div>
+            );
+            const exact = findProduct(codeInput);
+            if (exact) {
+              const { price, source } = getPriceForLine(exact);
+              return (
+                <div style={{ marginTop: 10, background: T.surface2, borderRadius: 8, padding: "10px 14px", display: "flex", justifyContent: "space-between", fontSize: 12, alignItems: "center" }}>
+                  <span style={{ color: T.ink, fontWeight: 600 }}>{exact.name} <span style={{ color: T.muted }}>· stock: {exact.stock}</span></span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ background: T.yellowLight, color: T.yellow, padding: "2px 8px", borderRadius: 5, fontSize: 11, fontWeight: 700 }}>IVA {exact.iva ?? 21}%</span>
+                    <span style={{ color: T.accent, fontWeight: 700 }}>{fmtM(price)} <span style={{ color: T.muted, fontWeight: 400 }}>s/IVA · {source}</span></span>
+                  </span>
+                </div>
+              );
+            }
+            // Search suggestions by name or any code
+            const suggestions = products.filter(p => {
+              const ov = p.clientOverrides.find(o => o.clientId === clientId);
+              const clientCode = ov?.customCode || p.sku;
+              return (
+                p.name.toLowerCase().includes(q) ||
+                p.sku.toLowerCase().includes(q) ||
+                clientCode.toLowerCase().includes(q) ||
+                p.category?.toLowerCase().includes(q)
+              );
+            }).slice(0, 8);
+            if (suggestions.length === 0) return (
+              <div style={{ marginTop: 10, fontSize: 12, color: T.muted, padding: "8px 0" }}>
+                Sin resultados para "{codeInput}"
+              </div>
+            );
+            return (
+              <div style={{ marginTop: 8, border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden" }}>
+                {suggestions.map(p => {
+                  const ov = p.clientOverrides.find(o => o.clientId === clientId);
+                  const clientCode = ov?.customCode || p.sku;
+                  const { price, source } = getPriceForLine(p);
+                  const isCustomCode = clientCode !== p.sku;
+                  return (
+                    <div key={p.id}
+                      onClick={() => { handleCodeChange(clientCode); }}
+                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: `1px solid ${T.border}`, cursor: "pointer", background: T.surface, transition: "background 0.1s" }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.surface2}
+                      onMouseLeave={e => e.currentTarget.style.background = T.surface}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: isCustomCode ? T.blue : T.muted, background: isCustomCode ? T.blueLight : T.surface2, padding: "2px 7px", borderRadius: 5 }}>
+                          {clientCode}{isCustomCode && " ✦"}
+                        </span>
+                        <div>
+                          <div style={{ fontSize: 13, color: T.ink }}>{p.name}</div>
+                          <div style={{ fontSize: 11, color: T.faint }}>{p.category} · SKU: {p.sku} · stock: {p.stock}</div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: T.accent }}>{fmtM(price)}</div>
+                        <div style={{ fontSize: 10, color: T.muted }}>{source} · IVA {p.iva ?? 21}%</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Lines table */}
+      {lines.length > 0 && (
+        <>
+          <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 16 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>
+                {["Código", "Producto", "Cant.", "P. Unit. s/IVA", "IVA", "Subtotal c/IVA", ""].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>{lines.map((l, i) => (
+                <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "11px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{l.clientCode}</td>
+                  <td style={{ padding: "11px 14px", fontSize: 13 }}>
+                    {l.name}
+                    <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>IVA {l.iva}%{l.listPrice && l.unitPrice !== l.listPrice ? <span style={{ color: T.yellow }}> · precio especial</span> : ""}</div>
+                  </td>
+                  <td style={{ padding: "11px 14px" }}>
+                    <input type="number" min="1" value={l.qty}
+                      onChange={e => updateLineQty(i, parseInt(e.target.value) || 1)}
+                      style={{ width: 56, padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", textAlign: "center" }} />
+                  </td>
+                  <td style={{ padding: "11px 14px" }}>
+                    <input type="number" value={l.unitPrice}
+                      onChange={e => updateLinePrice(i, e.target.value)}
+                      style={{ width: 90, padding: "4px 8px", borderRadius: 6, border: `1px solid ${l.listPrice && l.unitPrice !== l.listPrice ? T.yellow : T.border}`, background: l.listPrice && l.unitPrice !== l.listPrice ? T.yellowLight : T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", textAlign: "right" }} />
+                  </td>
+                  <td style={{ padding: "11px 14px", fontSize: 13, color: T.muted }}>{fmtM(l.ivaImporte)}</td>
+                  <td style={{ padding: "11px 14px", fontSize: 14, fontWeight: 800, color: moneda === "USD" ? T.blue : T.ink }}>{fmtM(l.subtotal)}</td>
+                  <td style={{ padding: "11px 14px" }}><button onClick={() => setLines(lines.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 15 }}>✕</button></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+
+          {/* Fiscal totals */}
+          {/* Options: stock toggle (presupuesto only) + PDF */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+            {docType === "presupuesto" && (
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none", padding: "10px 14px", borderRadius: 10, border: `1px solid ${modificaStock ? T.accent : T.border}`, background: modificaStock ? T.accentLight : T.surface }}>
+                <div onClick={() => setModificaStock(!modificaStock)}
+                  style={{ width: 38, height: 22, borderRadius: 11, background: modificaStock ? T.accent : T.faint, position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                  <div style={{ position: "absolute", top: 3, left: modificaStock ? 18 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: modificaStock ? T.accent : T.ink }}>Modificar stock al guardar</div>
+                  <div style={{ fontSize: 11, color: T.muted }}>Si está activo, este presupuesto reserva o descuenta stock al confirmarse</div>
+                </div>
+              </label>
+            )}
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none", padding: "10px 14px", borderRadius: 10, border: `1px solid ${imprimirPDF ? T.blue : T.border}`, background: imprimirPDF ? T.blueLight : T.surface }}>
+              <div onClick={() => setImprimirPDF(!imprimirPDF)}
+                style={{ width: 38, height: 22, borderRadius: 11, background: imprimirPDF ? T.blue : T.faint, position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                <div style={{ position: "absolute", top: 3, left: imprimirPDF ? 18 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: imprimirPDF ? T.blue : T.ink }}>Imprimir / exportar PDF al guardar</div>
+                <div style={{ fontSize: 11, color: T.muted }}>Se abrirá el diálogo de impresión del navegador con el documento listo</div>
+              </div>
+            </label>
+          </div>
+
+          {/* Observaciones */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>
+              OBSERVACIONES <span style={{ fontWeight: 400, color: T.faint }}>(opcional · aparece en el documento)</span>
+            </label>
+            <textarea
+              value={observaciones}
+              onChange={e => setObservaciones(e.target.value)}
+              placeholder={`ej: Plazo de entrega 5 días hábiles. Cotización en dólares tipo cambio vendedor BNA al día de emisión. Validez del presupuesto: 15 días.`}
+              rows={3}
+              style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: `1px solid ${observaciones ? T.accent + "60" : T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", lineHeight: 1.6, boxSizing: "border-box", transition: "border-color 0.2s" }}
+            />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "flex-end" }}>
+            <div style={{ display: "flex", gap: 20, alignItems: "flex-end" }}>
+              <div style={{ background: T.surface, border: `1px solid ${moneda === "USD" ? T.blue + "50" : T.border}`, borderRadius: 12, padding: "14px 20px", textAlign: "right", minWidth: 220 }}>
+                {moneda === "USD" && (
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                    <span style={{ background: T.blueLight, color: T.blue, fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 6, letterSpacing: 0.5 }}>🇺🇸 Dólares estadounidenses</span>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}>
+                  <span>Subtotal s/IVA</span><span style={{ color: T.ink }}>{fmtM(totalNeto)}</span>
+                </div>
+                {Object.entries(lines.reduce((acc, l) => { const k = l.iva; acc[k] = (acc[k] || 0) + l.ivaImporte; return acc; }, {})).map(([rate, imp]) => (
+                  <div key={rate} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}>
+                    <span>IVA {rate}%</span><span style={{ color: T.yellow }}>{fmtM(imp)}</span>
+                  </div>
+                ))}
+                <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 8, marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800 }}>
+                  <span style={{ color: T.muted }}>TOTAL</span><span style={{ color: moneda === "USD" ? T.blue : T.accent }}>{fmtM(total)}</span>
+                </div>
+              </div>
+              <Btn onClick={confirm} disabled={!clientId}>✓ Confirmar {docLabel}</Btn>
+            </div>
+          </div>
+        </>
+      )}
+
+      {clientId && lines.length === 0 && (
+        <div style={{ padding: "20px", textAlign: "center", color: T.muted, fontSize: 13 }}>
+          Agregá productos usando los códigos de arriba.
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ─── PURCHASE INVOICE BUILDER ─────────────────────────────────────────────────
+function PurchaseBuilder({ suppliers, products, onSave, onClose }) {
+  const [supplierId, setSupplierId] = useState("");
+  const [nroFactura, setNroFactura] = useState("");
+  const [payStatus, setPayStatus] = useState("pendiente");
+  const [lines, setLines] = useState([]);
+  const [codeInput, setCodeInput] = useState("");
+  const [qtyInput, setQtyInput] = useState(1);
+  const [priceInput, setPriceInput] = useState("");
+  const [codeError, setCodeError] = useState("");
+  const [done, setDone] = useState(false);
+
+  const supplier = suppliers.find(s => s.id === supplierId);
+
+  // Find product by supplier code OR internal SKU, returns { product, supplierCode, suggestedPrice }
+  const findProduct = (code) => {
+    const n = code.trim().toUpperCase();
+    const bySupCode = supplier?.productCodes.find(pc => pc.supplierCode.toUpperCase() === n);
+    if (bySupCode) {
+      const prod = products.find(p => p.id === bySupCode.productId);
+      return prod ? { product: prod, supplierCode: bySupCode.supplierCode, suggestedPrice: bySupCode.lastPrice } : null;
+    }
+    const byInternal = products.find(p => p.sku.toUpperCase() === n);
+    if (byInternal) return { product: byInternal, supplierCode: code, suggestedPrice: null };
+    return null;
+  };
+
+  // Search suggestions: match by supplier code, SKU, or product name/category
+  const getSuggestions = (q) => {
+    if (!q.trim()) return [];
+    const lq = q.toLowerCase();
+    const results = [];
+    const seen = new Set();
+    // First: products this supplier sells (supplier codes)
+    if (supplier) {
+      for (const pc of supplier.productCodes) {
+        const prod = products.find(p => p.id === pc.productId);
+        if (!prod || seen.has(prod.id)) continue;
+        if (pc.supplierCode.toLowerCase().includes(lq) || prod.name.toLowerCase().includes(lq) || prod.sku.toLowerCase().includes(lq) || prod.category?.toLowerCase().includes(lq)) {
+          results.push({ product: prod, supplierCode: pc.supplierCode, suggestedPrice: pc.lastPrice, fromSupplier: true });
+          seen.add(prod.id);
+        }
+      }
+    }
+    // Then: all products by SKU/name (not already added)
+    for (const prod of products) {
+      if (seen.has(prod.id)) continue;
+      if (prod.name.toLowerCase().includes(lq) || prod.sku.toLowerCase().includes(lq) || prod.category?.toLowerCase().includes(lq)) {
+        results.push({ product: prod, supplierCode: prod.sku, suggestedPrice: null, fromSupplier: false });
+        seen.add(prod.id);
+      }
+    }
+    return results.slice(0, 8);
+  };
+
+  const handleCodeChange = (v) => {
+    setCodeInput(v);
+    setCodeError("");
+    const found = findProduct(v);
+    if (found) setPriceInput(String(found.suggestedPrice || ""));
+    else setPriceInput("");
+  };
+
+  const selectSuggestion = (s) => {
+    setCodeInput(s.supplierCode);
+    setPriceInput(s.suggestedPrice ? String(s.suggestedPrice) : "");
+    setCodeError("");
+  };
+
+  const addLine = () => {
+    if (!supplierId) { setCodeError("Seleccioná un proveedor."); return; }
+    const found = findProduct(codeInput);
+    if (!found) { setCodeError(`Código "${codeInput}" no encontrado.`); return; }
+    setCodeError("");
+    const unitPrice = parseFloat(priceInput) || found.suggestedPrice || 0;
+    const iva = found.product.iva ?? 21;
+    const neto = qtyInput * unitPrice;
+    const ivaImporte = Math.round(neto * iva) / 100;
+    const existing = lines.findIndex(l => l.productId === found.product.id);
+    if (existing >= 0) {
+      setLines(lines.map((l, i) => {
+        if (i !== existing) return l;
+        const newNeto = (l.qty + qtyInput) * l.unitPrice;
+        const newIva = Math.round(newNeto * l.iva) / 100;
+        return { ...l, qty: l.qty + qtyInput, neto: newNeto, ivaImporte: newIva, subtotal: newNeto + newIva };
+      }));
+    } else {
+      setLines([...lines, { productId: found.product.id, supplierCode: found.supplierCode, name: found.product.name, sku: found.product.sku, qty: qtyInput, unitPrice, suggestedPrice: found.suggestedPrice, unit: found.product.unit, iva, neto, ivaImporte, subtotal: neto + ivaImporte }]);
+    }
+    setCodeInput(""); setQtyInput(1); setPriceInput("");
+  };
+
+  const updateLineQty = (i, qty) => setLines(lines.map((l, j) => {
+    if (j !== i) return l;
+    const neto = qty * l.unitPrice; const ivaImporte = Math.round(neto * l.iva) / 100;
+    return { ...l, qty, neto, ivaImporte, subtotal: neto + ivaImporte };
+  }));
+
+  const updateLinePrice = (i, val) => setLines(lines.map((l, j) => {
+    if (j !== i) return l;
+    const unitPrice = parseFloat(val) || l.unitPrice;
+    const neto = l.qty * unitPrice; const ivaImporte = Math.round(neto * l.iva) / 100;
+    return { ...l, unitPrice, neto, ivaImporte, subtotal: neto + ivaImporte };
+  }));
+
+  const totalNeto = lines.reduce((s, l) => s + l.neto, 0);
+  const totalIva = lines.reduce((s, l) => s + l.ivaImporte, 0);
+  const total = totalNeto + totalIva;
+
+  const confirm = () => { onSave({ lines, total, totalNeto, totalIva, supplierId, supplierName: supplier.name, payStatus, nroFactura }); setDone(true); };
+
+  if (done) return (
+    <Modal title="Factura registrada" onClose={onClose}>
+      <div style={{ textAlign: "center", padding: "20px 0" }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>✓</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: T.accent, marginBottom: 8 }}>Compra registrada</div>
+        <p style={{ color: T.muted, fontSize: 13, marginBottom: 20 }}>Stock actualizado. Factura registrada como <strong style={{ color: payStatus === "pagada" ? T.accent : T.yellow }}>{payStatus}</strong>.</p>
+        <Btn onClick={onClose}>Cerrar</Btn>
+      </div>
+    </Modal>
+  );
+
+  const suggestions = getSuggestions(codeInput);
+  const exactMatch = findProduct(codeInput);
+
+  return (
+    <Modal title="Nueva factura de proveedor" onClose={onClose} xl>
+      {/* Row 1: proveedor + nro factura + estado */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 14, marginBottom: 18 }}>
+        <Select label="PROVEEDOR" value={supplierId} onChange={v => { setSupplierId(v); setLines([]); setCodeInput(""); }} options={[{ value: "", label: "Seleccionar proveedor..." }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]} />
+        <Input label="N° DE FACTURA" value={nroFactura} onChange={setNroFactura} placeholder="ej: 0001-00012345" mono />
+        <Select label="ESTADO DE PAGO" value={payStatus} onChange={setPayStatus} options={[{ value: "pendiente", label: "Pendiente de pago" }, { value: "pagada", label: "Ya pagada / Contado" }]} />
+      </div>
+
+      {supplierId && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginBottom: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>AGREGAR PRODUCTO</div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <div style={{ flex: 2 }}>
+              <Input label="CÓDIGO PROVEEDOR, SKU O DESCRIPCIÓN" value={codeInput} onChange={handleCodeChange} mono placeholder="Buscá por código o nombre..." />
+            </div>
+            <div style={{ flex: 0.6 }}>
+              <Input label="CANTIDAD" type="number" value={qtyInput} onChange={v => setQtyInput(parseInt(v) || 1)} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>PRECIO UNIT. S/IVA</label>
+                <input type="number" value={priceInput} onChange={e => setPriceInput(e.target.value)} placeholder="Ingresá precio"
+                  style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                {exactMatch?.suggestedPrice && priceInput && parseFloat(priceInput) !== exactMatch.suggestedPrice &&
+                  <div style={{ fontSize: 10, color: T.yellow, marginTop: 3 }}>⚠ Últ. precio: {fmt(exactMatch.suggestedPrice)}</div>}
+              </div>
+            </div>
+            <Btn onClick={addLine}>Agregar</Btn>
+          </div>
+          {codeError && <div style={{ fontSize: 12, color: T.red, marginTop: 8 }}>⚠ {codeError}</div>}
+
+          {/* Dropdown */}
+          {codeInput && !exactMatch && suggestions.length > 0 && (
+            <div style={{ marginTop: 8, border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden" }}>
+              {suggestions.map(s => (
+                <div key={s.product.id}
+                  onClick={() => selectSuggestion(s)}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: `1px solid ${T.border}`, cursor: "pointer", background: T.surface, transition: "background 0.1s" }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.surface2}
+                  onMouseLeave={e => e.currentTarget.style.background = T.surface}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: s.fromSupplier ? T.orange : T.muted, background: s.fromSupplier ? T.orangeLight : T.surface2, padding: "2px 7px", borderRadius: 5 }}>
+                      {s.supplierCode}{s.fromSupplier && " ★"}
+                    </span>
+                    <div>
+                      <div style={{ fontSize: 13, color: T.ink }}>{s.product.name}</div>
+                      <div style={{ fontSize: 11, color: T.faint }}>{s.product.category} · SKU: {s.product.sku} · stock actual: {s.product.stock}</div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
+                    {s.suggestedPrice
+                      ? <div style={{ fontSize: 13, fontWeight: 700, color: T.orange }}>{fmt(s.suggestedPrice)}</div>
+                      : <div style={{ fontSize: 12, color: T.faint }}>Sin precio previo</div>}
+                    <div style={{ fontSize: 10, color: T.yellow }}>IVA {s.product.iva ?? 21}%</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {codeInput && exactMatch && (
+            <div style={{ marginTop: 10, background: T.surface2, borderRadius: 8, padding: "10px 14px", display: "flex", justifyContent: "space-between", fontSize: 12, alignItems: "center" }}>
+              <span style={{ color: T.ink, fontWeight: 600 }}>{exactMatch.product.name} <span style={{ color: T.muted }}>· stock: {exactMatch.product.stock}</span></span>
+              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ background: T.yellowLight, color: T.yellow, padding: "2px 8px", borderRadius: 5, fontSize: 11, fontWeight: 700 }}>IVA {exactMatch.product.iva ?? 21}%</span>
+                {exactMatch.suggestedPrice && <span style={{ color: T.orange, fontWeight: 700 }}>Últ. precio: {fmt(exactMatch.suggestedPrice)}</span>}
+              </span>
+            </div>
+          )}
+          {codeInput && !exactMatch && suggestions.length === 0 && (
+            <div style={{ marginTop: 10, fontSize: 12, color: T.muted, padding: "8px 0" }}>Sin resultados para "{codeInput}"</div>
+          )}
+          {!codeInput && (
+            <div style={{ marginTop: 10, fontSize: 11, color: T.faint }}>Escribí un código de proveedor, SKU interno o nombre de producto</div>
+          )}
+        </div>
+      )}
+
+      {lines.length > 0 && (
+        <>
+          <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 16 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>
+                {["Código", "Producto", "Cant.", "P. Unit. s/IVA", "IVA", "Subtotal c/IVA", ""].map(h =>
+                  <th key={h} style={{ padding: "9px 13px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>{lines.map((l, i) => (
+                <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "11px 13px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{l.supplierCode}</td>
+                  <td style={{ padding: "11px 13px", fontSize: 13 }}>
+                    {l.name}
+                    <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>IVA {l.iva}%</div>
+                  </td>
+                  <td style={{ padding: "11px 13px" }}>
+                    <input type="number" min="1" value={l.qty} onChange={e => updateLineQty(i, parseInt(e.target.value) || 1)}
+                      style={{ width: 56, padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", textAlign: "center" }} />
+                  </td>
+                  <td style={{ padding: "11px 13px" }}>
+                    <input type="number" value={l.unitPrice} onChange={e => updateLinePrice(i, e.target.value)}
+                      style={{ width: 90, padding: "4px 8px", borderRadius: 6, border: `1px solid ${l.suggestedPrice && l.unitPrice !== l.suggestedPrice ? T.yellow : T.border}`, background: l.suggestedPrice && l.unitPrice !== l.suggestedPrice ? T.yellowLight : T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", textAlign: "right" }} />
+                  </td>
+                  <td style={{ padding: "11px 13px", fontSize: 13, color: T.muted }}>{fmt(l.ivaImporte)}</td>
+                  <td style={{ padding: "11px 13px", fontSize: 14, fontWeight: 800 }}>{fmt(l.subtotal)}</td>
+                  <td style={{ padding: "11px 13px" }}><button onClick={() => setLines(lines.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer" }}>✕</button></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, alignItems: "flex-end" }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 20px", textAlign: "right", minWidth: 200 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}>
+                <span>Subtotal s/IVA</span><span style={{ color: T.ink }}>{fmt(totalNeto)}</span>
+              </div>
+              {Object.entries(lines.reduce((acc, l) => { const k = l.iva; acc[k] = (acc[k] || 0) + l.ivaImporte; return acc; }, {})).map(([rate, imp]) => (
+                <div key={rate} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}>
+                  <span>IVA {rate}%</span><span style={{ color: T.yellow }}>{fmt(imp)}</span>
+                </div>
+              ))}
+              <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 8, marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800 }}>
+                <span style={{ color: T.muted }}>TOTAL</span><span style={{ color: T.accent }}>{fmt(total)}</span>
+              </div>
+            </div>
+            <Btn onClick={confirm} disabled={!supplierId}>✓ Confirmar compra</Btn>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+// ─── SEARCH BAR ───────────────────────────────────────────────────────────────
+function SearchBar({ value, onChange, placeholder }) {
+  return (
+    <div style={{ position: "relative", flex: 1 }}>
+      <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 14, pointerEvents: "none" }}>🔍</span>
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder || "Buscar..."}
+        style={{ width: "100%", padding: "8px 12px 8px 34px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+      {value && <button onClick={() => onChange("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</button>}
+    </div>
+  );
+}
+
+// ─── MODULE: HUB ──────────────────────────────────────────────────────────────
+function HubModule({ saleInvoices, purchaseInvoices, products, clients, suppliers, onQuickAction, tipoCambio, setTipoCambio }) {
+  const thisMonth = saleInvoices.filter(i => i.date?.startsWith("2026-03") && i.type === "factura");
+  const facturado = thisMonth.reduce((s, i) => s + i.total, 0);
+  const pendienteCobrar = saleInvoices.filter(i => i.status === "pendiente" && i.type === "factura").reduce((s, i) => s + i.total, 0);
+  const pendientePagar = purchaseInvoices.filter(i => i.status === "pendiente").reduce((s, i) => s + i.total, 0);
+  const criticalStock = products.filter(p => p.tracksStock !== false && p.stock < p.minStock).length;
+  const [tcInput, setTcInput] = useState(String(tipoCambio));
+  const [tcEditing, setTcEditing] = useState(false);
+
+  // Panel expansion
+  const [expanded, setExpanded] = useState(null); // "cobros" | "pagos" | null
+
+  // Cobros filters
+  const [fCobroCliente, setFCobroCliente] = useState("");
+  const [fCobroMontoMin, setFCobroMontoMin] = useState("");
+  const [fCobroMontoMax, setFCobroMontoMax] = useState("");
+  const [fCobroCuit, setFCobroCuit] = useState("");
+
+  // Pagos filters
+  const [fPagoProveedor, setFPagoProveedor] = useState("");
+  const [fPagoMontoMin, setFPagoMontoMin] = useState("");
+  const [fPagoMontoMax, setFPagoMontoMax] = useState("");
+
+  const cobrosPendientes = saleInvoices.filter(i => i.status === "pendiente" && i.type === "factura");
+  const pagosPendientes = purchaseInvoices.filter(i => i.status === "pendiente");
+
+  const filteredCobros = cobrosPendientes.filter(inv => {
+    const cli = clients.find(c => c.id === inv.clientId);
+    if (fCobroCliente && !inv.clientName?.toLowerCase().includes(fCobroCliente.toLowerCase())) return false;
+    if (fCobroCuit && !cli?.cuit?.toLowerCase().includes(fCobroCuit.toLowerCase())) return false;
+    if (fCobroMontoMin && inv.total < parseFloat(fCobroMontoMin)) return false;
+    if (fCobroMontoMax && inv.total > parseFloat(fCobroMontoMax)) return false;
+    return true;
+  });
+
+  const filteredPagos = pagosPendientes.filter(inv => {
+    if (fPagoProveedor && !inv.supplierName?.toLowerCase().includes(fPagoProveedor.toLowerCase())) return false;
+    if (fPagoMontoMin && inv.total < parseFloat(fPagoMontoMin)) return false;
+    if (fPagoMontoMax && inv.total > parseFloat(fPagoMontoMax)) return false;
+    return true;
+  });
+
+  const totalCobrosFiltrados = filteredCobros.reduce((s, i) => s + i.total, 0);
+  const totalPagosFiltrados = filteredPagos.reduce((s, i) => s + i.total, 0);
+
+  const FilterInput = ({ value, onChange, placeholder }) => (
+    <div style={{ position: "relative" }}>
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: "100%", padding: "7px 28px 7px 10px", borderRadius: 7, border: `1px solid ${value ? T.accent + "80" : T.border}`, background: T.surface2, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+      {value && <button onClick={() => onChange("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 12 }}>✕</button>}
+    </div>
+  );
+
+  // Expanded panel: COBROS
+  const CobroPanel = () => (
+    <div style={{ background: T.paper, border: `1px solid ${T.yellow}40`, borderRadius: 14, overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={() => setExpanded(null)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}>←</button>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Cobros pendientes</div>
+            <div style={{ fontSize: 12, color: T.muted }}>{filteredCobros.length} de {cobrosPendientes.length} · Total filtrado: <span style={{ color: T.yellow, fontWeight: 700 }}>{fmt(totalCobrosFiltrados)}</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10, padding: "14px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface2 }}>
+        <FilterInput value={fCobroCliente} onChange={setFCobroCliente} placeholder="🔍 Cliente..." />
+        <FilterInput value={fCobroCuit} onChange={setFCobroCuit} placeholder="🔍 CUIT..." />
+        <FilterInput value={fCobroMontoMin} onChange={setFCobroMontoMin} placeholder="Monto mín." />
+        <FilterInput value={fCobroMontoMax} onChange={setFCobroMontoMax} placeholder="Monto máx." />
+      </div>
+
+      {/* Table */}
+      <div style={{ overflowY: "auto", maxHeight: 420 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: T.surface, position: "sticky", top: 0 }}>
+              {["N° Factura", "Cliente", "CUIT", "Fecha", "Vence", "Total", "Estado"].map(h => (
+                <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filteredCobros.length === 0 && (
+              <tr><td colSpan={7} style={{ padding: "24px", textAlign: "center", color: T.muted, fontSize: 13 }}>Sin resultados para los filtros aplicados.</td></tr>
+            )}
+            {filteredCobros.map(inv => {
+              const cli = clients.find(c => c.id === inv.clientId);
+              const venceProx = inv.due && inv.due <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+              return (
+                <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: venceProx ? `${T.yellow}08` : "transparent" }}>
+                  <td style={{ padding: "11px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{inv.id}</td>
+                  <td style={{ padding: "11px 14px", fontSize: 13, fontWeight: 600 }}>{inv.clientName}</td>
+                  <td style={{ padding: "11px 14px", fontSize: 12, color: T.muted, fontFamily: "monospace" }}>{cli?.cuit || "—"}</td>
+                  <td style={{ padding: "11px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                  <td style={{ padding: "11px 14px", fontSize: 12, color: venceProx ? T.yellow : T.muted, fontWeight: venceProx ? 700 : 400 }}>
+                    {inv.due} {venceProx && "⚠"}
+                  </td>
+                  <td style={{ padding: "11px 14px", fontSize: 14, fontWeight: 800, color: T.yellow }}>{fmt(inv.total)}</td>
+                  <td style={{ padding: "11px 14px" }}>
+                    <span style={{ background: T.yellowLight, color: T.yellow, padding: "2px 9px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>Pendiente</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  // Expanded panel: PAGOS
+  const PagoPanel = () => (
+    <div style={{ background: T.paper, border: `1px solid ${T.orange}40`, borderRadius: 14, overflow: "hidden" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={() => setExpanded(null)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}>←</button>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Pagos pendientes</div>
+            <div style={{ fontSize: 12, color: T.muted }}>{filteredPagos.length} de {pagosPendientes.length} · Total filtrado: <span style={{ color: T.orange, fontWeight: 700 }}>{fmt(totalPagosFiltrados)}</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10, padding: "14px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface2 }}>
+        <FilterInput value={fPagoProveedor} onChange={setFPagoProveedor} placeholder="🔍 Proveedor..." />
+        <FilterInput value={fPagoMontoMin} onChange={setFPagoMontoMin} placeholder="Monto mín." />
+        <FilterInput value={fPagoMontoMax} onChange={setFPagoMontoMax} placeholder="Monto máx." />
+      </div>
+
+      {/* Table */}
+      <div style={{ overflowY: "auto", maxHeight: 420 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: T.surface, position: "sticky", top: 0 }}>
+              {["N° OC", "N° Factura Prov.", "Proveedor", "Fecha", "Vence", "Total", "Estado"].map(h => (
+                <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filteredPagos.length === 0 && (
+              <tr><td colSpan={7} style={{ padding: "24px", textAlign: "center", color: T.muted, fontSize: 13 }}>Sin resultados para los filtros aplicados.</td></tr>
+            )}
+            {filteredPagos.map(inv => {
+              const sup = suppliers.find(s => s.id === inv.supplierId);
+              const venceProx = inv.dueDate && inv.dueDate <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+              return (
+                <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: venceProx ? `${T.orange}08` : "transparent" }}>
+                  <td style={{ padding: "11px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{inv.id}</td>
+                  <td style={{ padding: "11px 14px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{inv.nroFactura || "—"}</td>
+                  <td style={{ padding: "11px 14px", fontSize: 13, fontWeight: 600 }}>{inv.supplierName}</td>
+                  <td style={{ padding: "11px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                  <td style={{ padding: "11px 14px", fontSize: 12, color: venceProx ? T.orange : T.muted, fontWeight: venceProx ? 700 : 400 }}>
+                    {inv.dueDate} {venceProx && "⚠"}
+                  </td>
+                  <td style={{ padding: "11px 14px", fontSize: 14, fontWeight: 800, color: T.orange }}>{fmt(inv.total)}</td>
+                  <td style={{ padding: "11px 14px" }}>
+                    <span style={{ background: T.orangeLight, color: T.orange, padding: "2px 9px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>Pendiente</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ color: T.muted, fontSize: 13 }}>{new Date().toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
+      </div>
+
+      {/* Tipo de cambio */}
+      <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 18 }}>🇺🇸</span>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>TIPO DE CAMBIO DEL DÍA</div>
+            <div style={{ fontSize: 11, color: T.faint }}>Usado para cotizaciones y facturas en USD</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, color: T.muted, fontWeight: 700 }}>US$ 1 =</span>
+          {tcEditing ? (
+            <input type="number" value={tcInput} onChange={e => setTcInput(e.target.value)} autoFocus
+              onBlur={() => { const v = parseFloat(tcInput); if (v > 0) setTipoCambio(v); setTcEditing(false); }}
+              onKeyDown={e => { if (e.key === "Enter") { const v = parseFloat(tcInput); if (v > 0) setTipoCambio(v); setTcEditing(false); } if (e.key === "Escape") setTcEditing(false); }}
+              style={{ width: 120, padding: "6px 10px", borderRadius: 7, border: `1px solid ${T.accent}`, background: T.surface, color: T.ink, fontSize: 16, fontFamily: "monospace", fontWeight: 800, outline: "none" }} />
+          ) : (
+            <button onClick={() => { setTcInput(String(tipoCambio)); setTcEditing(true); }}
+              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: "6px 14px", fontSize: 16, fontWeight: 800, color: T.blue, fontFamily: "monospace", cursor: "pointer" }}>
+              {fmt(tipoCambio)}
+            </button>
+          )}
+          {!tcEditing && <span style={{ fontSize: 11, color: T.muted }}>· click para actualizar</span>}
+        </div>
+        <div style={{ marginLeft: "auto", fontSize: 12, color: T.muted }}>Actualizado: {today}</div>
+      </div>
+
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
+        {[
+          { label: "Facturado este mes", value: fmt(facturado), sub: `${thisMonth.length} facturas`, color: T.accent, icon: "◈", action: null },
+          { label: "A cobrar", value: fmt(pendienteCobrar), sub: `${cobrosPendientes.length} facturas · click para ver`, color: T.yellow, icon: "⏳", action: "cobros" },
+          { label: "A pagar", value: fmt(pendientePagar), sub: `${pagosPendientes.length} facturas · click para ver`, color: T.orange, icon: "📤", action: "pagos" },
+          { label: "Stock crítico", value: `${criticalStock} items`, sub: "Por debajo del mínimo", color: criticalStock > 0 ? T.red : T.accent, icon: "▦", action: null },
+        ].map((k, i) => (
+          <div key={i} onClick={() => k.action && setExpanded(k.action)}
+            style={{ background: T.paper, border: `1px solid ${expanded === k.action && k.action ? k.color + "60" : T.border}`, borderRadius: 14, padding: "20px 22px", cursor: k.action ? "pointer" : "default", transition: "border-color 0.2s, transform 0.15s" }}
+            onMouseEnter={e => k.action && (e.currentTarget.style.transform = "translateY(-2px)")}
+            onMouseLeave={e => k.action && (e.currentTarget.style.transform = "translateY(0)")}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+              <span style={{ fontSize: 11, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{k.label.toUpperCase()}</span>
+              <span style={{ fontSize: 18, opacity: 0.4 }}>{k.icon}</span>
+            </div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: k.color, marginBottom: 4 }}>{k.value}</div>
+            <div style={{ fontSize: 12, color: T.muted }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Acciones rápidas */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 14 }}>ACCESO RÁPIDO</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          {[
+            { label: "Nueva Factura", icon: "📄", action: "new_factura", color: T.blue, bg: T.blueLight },
+            { label: "Nuevo Presupuesto", icon: "📋", action: "new_presupuesto", color: T.purple, bg: T.purpleLight },
+            { label: "Nuevo Remito", icon: "📦", action: "new_remito", color: T.orange, bg: T.orangeLight },
+            { label: "Registrar Pago", icon: "💳", action: "new_pago", color: T.accent, bg: T.accentLight },
+          ].map(a => (
+            <button key={a.action} onClick={() => onQuickAction(a.action)}
+              style={{ background: a.bg, border: `1px solid ${a.color}30`, borderRadius: 12, padding: "18px 16px", cursor: "pointer", textAlign: "left", transition: "transform 0.1s" }}
+              onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"}
+              onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}>
+              <div style={{ fontSize: 24, marginBottom: 8 }}>{a.icon}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: a.color }}>{a.label}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Panels */}
+      {expanded === "cobros" && <CobroPanel />}
+      {expanded === "pagos" && <PagoPanel />}
+
+      {/* Vista resumida (cuando no hay ninguno expandido) */}
+      {!expanded && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          {/* Cobros */}
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>COBROS PENDIENTES</div>
+              <button onClick={() => setExpanded("cobros")}
+                style={{ background: T.yellowLight, color: T.yellow, border: "none", borderRadius: 7, padding: "4px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                Ver todos →
+              </button>
+            </div>
+            {cobrosPendientes.slice(0, 4).map(inv => (
+              <div key={inv.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}
+                onClick={() => setExpanded("cobros")}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{inv.clientName}</div>
+                  <div style={{ fontSize: 11, color: T.muted }}>Vence {inv.due}</div>
+                </div>
+                <div style={{ fontWeight: 800, color: T.yellow }}>{fmt(inv.total)}</div>
+              </div>
+            ))}
+            {cobrosPendientes.length === 0 && <div style={{ fontSize: 13, color: T.muted, padding: "10px 0" }}>Sin cobros pendientes.</div>}
+          </div>
+
+          {/* Pagos */}
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>PAGOS PENDIENTES</div>
+              <button onClick={() => setExpanded("pagos")}
+                style={{ background: T.orangeLight, color: T.orange, border: "none", borderRadius: 7, padding: "4px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                Ver todos →
+              </button>
+            </div>
+            {pagosPendientes.slice(0, 4).map(inv => (
+              <div key={inv.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}
+                onClick={() => setExpanded("pagos")}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{inv.supplierName}</div>
+                  <div style={{ fontSize: 11, color: T.muted }}>Vence {inv.dueDate}</div>
+                </div>
+                <div style={{ fontWeight: 800, color: T.orange }}>{fmt(inv.total)}</div>
+              </div>
+            ))}
+            {pagosPendientes.length === 0 && <div style={{ fontSize: 13, color: T.muted, padding: "10px 0" }}>Sin pagos pendientes.</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
+function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA }) {
+  const [tab, setTab] = useState("docs");
+  const [filterType, setFilterType] = useState("all");
+  const [searchDocNum, setSearchDocNum] = useState("");
+  const [searchDocClient, setSearchDocClient] = useState("");
+  const [searchDocDateFrom, setSearchDocDateFrom] = useState("");
+  const [searchDocDateTo, setSearchDocDateTo] = useState("");
+  const [searchClientName, setSearchClientName] = useState("");
+  const [searchClientCuit, setSearchClientCuit] = useState("");
+  const [newClient, setNewClient] = useState(null);
+  const [ncForm, setNcForm] = useState({ codigo: "", name: "", cuit: "", direccion: "", email: "", phone: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" });
+
+  // ── IA Presupuesto rápido ────────────────────────────────────────────────
+  const [showIAModal, setShowIAModal] = useState(false);
+  const [iaStep, setIaStep] = useState("input"); // "input"|"loading"|"clarify"|"review"
+  const [iaText, setIaText] = useState("");
+  const [iaPdfData, setIaPdfData] = useState(null);
+  const [iaResult, setIaResult] = useState(null);
+  const [iaClarifyAnswers, setIaClarifyAnswers] = useState({}); // { questionIdx: answer }
+  const [iaObs, setIaObs] = useState("");
+  const [iaError, setIaError] = useState("");
+
+  const resetIA = () => { setIaStep("input"); setIaText(""); setIaPdfData(null); setIaResult(null); setIaClarifyAnswers({}); setIaObs(""); setIaError(""); };
+
+  const handleIaPdf = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setIaPdfData({ base64: ev.target.result.split(",")[1], name: file.name });
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const buildUserContent = (extraText) => {
+    const clientList = clients.map(c => c.codigo + " | " + c.name).join("\n");
+    const productList = products.map(p => p.sku + " | " + p.name + " | $" + (p.prices?.lista_a || 0)).join("\n");
+    const content = [];
+    if (iaPdfData) content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: iaPdfData.base64 } });
+    content.push({ type: "text", text: (iaText ? "Mensaje/pedido:\n" + iaText + "\n\n" : "") + (extraText || "") + "Clientes del sistema:\n" + clientList + "\n\nProductos del sistema (SKU | Nombre | Precio):\n" + productList });
+    return content;
+  };
+
+  const IA_SYSTEM = `Sos un asistente de una PyME argentina que interpreta pedidos y los convierte en presupuestos.
+Tu objetivo es identificar: cliente, productos con SKU exacto del catálogo, cantidades, precios y moneda.
+
+REGLAS MUY IMPORTANTES:
+- Intentá hacer coincidir cada producto mencionado con alguno del catálogo usando sinónimos, abreviaciones o descripciones parciales. Ej: "látex blanca 20" puede ser "Pintura látex blanca 20L".
+- Si después de intentar no podés identificar un producto con certeza razonable, formulá una pregunta clara al usuario.
+- Si no identificás al cliente, preguntá.
+- NUNCA inventés un producto que no esté en el catálogo. Si no coincide, preguntá.
+- Si todo está claro, pasá directo al resultado final.
+
+Respondé SOLO con JSON sin backticks, en uno de estos dos formatos:
+
+Formato A — hay dudas, necesitás aclaraciones:
+{
+  "status": "clarify",
+  "preguntas": [
+    { "id": "p1", "texto": "¿A qué cliente es este pedido?", "tipo": "cliente", "opciones": null },
+    { "id": "p2", "texto": "¿Cuál de estos productos es 'látex blanca'?", "tipo": "producto", "itemOriginal": "látex blanca", "opciones": ["PIN-001 | Pintura látex blanca 20L", "PIN-002 | Pintura látex blanca 4L"] }
+  ]
+}
+
+Formato B — todo claro, presupuesto listo:
+{
+  "status": "ready",
+  "clientId": "id o null",
+  "clientName": "nombre detectado o null",
+  "moneda": "ARS o USD",
+  "lines": [
+    { "sku": "SKU exacto del catálogo", "name": "nombre del catálogo", "qty": 2, "unitPrice": null }
+  ],
+  "obsRecomendadas": ["Validez: 15 días.", "Plazo de entrega: 3 días hábiles."]
+}
+
+Para preguntas de tipo "cliente": opciones null (el usuario elige del dropdown).
+Para preguntas de tipo "producto": opciones = array con los candidatos del catálogo.
+Para preguntas de tipo "general": opciones = array de opciones posibles o null para respuesta libre.`;
+
+  const runIA = async () => {
+    if (!iaText.trim() && !iaPdfData) return;
+    setIaStep("loading"); setIaError("");
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1500, system: IA_SYSTEM,
+          messages: [{ role: "user", content: buildUserContent("") }] })
+      });
+      const data = await res.json();
+      const parsed = JSON.parse((data.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim());
+      if (parsed.status === "clarify") {
+        setIaResult(parsed);
+        setIaClarifyAnswers({});
+        setIaStep("clarify");
+      } else {
+        setIaResult(parsed);
+        setIaObs(parsed.obsRecomendadas?.[0] || "");
+        setIaStep("review");
+      }
+    } catch { setIaError("No se pudo interpretar. Intentá de nuevo."); setIaStep("input"); }
+  };
+
+  const runIAWithAnswers = async () => {
+    setIaStep("loading"); setIaError("");
+    try {
+      const answersText = (iaResult.preguntas || []).map(q => {
+        const ans = iaClarifyAnswers[q.id] || "(sin respuesta)";
+        return "Pregunta: " + q.texto + "\nRespuesta: " + ans;
+      }).join("\n\n");
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1500, system: IA_SYSTEM,
+          messages: [
+            { role: "user", content: buildUserContent("") },
+            { role: "assistant", content: JSON.stringify(iaResult) },
+            { role: "user", content: "Respuestas a tus preguntas:\n\n" + answersText + "\n\nCon esta información, generá el presupuesto final en formato B (status: ready)." }
+          ] })
+      });
+      const data = await res.json();
+      const parsed = JSON.parse((data.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim());
+      if (parsed.status === "clarify") {
+        // Todavía tiene preguntas — mostrarlas de nuevo
+        setIaResult(parsed); setIaClarifyAnswers({}); setIaStep("clarify");
+      } else {
+        setIaResult(parsed);
+        setIaObs(parsed.obsRecomendadas?.[0] || "");
+        setIaStep("review");
+      }
+    } catch { setIaError("Error al procesar las respuestas."); setIaStep("clarify"); }
+  };
+
+  const confirmarPresupuesto = () => {
+    if (!iaResult) return;
+    const builtLines = (iaResult.lines || []).map(l => {
+      const prod = products.find(p => p.sku === l.sku);
+      const unitPrice = l.unitPrice || prod?.prices?.lista_a || 0;
+      const iva = prod?.iva ?? 21;
+      const qty = l.qty || 1;
+      const neto = qty * unitPrice;
+      const ivaImporte = Math.round(neto * iva) / 100;
+      return {
+        productId: prod?.id || null,
+        clientCode: prod?.sku || l.sku || l.name,
+        name: prod?.name || l.name,
+        sku: prod?.sku || l.sku || "",
+        qty, unitPrice, listPrice: unitPrice,
+        source: "Lista A",
+        unit: prod?.unit || "unidad",
+        iva, neto, ivaImporte, subtotal: neto + ivaImporte,
+      };
+    });
+    const clientId = iaResult.clientId || clients.find(c => c.name?.toLowerCase().includes((iaResult.clientName || "___").toLowerCase()))?.id || "";
+    onNewPresupuestoIA({ clientId, moneda: iaResult.moneda || "ARS", modificaStock: false, lines: builtLines, observaciones: iaObs });
+    setShowIAModal(false); resetIA();
+  };
+
+  const filtered = saleInvoices.filter(i => {
+    if (filterType !== "all" && i.type !== filterType) return false;
+    if (searchDocNum && !i.id?.toLowerCase().includes(searchDocNum.toLowerCase())) return false;
+    if (searchDocClient && !i.clientName?.toLowerCase().includes(searchDocClient.toLowerCase())) return false;
+    if (searchDocDateFrom && i.date < searchDocDateFrom) return false;
+    if (searchDocDateTo && i.date > searchDocDateTo) return false;
+    return true;
+  });
+
+  const filteredClients = clients.filter(c => {
+    if (searchClientName && !c.name?.toLowerCase().includes(searchClientName.toLowerCase()) && !c.codigo?.toLowerCase().includes(searchClientName.toLowerCase())) return false;
+    if (searchClientCuit && !c.cuit?.toLowerCase().includes(searchClientCuit.toLowerCase())) return false;
+    return true;
+  });
+
+  const markCobrada = (id) => setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "cobrada" } : i));
+  const unmarkCobrada = (id) => setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i));
+
+  // ── Cobranzas ────────────────────────────────────────────────────────────
+  const [selectedReclamos, setSelectedReclamos] = useState([]); // ids de facturas tildadas
+  const [reclamoSent, setReclamoSent] = useState({}); // { invoiceId: true }
+  const [reclaimMsg, setReclaimMsg] = useState(null); // feedback
+
+  // Días hábiles: lunes a viernes
+  const addBusinessDays = (dateStr, days) => {
+    const d = new Date(dateStr);
+    let added = 0;
+    while (added < days) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) added++;
+    }
+    return d.toISOString().slice(0, 10);
+  };
+
+  const todayReal = new Date().toISOString().slice(0, 10);
+
+  // Facturas vencidas hace más de 5 días hábiles
+  const facturasVencidas = saleInvoices.filter(i => {
+    if (i.type !== "factura" || i.status !== "pendiente") return false;
+    if (!i.due) return false;
+    const limite = addBusinessDays(i.due, 5);
+    return todayReal > limite;
+  }).sort((a, b) => a.due.localeCompare(b.due));
+
+  // Agrupar por cliente
+  const vencidasPorCliente = clients.map(c => {
+    const facturas = facturasVencidas.filter(i => i.clientId === c.id);
+    if (facturas.length === 0) return null;
+    return { client: c, facturas, total: facturas.reduce((s, i) => s + i.total, 0) };
+  }).filter(Boolean).sort((a, b) => b.total - a.total);
+
+  const toggleReclamo = (id) => setSelectedReclamos(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  // Genera un mailto agrupando TODAS las facturas seleccionadas de un cliente
+  const generarMailReclamoCliente = (clientId, facturas) => {
+    const client = clients.find(c => c.id === clientId);
+    if (!client?.email) return null;
+
+    const totalGeneral = facturas.reduce((s, i) => s + i.total, 0);
+    const maxDias = Math.max(...facturas.map(i => Math.round((new Date(todayReal) - new Date(i.due)) / 86400000)));
+
+    const detalle = facturas.map(i => {
+      const dias = Math.round((new Date(todayReal) - new Date(i.due)) / 86400000);
+      return "  • " + i.id + " — Vto: " + i.due + " — Importe: " + fmt(i.total) + " (" + dias + " días vencida)";
+    }).join("\n");
+
+    const subject = encodeURIComponent(
+      facturas.length === 1
+        ? "Reclamo de pago — Factura " + facturas[0].id
+        : "Reclamo de pago — " + facturas.length + " facturas pendientes"
+    );
+
+    const body = encodeURIComponent(
+      "Estimado/a " + client.name + ",\n\n" +
+      "Nos comunicamos con usted para informarle que registramos " +
+      (facturas.length === 1 ? "la siguiente factura vencida" : "las siguientes " + facturas.length + " facturas vencidas") +
+      " sin pago acreditado:\n\n" +
+      detalle + "\n\n" +
+      "TOTAL ADEUDADO: " + fmt(totalGeneral) + "\n\n" +
+      "Han transcurrido " + maxDias + " días desde el vencimiento" +
+      (facturas.length > 1 ? " de la factura más antigua" : "") +
+      " sin que hayamos registrado el pago correspondiente.\n\n" +
+      "Le solicitamos que regularice la situación a la brevedad posible o se comunique con nosotros para coordinar una forma de pago.\n\n" +
+      "Adjuntamos los comprobantes en formato PDF para su referencia.\n\n" +
+      "Quedamos a disposición para cualquier consulta.\n\n" +
+      "Saludos cordiales."
+    );
+
+    return "mailto:" + client.email + "?subject=" + subject + "&body=" + body;
+  };
+
+  // Mantener el individual para el botón por fila
+  const generarMailReclamo = (inv) => {
+    const client = clients.find(c => c.id === inv.clientId);
+    if (!client?.email) return null;
+    return generarMailReclamoCliente(inv.clientId, [inv]);
+  };
+
+  const enviarReclamos = () => {
+    const seleccionadas = facturasVencidas.filter(i => selectedReclamos.includes(i.id));
+    // Agrupar por cliente
+    const porCliente = {};
+    seleccionadas.forEach(inv => {
+      if (!porCliente[inv.clientId]) porCliente[inv.clientId] = [];
+      porCliente[inv.clientId].push(inv);
+    });
+    let mailsAbiertos = 0;
+    Object.entries(porCliente).forEach(([clientId, facturas]) => {
+      const url = generarMailReclamoCliente(clientId, facturas);
+      if (url) { window.location.href = url; mailsAbiertos++; }
+    });
+    setReclamoSent(prev => { const next = {...prev}; selectedReclamos.forEach(id => next[id] = true); return next; });
+    const clientesCount = Object.keys(porCliente).length;
+    setReclaimMsg(
+      "Se generó " + (clientesCount === 1 ? "1 mail" : clientesCount + " mails") +
+      "Adjuntá los PDFs antes de enviar."
+    );
+    setSelectedReclamos([]);
+  };
+
+  const generarPDFFactura = (inv) => {
+    const client = clients.find(c => c.id === inv.clientId);
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Factura ${inv.id}</title>
+    <style>body{font-family:Arial,sans-serif;padding:32px;color:#222;max-width:800px;margin:0 auto}
+    h1{font-size:22px;margin-bottom:4px}table{width:100%;border-collapse:collapse;margin:16px 0}
+    th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:12px}
+    td{padding:8px 12px;border-bottom:1px solid #eee;font-size:13px}
+    .total{font-size:18px;font-weight:700;text-align:right;padding:12px 0}
+    .badge{display:inline-block;background:#fff3cd;color:#856404;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700}</style></head>
+    <body>
+    <h1>FACTURA — ${inv.id}</h1>
+    <p style="color:#666;margin:0">Fecha: ${inv.date} · Vence: ${inv.due} · <span class="badge">PENDIENTE DE PAGO</span></p>
+    <hr style="margin:16px 0;border:none;border-top:2px solid #eee"/>
+    <p><strong>Cliente:</strong> ${client?.name || inv.clientName}${client?.cuit ? " · CUIT: " + client.cuit : ""}</p>
+    ${client?.direccion ? "<p><strong>Dirección:</strong> " + client.direccion + "</p>" : ""}
+    <table><thead><tr><th>Código</th><th>Descripción</th><th>Cant.</th><th>Precio unit.</th><th>Total</th></tr></thead>
+    <tbody>${(inv.lines || []).map(l => "<tr><td>" + (l.clientCode || l.sku || "—") + "</td><td>" + l.name + "</td><td>" + l.qty + "</td><td>" + fmt(l.unitPrice) + "</td><td>" + fmt(l.subtotal) + "</td></tr>").join("")}</tbody></table>
+    <div class="total">TOTAL: ${fmt(inv.total)}</div>
+    <script>window.onload=()=>window.print()<\/script></body></html>`);
+    win.document.close();
+  };
+
+  return (
+    <div>
+      {/* Modal IA Presupuesto Rápido */}
+      {showIAModal && (
+        <Modal title="✦ Presupuesto rápido con IA" onClose={() => { setShowIAModal(false); resetIA(); }} wide>
+
+          {/* PASO 1: Input */}
+          {iaStep === "input" && (
+            <div>
+              <div style={{ fontSize: 13, color: T.muted, marginBottom: 18, lineHeight: 1.7 }}>
+                Pegá el mensaje del cliente o subí el PDF del pedido. La IA va a intentar identificar los productos del catálogo y, si tiene dudas, te va a hacer preguntas antes de armar el presupuesto.
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>MENSAJE O TEXTO DEL PEDIDO</label>
+                <textarea value={iaText} onChange={e => setIaText(e.target.value)} rows={7}
+                  placeholder="Ej: Hola, me manda 5 de la látex blanca grande y 3 rollos del cable fino. Somos la ferretería de Don Luis."
+                  style={{ width: "100%", padding: "12px 14px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", lineHeight: 1.7, boxSizing: "border-box" }} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+                <label style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                  📄 {iaPdfData ? iaPdfData.name : "Adjuntar PDF (opcional)"}
+                  <input type="file" accept="application/pdf" onChange={handleIaPdf} style={{ display: "none" }} />
+                </label>
+                {iaPdfData && <button onClick={() => setIaPdfData(null)} style={{ background: "none", border: "none", color: T.red, cursor: "pointer", fontSize: 12 }}>✕ Quitar</button>}
+              </div>
+              {iaError && <div style={{ background: T.redLight, color: T.red, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 14 }}>⚠ {iaError}</div>}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn v="ghost" onClick={() => { setShowIAModal(false); resetIA(); }}>Cancelar</Btn>
+                <Btn disabled={!iaText.trim() && !iaPdfData} onClick={runIA}>✦ Analizar pedido</Btn>
+              </div>
+            </div>
+          )}
+
+          {/* LOADING */}
+          {iaStep === "loading" && (
+            <div style={{ textAlign: "center", padding: "48px 0" }}>
+              <div style={{ fontSize: 32, marginBottom: 16 }}>⏳</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Analizando el pedido...</div>
+              <div style={{ fontSize: 13, color: T.muted }}>La IA está buscando los productos en tu catálogo e identificando cliente y moneda.</div>
+            </div>
+          )}
+
+          {/* PASO 2: Preguntas de aclaración */}
+          {iaStep === "clarify" && iaResult && (
+            <div>
+              <div style={{ background: T.blueLight, border: `1px solid ${T.blue}30`, borderRadius: 10, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: T.blue }}>
+                La IA tiene algunas dudas sobre el pedido. Respondelas para poder armar el presupuesto correctamente.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 24 }}>
+                {(iaResult.preguntas || []).map((q, i) => (
+                  <div key={q.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 12 }}>{i + 1}. {q.texto}</div>
+                    {q.tipo === "cliente" && (
+                      <select value={iaClarifyAnswers[q.id] || ""} onChange={e => setIaClarifyAnswers(a => ({...a, [q.id]: e.target.value}))}
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${iaClarifyAnswers[q.id] ? T.accent : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                        <option value="">Seleccionar cliente...</option>
+                        {clients.map(c => <option key={c.id} value={c.name + " (" + c.codigo + ")"}>{c.name} — {c.codigo}</option>)}
+                      </select>
+                    )}
+                    {q.tipo === "producto" && q.opciones && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {q.opciones.map((op, oi) => (
+                          <button key={oi} onClick={() => setIaClarifyAnswers(a => ({...a, [q.id]: op}))}
+                            style={{ padding: "9px 14px", borderRadius: 8, border: `1px solid ${iaClarifyAnswers[q.id] === op ? T.accent : T.border}`, background: iaClarifyAnswers[q.id] === op ? T.accentLight : T.surface2, color: iaClarifyAnswers[q.id] === op ? T.accent : T.ink, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left", fontWeight: iaClarifyAnswers[q.id] === op ? 700 : 400 }}>
+                            {op}
+                          </button>
+                        ))}
+                        <button onClick={() => setIaClarifyAnswers(a => ({...a, [q.id]: "No está en el catálogo, omitir"}))}
+                          style={{ padding: "9px 14px", borderRadius: 8, border: `1px solid ${iaClarifyAnswers[q.id] === "No está en el catálogo, omitir" ? T.red : T.border}`, background: iaClarifyAnswers[q.id] === "No está en el catálogo, omitir" ? T.redLight : "transparent", color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                          No está en el catálogo — omitir este ítem
+                        </button>
+                      </div>
+                    )}
+                    {q.tipo === "general" && (
+                      q.opciones
+                        ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {q.opciones.map((op, oi) => (
+                              <button key={oi} onClick={() => setIaClarifyAnswers(a => ({...a, [q.id]: op}))}
+                                style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${iaClarifyAnswers[q.id] === op ? T.accent : T.border}`, background: iaClarifyAnswers[q.id] === op ? T.accentLight : T.surface2, color: iaClarifyAnswers[q.id] === op ? T.accent : T.muted, fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: iaClarifyAnswers[q.id] === op ? 700 : 400 }}>
+                                {op}
+                              </button>
+                            ))}
+                          </div>
+                        : <input value={iaClarifyAnswers[q.id] || ""} onChange={e => setIaClarifyAnswers(a => ({...a, [q.id]: e.target.value}))} placeholder="Escribí tu respuesta..."
+                            style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    )}
+                  </div>
+                ))}
+              </div>
+              {iaError && <div style={{ background: T.redLight, color: T.red, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 14 }}>⚠ {iaError}</div>}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn v="ghost" onClick={() => setIaStep("input")}>← Volver</Btn>
+                <Btn onClick={runIAWithAnswers}>Continuar →</Btn>
+              </div>
+            </div>
+          )}
+
+          {/* PASO 3: Revisión y confirmación */}
+          {iaStep === "review" && iaResult && (
+            <div>
+              <div style={{ background: T.accentLight, border: `1px solid ${T.accent}30`, borderRadius: 10, padding: "10px 16px", marginBottom: 18, fontSize: 13, color: T.accent }}>
+                ✓ Presupuesto interpretado. Revisá los datos antes de abrirlo en el editor.
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 18 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 6 }}>CLIENTE</div>
+                  <select value={iaResult.clientId || ""} onChange={e => setIaResult(r => ({...r, clientId: e.target.value}))}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${iaResult.clientId ? T.accent : T.yellow}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                    <option value="">Sin cliente asignado</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 6 }}>MONEDA</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {[["ARS","$ ARS"],["USD","🇺🇸 USD"]].map(([v,l]) => (
+                      <button key={v} onClick={() => setIaResult(r => ({...r, moneda: v}))}
+                        style={{ flex: 1, padding: "9px", borderRadius: 8, border: `1px solid ${iaResult.moneda===v?(v==="USD"?T.blue:T.accent):T.border}`, background: iaResult.moneda===v?(v==="USD"?T.blueLight:T.accentLight):T.surface, color: iaResult.moneda===v?(v==="USD"?T.blue:T.accent):T.muted, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 6 }}>MODIFICA STOCK</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {[[false,"No"],[true,"Sí"]].map(([v,l]) => (
+                      <button key={String(v)} onClick={() => setIaResult(r => ({...r, modificaStock: v}))}
+                        style={{ flex: 1, padding: "9px", borderRadius: 8, border: `1px solid ${iaResult.modificaStock===v?T.accent:T.border}`, background: iaResult.modificaStock===v?T.accentLight:T.surface, color: iaResult.modificaStock===v?T.accent:T.muted, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 8 }}>PRODUCTOS</div>
+              <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 18 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr style={{ background: T.surface }}>
+                    {["Producto","Cant.","Precio unit.",""].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {(iaResult.lines || []).map((l, i) => {
+                      const prod = products.find(p => p.sku === l.sku);
+                      return (
+                        <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+                          <td style={{ padding: "10px 12px" }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{prod?.name || l.name}</div>
+                            <div style={{ fontSize: 11, fontFamily: "monospace", color: T.accent }}>{l.sku}</div>
+                          </td>
+                          <td style={{ padding: "10px 12px" }}>
+                            <input type="number" value={l.qty} onChange={e => setIaResult(r => ({...r, lines: r.lines.map((x,j) => j===i?{...x,qty:parseInt(e.target.value)||1}:x)}))}
+                              style={{ width: 60, padding: "5px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                          </td>
+                          <td style={{ padding: "10px 12px" }}>
+                            <input type="number" value={l.unitPrice || ""} onChange={e => setIaResult(r => ({...r, lines: r.lines.map((x,j) => j===i?{...x,unitPrice:parseFloat(e.target.value)||0}:x)}))}
+                              placeholder={prod ? String(prod.prices?.lista_a || 0) : "0"}
+                              style={{ width: 100, padding: "5px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none" }} />
+                          </td>
+                          <td style={{ padding: "10px 12px" }}>
+                            <button onClick={() => setIaResult(r => ({...r, lines: r.lines.filter((_,j) => j!==i)}))}
+                              style={{ background: T.redLight, color: T.red, border: "none", borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 8 }}>OBSERVACIONES</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                  {(iaResult.obsRecomendadas || []).map((obs, i) => (
+                    <button key={i} onClick={() => setIaObs(prev => prev ? prev + "\n" + obs : obs)}
+                      style={{ padding: "4px 10px", borderRadius: 16, border: `1px solid ${T.accent}40`, background: T.accentLight, color: T.accent, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                      + {obs}
+                    </button>
+                  ))}
+                </div>
+                <textarea value={iaObs} onChange={e => setIaObs(e.target.value)} rows={3}
+                  placeholder="Ej: Validez: 15 días. Plazo de entrega: 3 días hábiles."
+                  style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+              </div>
+
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn v="ghost" onClick={() => setIaStep("input")}>← Volver</Btn>
+                <Btn disabled={!iaResult.lines?.length} onClick={confirmarPresupuesto}>Abrir en editor →</Btn>
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div><div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Ventas</div><div style={{ fontSize: 13, color: T.muted }}>Facturación, clientes y seguimiento comercial</div></div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setShowIAModal(true)}
+            style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            ✦ Presupuesto desde mensaje / PDF
+          </button>
+          <button onClick={onNewPresupuesto}
+            style={{ background: T.purpleLight, color: T.purple, border: `1px solid ${T.purple}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            📋 Nuevo presupuesto
+          </button>
+          <button onClick={onNewRemito}
+            style={{ background: T.orangeLight, color: T.orange, border: `1px solid ${T.orange}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            📦 Nuevo remito
+          </button>
+          <button onClick={onNewFactura}
+            style={{ background: T.accent, color: "#fff", border: `1px solid ${T.accent}`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            📄 Nueva factura
+          </button>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 22, background: T.surface, borderRadius: 10, padding: 4, width: "fit-content" }}>
+        {[["docs", "Documentos"], ["clients", "Clientes"], ["cobranzas", "💰 Cobranzas"]].map(([v, l]) => (
+          <button key={v} onClick={() => setTab(v)}
+            style={{ padding: "7px 16px", borderRadius: 7, border: "none", background: tab === v ? T.paper : "transparent", color: tab === v ? T.ink : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+        ))}
+      </div>
+
+      {tab === "docs" && (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+            {[["all", "Todos"], ["factura", "Facturas"], ["presupuesto", "Presupuestos"], ["remito", "Remitos"]].map(([v, l]) => (
+              <button key={v} onClick={() => setFilterType(v)} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${filterType === v ? T.blue : T.border}`, background: filterType === v ? T.blueLight : "transparent", color: filterType === v ? T.blue : T.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{l}</button>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+            <SearchBar value={searchDocNum} onChange={setSearchDocNum} placeholder="N° de documento..." />
+            <SearchBar value={searchDocClient} onChange={setSearchDocClient} placeholder="Cliente..." />
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <div style={{ position: "relative", flex: 1 }}>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>DESDE</label>
+                <input type="date" value={searchDocDateFrom} onChange={e => setSearchDocDateFrom(e.target.value)}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${searchDocDateFrom ? T.blue : T.border}`, background: T.surface, color: searchDocDateFrom ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ position: "relative", flex: 1 }}>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>HASTA</label>
+                <input type="date" value={searchDocDateTo} onChange={e => setSearchDocDateTo(e.target.value)}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${searchDocDateTo ? T.blue : T.border}`, background: T.surface, color: searchDocDateTo ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+              </div>
+              {(searchDocDateFrom || searchDocDateTo) && (
+                <button onClick={() => { setSearchDocDateFrom(""); setSearchDocDateTo(""); }} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14, marginTop: 18 }}>✕</button>
+              )}
+            </div>
+          </div>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>{["Número", "Tipo", "Cliente", "Fecha", "Vence", "Total", "Estado", ""].map(h => <th key={h} style={{ padding: "11px 15px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}</tr></thead>
+              <tbody>{filtered.map(inv => (
+                <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "12px 15px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{inv.id}</td>
+                  <td style={{ padding: "12px 15px" }}><Badge status={inv.type} /></td>
+                  <td style={{ padding: "12px 15px", fontSize: 13, fontWeight: 600 }}>{inv.clientName}</td>
+                  <td style={{ padding: "12px 15px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                  <td style={{ padding: "12px 15px", fontSize: 12, color: T.muted }}>{inv.due}</td>
+                  <td style={{ padding: "12px 15px", fontSize: 14, fontWeight: 800 }}>{fmt(inv.total)}</td>
+                  <td style={{ padding: "12px 15px" }}><Badge status={inv.status} /></td>
+                  <td style={{ padding: "12px 15px" }}>
+                    {inv.type === "factura" && inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => markCobrada(inv.id)}>Marcar cobrada</Btn>}
+                    {inv.type === "factura" && inv.status === "cobrada" && <Btn sm v="ghost" onClick={() => unmarkCobrada(inv.id)}>↩ Revertir a pendiente</Btn>}
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {tab === "clients" && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, marginBottom: 14, alignItems: "flex-end" }}>
+            <SearchBar value={searchClientName} onChange={setSearchClientName} placeholder="Nombre o código..." />
+            <SearchBar value={searchClientCuit} onChange={setSearchClientCuit} placeholder="CUIT..." />
+            <Btn sm onClick={() => setNewClient(true)}>+ Nuevo cliente</Btn>
+          </div>
+          {newClient && (
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20, marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Nuevo cliente</div>
+              <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>Solo el código y la razón social son obligatorios. El resto se puede completar después.</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>CÓDIGO <span style={{ color: T.accent }}>*</span></label>
+                  <input value={ncForm.codigo} onChange={e => setNcForm(f => ({ ...f, codigo: e.target.value }))} placeholder="ej: FDL-001"
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${ncForm.codigo ? T.border : T.red + "80"}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none" }} />
+                </div>
+                <div style={{ gridColumn: "span 2" }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>RAZÓN SOCIAL <span style={{ color: T.accent }}>*</span></label>
+                  <input value={ncForm.name} onChange={e => setNcForm(f => ({ ...f, name: e.target.value }))} placeholder="Nombre o razón social"
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${ncForm.name ? T.border : T.red + "80"}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                </div>
+                {[["cuit","CUIT","20-12345678-9",false], ["direccion","DIRECCIÓN","Av. Corrientes 123, CABA",false], ["email","EMAIL","contacto@empresa.com",false], ["phone","TELÉFONO","11-1234-5678",false]].map(([k, l, ph]) => (
+                  <div key={k}>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>{l} <span style={{ color: T.faint, fontWeight: 400 }}>(opcional)</span></label>
+                    <input value={ncForm[k]} onChange={e => setNcForm(f => ({ ...f, [k]: e.target.value }))} placeholder={ph}
+                      style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                  </div>
+                ))}
+              </div>
+              <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 12, marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>LOGÍSTICA · HORARIOS DE ATENCIÓN</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>ABRE <span style={{ color: T.faint, fontWeight: 400 }}>(opcional)</span></label>
+                    <input type="time" value={ncForm.horarioAbre} onChange={e => setNcForm(f => ({...f, horarioAbre: e.target.value}))}
+                      style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>CIERRA <span style={{ color: T.faint, fontWeight: 400 }}>(opcional)</span></label>
+                    <input type="time" value={ncForm.horarioCierra} onChange={e => setNcForm(f => ({...f, horarioCierra: e.target.value}))}
+                      style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>DÍAS DISPONIBLES <span style={{ color: T.faint, fontWeight: 400 }}>(opcional)</span></label>
+                    <input value={ncForm.diasDisponibles} onChange={e => setNcForm(f => ({...f, diasDisponibles: e.target.value}))} placeholder="ej: Lun-Vie"
+                      style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn v="ghost" sm onClick={() => setNewClient(false)}>Cancelar</Btn>
+                <Btn sm disabled={!ncForm.codigo || !ncForm.name} onClick={() => { setClients([...clients, { ...ncForm, id: `c${Date.now()}`, priceList: "lista_a", lastPurchase: "—", status: "activo", nextFollowUp: "—" }]); setNewClient(false); setNcForm({ codigo: "", name: "", cuit: "", direccion: "", email: "", phone: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" }); }}>Guardar cliente</Btn>
+              </div>
+            </div>
+          )}
+          <div style={{ display: "grid", gap: 10 }}>
+            {filteredClients.map(c => (
+              <div key={c.id} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12, alignItems: "center" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 11, color: T.muted, background: T.surface, padding: "1px 7px", borderRadius: 5 }}>{c.codigo}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700 }}>{c.name}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: T.muted }}>
+                    {[c.cuit && `CUIT: ${c.cuit}`, c.email, c.phone].filter(Boolean).join(" · ")}
+                  </div>
+                  {c.direccion && <div style={{ fontSize: 11, color: T.faint, marginTop: 2 }}>{c.direccion}</div>}
+                </div>
+                <div style={{ fontSize: 12, color: T.muted }}>Últ. compra<br /><span style={{ color: T.ink, fontWeight: 600 }}>{c.lastPurchase}</span></div>
+                <div style={{ fontSize: 12, color: T.muted }}>Seguimiento<br /><span style={{ color: T.ink, fontWeight: 600 }}>{c.nextFollowUp}</span></div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {tab === "cobranzas" && (
+        <div>
+          {/* KPIs de cobranzas */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
+            {[
+              { label: "Total vencido +5 días hábiles", value: fmt(facturasVencidas.reduce((s, i) => s + i.total, 0)), color: T.red },
+              { label: "Facturas a reclamar", value: facturasVencidas.length + " facturas", color: T.orange },
+              { label: "Clientes en mora", value: vencidasPorCliente.length + " clientes", color: T.yellow },
+            ].map((k, i) => (
+              <div key={i} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px" }}>
+                <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 8 }}>{k.label.toUpperCase()}</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: k.color }}>{k.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Feedback */}
+          {reclaimMsg && (
+            <div style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: T.accent, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              ✓ {reclaimMsg}
+              <button onClick={() => setReclaimMsg(null)} style={{ background: "none", border: "none", color: T.accent, cursor: "pointer", fontSize: 14 }}>✕</button>
+            </div>
+          )}
+
+          {facturasVencidas.length === 0 ? (
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "48px 32px", textAlign: "center" }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 6 }}>Sin facturas vencidas</div>
+              <div style={{ fontSize: 13, color: T.muted }}>No hay facturas con más de 5 días hábiles de atraso.</div>
+            </div>
+          ) : (
+            <div>
+              {/* Barra de acción */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ fontSize: 13, color: T.muted }}>
+                  {selectedReclamos.length > 0
+                    ? <span style={{ color: T.red, fontWeight: 700 }}>{selectedReclamos.length} factura(s) seleccionada(s) para reclamar</span>
+                    : "Tildá las facturas que querés reclamar"}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setSelectedReclamos(facturasVencidas.map(i => i.id))}
+                    style={{ padding: "7px 14px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                    Seleccionar todas
+                  </button>
+                  <button onClick={() => setSelectedReclamos([])}
+                    style={{ padding: "7px 14px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                    Deseleccionar
+                  </button>
+                  <button onClick={enviarReclamos} disabled={selectedReclamos.length === 0}
+                    style={{ padding: "7px 18px", borderRadius: 7, border: "none", background: selectedReclamos.length > 0 ? T.red : T.surface, color: selectedReclamos.length > 0 ? "#fff" : T.muted, fontSize: 12, fontWeight: 700, cursor: selectedReclamos.length > 0 ? "pointer" : "default", fontFamily: "inherit" }}>
+                    ✉ Enviar reclamo{selectedReclamos.length > 1 ? "s" : ""} {selectedReclamos.length > 0 ? "(" + selectedReclamos.length + ")" : ""}
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabla por cliente */}
+              {vencidasPorCliente.map(({ client: c, facturas, total }) => (
+                <div key={c.id} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, marginBottom: 14, overflow: "hidden" }}>
+                  {/* Header cliente */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", background: T.surface, borderBottom: `1px solid ${T.border}` }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontFamily: "monospace", fontSize: 11, color: T.muted, background: T.surface2, padding: "1px 7px", borderRadius: 5 }}>{c.codigo}</span>
+                        <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{c.name}</span>
+                        {c.email
+                          ? <span style={{ fontSize: 11, color: T.accent }}>✉ {c.email}</span>
+                          : <span style={{ fontSize: 11, color: T.red }}>⚠ Sin email registrado</span>}
+                      </div>
+                      {c.phone && <div style={{ fontSize: 11, color: T.muted, marginTop: 3 }}>📞 {c.phone}</div>}
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: T.red }}>{fmt(total)}</div>
+                      <div style={{ fontSize: 11, color: T.muted }}>{facturas.length} factura(s) vencida(s)</div>
+                    </div>
+                  </div>
+
+                  {/* Facturas del cliente */}
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: T.surface2 }}>
+                        <th style={{ padding: "8px 16px", width: 36 }}></th>
+                        {["N° Factura", "Fecha", "Vencimiento", "Días vencido", "Total", "Estado reclamo", ""].map(h => (
+                          <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {facturas.map(inv => {
+                        const isSelected = selectedReclamos.includes(inv.id);
+                        const wasSent = reclamoSent[inv.id];
+                        const diasVencido = Math.round((new Date(todayReal) - new Date(inv.due)) / 86400000);
+                        const mailUrl = generarMailReclamo(inv);
+                        return (
+                          <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: isSelected ? T.redLight + "30" : "transparent" }}>
+                            <td style={{ padding: "12px 16px" }}>
+                              <div onClick={() => toggleReclamo(inv.id)}
+                                style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${isSelected ? T.red : T.border}`, background: isSelected ? T.red : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                                {isSelected && <span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>✓</span>}
+                              </div>
+                            </td>
+                            <td style={{ padding: "12px 12px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.red }}>{inv.id}</td>
+                            <td style={{ padding: "12px 12px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                            <td style={{ padding: "12px 12px", fontSize: 12, fontWeight: 700, color: T.red }}>{inv.due}</td>
+                            <td style={{ padding: "12px 12px" }}>
+                              <span style={{ background: T.redLight, color: T.red, padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>
+                                {diasVencido} días
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px 12px", fontSize: 14, fontWeight: 800, color: T.red }}>{fmt(inv.total)}</td>
+                            <td style={{ padding: "12px 12px" }}>
+                              {wasSent
+                                ? <span style={{ fontSize: 11, color: T.accent, fontWeight: 700 }}>✓ Reclamado</span>
+                                : <span style={{ fontSize: 11, color: T.muted }}>Pendiente</span>}
+                            </td>
+                            <td style={{ padding: "12px 12px" }}>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button onClick={() => generarPDFFactura(inv)}
+                                  style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                                  🖨 PDF
+                                </button>
+                                {mailUrl && (
+                                  <a href={mailUrl} target="_blank" rel="noreferrer"
+                                    style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.red}40`, background: T.redLight, color: T.red, fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
+                                    ✉ Reclamar
+                                  </a>
+                                )}
+                                <Btn sm v="ghost" onClick={() => markCobrada(inv.id)}>Cobrada</Btn>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 16px", fontSize: 12, color: T.muted, lineHeight: 1.7 }}>
+                <strong style={{ color: T.ink }}>Cómo funciona el reclamo:</strong> al presionar "✉ Enviar reclamos" se abre tu cliente de correo (Outlook, Gmail, etc.) con un borrador pre-armado para cada factura seleccionada — con asunto, destinatario y texto de reclamo ya completados. Adjuntá el PDF de la factura usando el botón 🖨 PDF antes de enviar.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+    </div>
+  );
+}
+function ComercialModule({ clients, saleInvoices }) {
+  const [tab, setTab] = useState("calendario");
+
+  // ── CALENDARIO state ───────────────────────────────────────────────────────
+  const [events, setEvents] = useState([
+    { id: "ev1", title: "Reunión Distribuidora Norte", date: "2026-03-14", time: "10:00", clientId: "c1", clientName: "Distribuidora Norte SA", notes: "Revisar condiciones del trimestre", location: "Av. Corrientes 1234, CABA", type: "reunion" },
+    { id: "ev2", title: "Llamado seguimiento", date: "2026-03-17", time: "15:30", clientId: "c2", clientName: "Ferretería El Tornillo", notes: "", location: "", type: "llamado" },
+  ]);
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [calView, setCalView] = useState("mes"); // "mes" | "lista"
+  const [calMonth, setCalMonth] = useState("2026-03");
+  const EMPTY_EVENT = { title: "", date: "", time: "", clientId: "", clientName: "", notes: "", location: "", type: "reunion" };
+  const [evForm, setEvForm] = useState(EMPTY_EVENT);
+
+  const EVENT_TYPES = {
+    reunion:  { label: "Reunión",   color: T.blue,   bg: T.blueLight },
+    llamado:  { label: "Llamado",   color: T.accent,  bg: T.accentLight },
+    visita:   { label: "Visita",    color: T.purple,  bg: T.purpleLight },
+    propuesta:{ label: "Propuesta", color: T.orange,  bg: T.orangeLight },
+    otro:     { label: "Otro",      color: T.muted,   bg: T.surface2 },
+  };
+
+  const saveEvent = () => {
+    if (!evForm.title || !evForm.date) return;
+    if (editingEvent) {
+      setEvents(events.map(e => e.id === editingEvent ? { ...evForm, id: editingEvent } : e));
+    } else {
+      setEvents([...events, { ...evForm, id: `ev${Date.now()}` }]);
+    }
+    setShowEventForm(false); setEditingEvent(null); setEvForm(EMPTY_EVENT);
+  };
+
+  const deleteEvent = (id) => setEvents(events.filter(e => e.id !== id));
+
+  const openEdit = (ev) => { setEvForm({ ...ev }); setEditingEvent(ev.id); setShowEventForm(true); };
+
+  const googleCalUrl = (ev) => {
+    const dt = ev.date.replace(/-/g, "") + "T" + (ev.time || "090000").replace(":", "") + "00";
+    const dtEnd = ev.date.replace(/-/g, "") + "T" + (ev.time ? String(parseInt(ev.time.split(":")[0]) + 1).padStart(2,"0") + ev.time.slice(2) : "100000").replace(":","") + "00";
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(ev.title)}&dates=${dt}/${dtEnd}&details=${encodeURIComponent(ev.notes || "")}&location=${encodeURIComponent(ev.location || "")}`;
+  };
+
+  // Build calendar grid
+  const [cy, cm] = calMonth.split("-").map(Number);
+  const firstDay = new Date(cy, cm - 1, 1).getDay();
+  const daysInMonth = new Date(cy, cm, 0).getDate();
+  const calDays = [];
+  for (let i = 0; i < (firstDay === 0 ? 6 : firstDay - 1); i++) calDays.push(null);
+  for (let d = 1; d <= daysInMonth; d++) calDays.push(d);
+
+  const eventsInMonth = events.filter(e => e.date?.startsWith(calMonth));
+  const eventsForDay = (d) => d ? events.filter(e => e.date === `${calMonth}-${String(d).padStart(2,"0")}`) : [];
+  const today2 = new Date().toISOString().slice(0,10);
+
+  const monthNames = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const prevMonth = () => { let [y,m] = calMonth.split("-").map(Number); m--; if(m<1){m=12;y--;} setCalMonth(`${y}-${String(m).padStart(2,"0")}`); };
+  const nextMonth = () => { let [y,m] = calMonth.split("-").map(Number); m++; if(m>12){m=1;y++;} setCalMonth(`${y}-${String(m).padStart(2,"0")}`); };
+
+  const upcomingEvents = [...events].filter(e => e.date >= today2).sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time)).slice(0, 8);
+
+  // ── NOTAS state ────────────────────────────────────────────────────────────
+  const [notes, setNotes] = useState([
+    { id: "n1", title: "Proceso de onboarding clientes nuevos", content: "1. Enviar bienvenida\n2. Configurar lista de precios\n3. Primera factura con descuento", clientId: "", clientName: "", tag: "proceso", updatedAt: "2026-03-10" },
+    { id: "n2", title: "Seguimiento Ferretería El Tornillo", content: "Interesados en ampliar línea de productos. Lllamar después del 20/03.", clientId: "c2", clientName: "Ferretería El Tornillo", tag: "cliente", updatedAt: "2026-03-08" },
+  ]);
+  const [selectedNote, setSelectedNote] = useState("n1");
+  const [noteSearch, setNoteSearch] = useState("");
+  const [noteTagFilter, setNoteTagFilter] = useState("all");
+  const [noteClientFilter, setNoteClientFilter] = useState("");
+  const [showNoteForm, setShowNoteForm] = useState(false);
+  const EMPTY_NOTE = { title: "", content: "", clientId: "", clientName: "", tag: "general" };
+  const [nForm, setNForm] = useState(EMPTY_NOTE);
+
+  const NOTE_TAGS = { general: { label: "General", color: T.muted }, proceso: { label: "Proceso", color: T.blue }, cliente: { label: "Cliente", color: T.accent }, importante: { label: "Importante", color: T.red } };
+
+  const filteredNotes = notes.filter(n => {
+    if (noteTagFilter !== "all" && n.tag !== noteTagFilter) return false;
+    if (noteClientFilter && n.clientId !== noteClientFilter) return false;
+    if (noteSearch && !n.title.toLowerCase().includes(noteSearch.toLowerCase()) && !n.content.toLowerCase().includes(noteSearch.toLowerCase())) return false;
+    return true;
+  });
+
+  const saveNote = () => {
+    if (!nForm.title) return;
+    const now = new Date().toISOString().slice(0,10);
+    if (selectedNote && notes.find(n => n.id === selectedNote) && showNoteForm) {
+      setNotes(notes.map(n => n.id === selectedNote ? { ...nForm, id: selectedNote, updatedAt: now } : n));
+    } else {
+      const id = `n${Date.now()}`;
+      setNotes([{ ...nForm, id, updatedAt: now }, ...notes]);
+      setSelectedNote(id);
+    }
+    setShowNoteForm(false);
+  };
+
+  const deleteNote = (id) => { setNotes(notes.filter(n => n.id !== id)); setSelectedNote(notes.find(n => n.id !== id)?.id || null); };
+
+  const activeNote = notes.find(n => n.id === selectedNote);
+
+  // ── IA COMERCIAL state ─────────────────────────────────────────────────────
+  const [aiChat, setAiChat] = useState([{ role: "ai", text: "Hola! Soy tu asistente comercial. Tenés 2 clientes sin contacto hace más de 30 días. ¿Querés que preparemos un seguimiento?" }]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const sendAi = async () => {
+    if (!aiInput.trim() || aiLoading) return;
+    const msg = aiInput; setAiInput("");
+    setAiChat(prev => [...prev, { role: "user", text: msg }]);
+    setAiLoading(true);
+    try {
+      const ctx = clients.map(c => `${c.name}: última compra ${c.lastPurchase}, estado ${c.status}, próx. seguimiento ${c.nextFollowUp}`).join("\n");
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 800,
+          system: `Sos asistente comercial de una PyME argentina. Hoy es ${today}. Clientes:\n${ctx}\nRespondé en español, conciso y accionable.`,
+          messages: [...aiChat.filter((_,i) => i > 0).map(m => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })), { role: "user", content: msg }] })
+      });
+      const data = await res.json();
+      setAiChat(prev => [...prev, { role: "ai", text: data.content?.[0]?.text || "Error." }]);
+    } catch { setAiChat(prev => [...prev, { role: "ai", text: "Error de conexión." }]); }
+    setAiLoading(false);
+  };
+
+  // ── render ─────────────────────────────────────────────────────────────────
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Comercial</div>
+          <div style={{ fontSize: 13, color: T.muted }}>Agenda, notas y seguimiento de clientes</div>
+        </div>
+      </div>
+
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 24, background: T.surface, borderRadius: 10, padding: 4, width: "fit-content" }}>
+        {[["calendario","📅 Calendario"], ["notas","📝 Bloc de notas"], ["ai","✦ IA Comercial"]].map(([v,l]) => (
+          <button key={v} onClick={() => setTab(v)}
+            style={{ padding: "7px 18px", borderRadius: 7, border: "none", background: tab === v ? T.paper : "transparent", color: tab === v ? T.ink : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+        ))}
+      </div>
+
+      {/* ══════════ CALENDARIO ══════════ */}
+      {tab === "calendario" && (
+        <div>
+          {/* Modal nuevo/editar evento */}
+          {showEventForm && (
+            <Modal title={editingEvent ? "Editar evento" : "Nuevo evento"} onClose={() => { setShowEventForm(false); setEditingEvent(null); setEvForm(EMPTY_EVENT); }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                <div style={{ gridColumn: "span 2" }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>TÍTULO <span style={{ color: T.accent }}>*</span></label>
+                  <input value={evForm.title} onChange={e => setEvForm(f => ({...f, title: e.target.value}))} placeholder="ej: Reunión con cliente"
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${evForm.title ? T.border : T.red+"60"}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>FECHA <span style={{ color: T.accent }}>*</span></label>
+                  <input type="date" value={evForm.date} onChange={e => setEvForm(f => ({...f, date: e.target.value}))}
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${evForm.date ? T.border : T.red+"60"}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>HORA</label>
+                  <input type="time" value={evForm.time} onChange={e => setEvForm(f => ({...f, time: e.target.value}))}
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>TIPO</label>
+                  <select value={evForm.type} onChange={e => setEvForm(f => ({...f, type: e.target.value}))}
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                    {Object.entries(EVENT_TYPES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>EMPRESA / CLIENTE</label>
+                  <select value={evForm.clientId} onChange={e => { const c = clients.find(c => c.id === e.target.value); setEvForm(f => ({...f, clientId: e.target.value, clientName: c?.name || ""})); }}
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: evForm.clientId ? T.ink : T.muted, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                    <option value="">Sin cliente específico</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div style={{ gridColumn: "span 2" }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>UBICACIÓN</label>
+                  <input value={evForm.location} onChange={e => setEvForm(f => ({...f, location: e.target.value}))} placeholder="Dirección o link de videollamada (opcional)"
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ gridColumn: "span 2" }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>ANOTACIONES</label>
+                  <textarea value={evForm.notes} onChange={e => setEvForm(f => ({...f, notes: e.target.value}))} placeholder="Temas a tratar, datos de contacto, recordatorios..." rows={3}
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <a href={evForm.date ? googleCalUrl(evForm) : "#"} target="_blank" rel="noreferrer"
+                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.blue, textDecoration: "none", opacity: evForm.date ? 1 : 0.4, pointerEvents: evForm.date ? "auto" : "none" }}>
+                  📅 Agregar a Google Calendar
+                </a>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <Btn v="ghost" onClick={() => { setShowEventForm(false); setEditingEvent(null); setEvForm(EMPTY_EVENT); }}>Cancelar</Btn>
+                  <Btn disabled={!evForm.title || !evForm.date} onClick={saveEvent}>Guardar</Btn>
+                </div>
+              </div>
+            </Modal>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20 }}>
+            {/* Calendario principal */}
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+              {/* Nav de mes */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button onClick={prevMonth} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 7, padding: "5px 10px", cursor: "pointer", color: T.ink, fontSize: 14 }}>‹</button>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, minWidth: 160, textAlign: "center" }}>{monthNames[cm-1]} {cy}</div>
+                  <button onClick={nextMonth} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 7, padding: "5px 10px", cursor: "pointer", color: T.ink, fontSize: 14 }}>›</button>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[["mes","Mes"],["lista","Lista"]].map(([v,l]) => (
+                    <button key={v} onClick={() => setCalView(v)}
+                      style={{ padding: "5px 12px", borderRadius: 7, border: `1px solid ${calView===v ? T.accent : T.border}`, background: calView===v ? T.accentLight : "transparent", color: calView===v ? T.accent : T.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                  ))}
+                  <button onClick={() => { setEvForm(EMPTY_EVENT); setEditingEvent(null); setShowEventForm(true); }}
+                    style={{ background: T.accent, color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>+ Evento</button>
+                </div>
+              </div>
+
+              {calView === "mes" ? (
+                <div style={{ padding: 16 }}>
+                  {/* Días semana */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 4 }}>
+                    {["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d => (
+                      <div key={d} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: T.muted, padding: "4px 0" }}>{d}</div>
+                    ))}
+                  </div>
+                  {/* Celdas */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
+                    {calDays.map((d, i) => {
+                      const dayStr = d ? `${calMonth}-${String(d).padStart(2,"0")}` : null;
+                      const dayEvs = eventsForDay(d);
+                      const isToday = dayStr === today2;
+                      return (
+                        <div key={i} style={{ minHeight: 72, borderRadius: 8, border: `1px solid ${isToday ? T.accent+"60" : T.border}`, background: d ? (isToday ? T.accentLight : T.surface) : "transparent", padding: "6px 7px", opacity: d ? 1 : 0 }}>
+                          {d && <>
+                            <div style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? T.accent : T.ink, marginBottom: 3 }}>{d}</div>
+                            {dayEvs.slice(0,2).map(ev => {
+                              const tc = EVENT_TYPES[ev.type] || EVENT_TYPES.otro;
+                              return (
+                                <div key={ev.id} onClick={() => openEdit(ev)} title={ev.title}
+                                  style={{ fontSize: 10, background: tc.bg, color: tc.color, borderRadius: 4, padding: "2px 5px", marginBottom: 2, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontWeight: 600 }}>
+                                  {ev.time && <span style={{ opacity: 0.7 }}>{ev.time} </span>}{ev.title}
+                                </div>
+                              );
+                            })}
+                            {dayEvs.length > 2 && <div style={{ fontSize: 10, color: T.muted, paddingLeft: 2 }}>+{dayEvs.length - 2} más</div>}
+                          </>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                /* Vista lista */
+                <div style={{ padding: 16 }}>
+                  {eventsInMonth.length === 0 && <div style={{ textAlign: "center", color: T.muted, fontSize: 13, padding: 32 }}>Sin eventos en {monthNames[cm-1]}.</div>}
+                  {[...eventsInMonth].sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time)).map(ev => {
+                    const tc = EVENT_TYPES[ev.type] || EVENT_TYPES.otro;
+                    return (
+                      <div key={ev.id} style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 0", borderBottom: `1px solid ${T.border}` }}>
+                        <div style={{ minWidth: 50, textAlign: "center" }}>
+                          <div style={{ fontSize: 20, fontWeight: 800, color: T.ink }}>{ev.date.slice(8)}</div>
+                          <div style={{ fontSize: 10, color: T.muted }}>{monthNames[parseInt(ev.date.slice(5,7))-1].slice(0,3)}</div>
+                          {ev.time && <div style={{ fontSize: 11, color: T.accent, fontWeight: 700, marginTop: 2 }}>{ev.time}</div>}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, background: tc.bg, color: tc.color, padding: "2px 8px", borderRadius: 6 }}>{tc.label}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{ev.title}</span>
+                          </div>
+                          {ev.clientName && <div style={{ fontSize: 12, color: T.accent, marginBottom: 2 }}>🏢 {ev.clientName}</div>}
+                          {ev.location && <div style={{ fontSize: 12, color: T.muted }}>📍 {ev.location}</div>}
+                          {ev.notes && <div style={{ fontSize: 12, color: T.muted, marginTop: 4, fontStyle: "italic" }}>{ev.notes}</div>}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <a href={googleCalUrl(ev)} target="_blank" rel="noreferrer"
+                            style={{ background: T.blueLight, color: T.blue, border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", textDecoration: "none", display: "flex", alignItems: "center" }}>
+                            📅 GCal
+                          </a>
+                          <button onClick={() => openEdit(ev)} style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Editar</button>
+                          <button onClick={() => deleteEvent(ev.id)} style={{ background: T.redLight, color: T.red, border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Panel lateral: próximos eventos */}
+            <div>
+              <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 14 }}>PRÓXIMOS EVENTOS</div>
+                {upcomingEvents.length === 0 && <div style={{ color: T.muted, fontSize: 13 }}>Sin eventos próximos.</div>}
+                {upcomingEvents.map(ev => {
+                  const tc = EVENT_TYPES[ev.type] || EVENT_TYPES.otro;
+                  const isToday3 = ev.date === today2;
+                  return (
+                    <div key={ev.id} onClick={() => openEdit(ev)} style={{ padding: "10px 0", borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 3 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: T.ink, flex: 1, marginRight: 6 }}>{ev.title}</span>
+                        <span style={{ fontSize: 10, background: tc.bg, color: tc.color, padding: "1px 6px", borderRadius: 5, fontWeight: 700, flexShrink: 0 }}>{tc.label}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: isToday3 ? T.accent : T.muted, fontWeight: isToday3 ? 700 : 400 }}>
+                        {isToday3 ? "Hoy" : ev.date} {ev.time && `· ${ev.time}`}
+                      </div>
+                      {ev.clientName && <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>🏢 {ev.clientName}</div>}
+                    </div>
+                  );
+                })}
+                <button onClick={() => { setEvForm(EMPTY_EVENT); setEditingEvent(null); setShowEventForm(true); }}
+                  style={{ width: "100%", marginTop: 14, padding: "9px", borderRadius: 8, border: `1px solid ${T.accent}40`, background: T.accentLight, color: T.accent, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                  + Nuevo evento
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════ BLOC DE NOTAS ══════════ */}
+      {tab === "notas" && (
+        <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, height: 620 }}>
+
+          {/* Panel izquierdo: lista de notas */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* Buscador y filtros */}
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 12 }}>
+              <SearchBar value={noteSearch} onChange={setNoteSearch} placeholder="Buscar notas..." />
+              <div style={{ display: "flex", gap: 4, marginTop: 10, flexWrap: "wrap" }}>
+                {[["all","Todas"], ...Object.entries(NOTE_TAGS).map(([k,v]) => [k, v.label])].map(([k,l]) => (
+                  <button key={k} onClick={() => setNoteTagFilter(k)}
+                    style={{ padding: "3px 10px", borderRadius: 12, border: `1px solid ${noteTagFilter===k ? T.accent : T.border}`, background: noteTagFilter===k ? T.accentLight : "transparent", color: noteTagFilter===k ? T.accent : T.muted, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                ))}
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <select value={noteClientFilter} onChange={e => setNoteClientFilter(e.target.value)}
+                  style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${noteClientFilter ? T.accent+"60" : T.border}`, background: T.surface, color: noteClientFilter ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
+                  <option value="">Todos los clientes</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <button onClick={() => { setNForm(EMPTY_NOTE); setShowNoteForm(true); setSelectedNote(null); }}
+              style={{ padding: "9px", borderRadius: 8, border: `1px solid ${T.accent}40`, background: T.accentLight, color: T.accent, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+              + Nueva nota
+            </button>
+
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+              {filteredNotes.length === 0 && <div style={{ color: T.muted, fontSize: 13, padding: "12px 0", textAlign: "center" }}>Sin notas.</div>}
+              {filteredNotes.map(n => {
+                const tag = NOTE_TAGS[n.tag] || NOTE_TAGS.general;
+                const isActive = selectedNote === n.id;
+                return (
+                  <div key={n.id} onClick={() => { setSelectedNote(n.id); setShowNoteForm(false); }}
+                    style={{ background: isActive ? T.accentLight : T.paper, border: `1px solid ${isActive ? T.accent+"60" : T.border}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, flex: 1, marginRight: 6, lineHeight: 1.3 }}>{n.title}</span>
+                      <span style={{ fontSize: 10, color: tag.color, fontWeight: 700, flexShrink: 0 }}>●</span>
+                    </div>
+                    {n.clientName && <div style={{ fontSize: 11, color: T.accent, marginBottom: 3 }}>🏢 {n.clientName}</div>}
+                    <div style={{ fontSize: 11, color: T.muted, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{n.content}</div>
+                    <div style={{ fontSize: 10, color: T.faint, marginTop: 4 }}>{n.updatedAt}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Panel derecho: editor / vista de nota */}
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            {showNoteForm ? (
+              /* Formulario nueva nota */
+              <div style={{ padding: 24, flex: 1, overflowY: "auto" }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 18 }}>Nueva nota</div>
+                <div style={{ display: "grid", gap: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>TÍTULO <span style={{ color: T.accent }}>*</span></label>
+                    <input value={nForm.title} onChange={e => setNForm(f => ({...f, title: e.target.value}))} placeholder="Título de la nota"
+                      style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${nForm.title ? T.border : T.red+"60"}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>ETIQUETA</label>
+                      <select value={nForm.tag} onChange={e => setNForm(f => ({...f, tag: e.target.value}))}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                        {Object.entries(NOTE_TAGS).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>CLIENTE (opcional)</label>
+                      <select value={nForm.clientId} onChange={e => { const c = clients.find(c => c.id === e.target.value); setNForm(f => ({...f, clientId: e.target.value, clientName: c?.name || ""})); }}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: nForm.clientId ? T.ink : T.muted, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                        <option value="">Sin cliente</option>
+                        {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>CONTENIDO</label>
+                    <textarea value={nForm.content} onChange={e => setNForm(f => ({...f, content: e.target.value}))} placeholder="Escribí tu nota..." rows={10}
+                      style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", lineHeight: 1.7, boxSizing: "border-box" }} />
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+                  <Btn v="ghost" onClick={() => setShowNoteForm(false)}>Cancelar</Btn>
+                  <Btn disabled={!nForm.title} onClick={saveNote}>Guardar nota</Btn>
+                </div>
+              </div>
+            ) : activeNote ? (
+              /* Vista de nota activa */
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "20px 24px 16px", borderBottom: `1px solid ${T.border}` }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{activeNote.title}</div>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: (NOTE_TAGS[activeNote.tag]||NOTE_TAGS.general).color, background: T.surface2, padding: "2px 9px", borderRadius: 8 }}>
+                        {(NOTE_TAGS[activeNote.tag]||NOTE_TAGS.general).label}
+                      </span>
+                      {activeNote.clientName && <span style={{ fontSize: 12, color: T.accent }}>🏢 {activeNote.clientName}</span>}
+                      <span style={{ fontSize: 11, color: T.faint }}>Actualizado: {activeNote.updatedAt}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => { setNForm({...activeNote}); setShowNoteForm(true); }}
+                      style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 7, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Editar</button>
+                    <button onClick={() => deleteNote(activeNote.id)}
+                      style={{ background: T.redLight, color: T.red, border: "none", borderRadius: 7, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Eliminar</button>
+                  </div>
+                </div>
+                <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+                  <pre style={{ fontSize: 14, color: T.ink, lineHeight: 1.8, whiteSpace: "pre-wrap", fontFamily: "'DM Sans', sans-serif", margin: 0 }}>{activeNote.content}</pre>
+                </div>
+              </>
+            ) : (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: T.muted, fontSize: 14 }}>
+                Seleccioná una nota o creá una nueva
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════ IA COMERCIAL ══════════ */}
+      {tab === "ai" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.6fr", gap: 20 }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>ALERTAS DE SEGUIMIENTO</div>
+            {clients.filter(c => c.status !== "activo" || c.nextFollowUp <= today).slice(0, 4).map(c => (
+              <div key={c.id} style={{ background: T.paper, border: `1px solid ${c.status === "en riesgo" ? T.yellow + "50" : T.border}`, borderRadius: 12, padding: 16, marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: 13 }}>{c.name}</span>
+                  <Badge status={c.status} />
+                </div>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 10 }}>Últ. compra: {c.lastPurchase} · Seguimiento: {c.nextFollowUp}</div>
+                <button onClick={() => setAiInput(`Preparame un mensaje de seguimiento personalizado para ${c.name}`)}
+                  style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accentGlow}`, borderRadius: 7, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                  ✦ Generar mensaje
+                </button>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, display: "flex", flexDirection: "column", height: 520 }}>
+            <div style={{ padding: "16px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: T.accent, display: "inline-block", boxShadow: `0 0 8px ${T.accent}` }}></span>
+              <span style={{ fontWeight: 700, fontSize: 13 }}>Asistente Comercial IA</span>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+              {aiChat.map((m, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                  <div style={{ maxWidth: "82%", padding: "10px 14px", borderRadius: m.role === "user" ? "14px 14px 3px 14px" : "14px 14px 14px 3px", background: m.role === "user" ? T.accent : T.surface2, color: m.role === "user" ? "#fff" : T.ink, fontSize: 13, lineHeight: 1.6, border: m.role === "ai" ? `1px solid ${T.border}` : "none", whiteSpace: "pre-wrap" }}>
+                    {m.text}
+                  </div>
+                </div>
+              ))}
+              {aiLoading && <div style={{ background: T.surface2, borderRadius: 12, padding: "10px 14px", width: 60, border: `1px solid ${T.border}` }}><span style={{ color: T.accent }}>···</span></div>}
+            </div>
+            <div style={{ padding: 14, borderTop: `1px solid ${T.border}`, display: "flex", gap: 10 }}>
+              <input value={aiInput} onChange={e => setAiInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendAi()} placeholder="Preguntá sobre clientes, seguimientos..."
+                style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "9px 13px", color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+              <Btn onClick={sendAi} disabled={aiLoading}>↑</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PRICE LISTS TAB ──────────────────────────────────────────────────────────
+function PriceListsTab({ products, setProducts, priceLists, setPriceLists }) {
+  const [selectedList, setSelectedList] = useState(priceLists[0]?.id || "");
+  const [showNewList, setShowNewList] = useState(false);
+  const [newListLabel, setNewListLabel] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importSuccess, setImportSuccess] = useState("");
+  const [editingPrice, setEditingPrice] = useState(null); // { productId, ars, usd }
+  const STALE_DAYS = 45;
+
+  const list = priceLists.find(l => l.id === selectedList);
+
+  const getArs = (p) => p.prices?.[selectedList] || 0;
+  const getUsd = (p) => p.pricesUsd?.[selectedList] || 0;
+
+  const missingPrice = products.filter(p => p.tracksStock !== false && getArs(p) === 0 && getUsd(p) === 0);
+
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - STALE_DAYS);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const stalePrice = products.filter(p => {
+    if (p.tracksStock === false) return false;
+    if (getArs(p) === 0 && getUsd(p) === 0) return false;
+    const updatedAt = p.priceUpdatedAt?.[selectedList];
+    return !updatedAt || updatedAt < cutoffStr;
+  });
+
+  const addList = () => {
+    if (!newListLabel.trim()) return;
+    const id = "lista_" + newListLabel.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+    if (priceLists.find(l => l.id === id)) return;
+    setPriceLists(prev => [...prev, { id, label: newListLabel.trim() }]);
+    setSelectedList(id);
+    setNewListLabel(""); setShowNewList(false);
+  };
+
+  const savePrice = (productId, ars, usd) => {
+    const arsVal = parseFloat(ars) || 0;
+    const usdVal = parseFloat(usd) || 0;
+    setProducts(prev => prev.map(p => p.id !== productId ? p : {
+      ...p,
+      prices: { ...p.prices, [selectedList]: arsVal },
+      pricesUsd: { ...(p.pricesUsd || {}), [selectedList]: usdVal },
+      priceUpdatedAt: { ...(p.priceUpdatedAt || {}), [selectedList]: today }
+    }));
+    setEditingPrice(null);
+  };
+
+  // Importar desde Excel — columnas: SKU | Precio ARS | Precio USD
+  const handleImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportError(""); setImportSuccess("");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: "binary" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        const isHeader = (r) => {
+          const v = String(r[0] || "").toLowerCase();
+          return v.includes("sku") || v.includes("codigo") || v.includes("código");
+        };
+        const dataRows = rows.filter((r, i) => i === 0 ? !isHeader(r) : true).filter(r => r[0]);
+        let updated = 0; let notFound = 0;
+        setProducts(prev => {
+          const next = [...prev];
+          dataRows.forEach(row => {
+            const sku = String(row[0] || "").trim();
+            const arsRaw = String(row[1] || "").replace(/[^0-9.,]/g, "").replace(",", ".");
+            const usdRaw = String(row[2] || "").replace(/[^0-9.,]/g, "").replace(",", ".");
+            const ars = parseFloat(arsRaw) || 0;
+            const usd = parseFloat(usdRaw) || 0;
+            if (!sku || (ars === 0 && usd === 0)) return;
+            const idx = next.findIndex(p => p.sku === sku || p.id === sku);
+            if (idx === -1) { notFound++; return; }
+            next[idx] = {
+              ...next[idx],
+              prices: { ...next[idx].prices, [selectedList]: ars },
+              pricesUsd: { ...(next[idx].pricesUsd || {}), [selectedList]: usd },
+              priceUpdatedAt: { ...(next[idx].priceUpdatedAt || {}), [selectedList]: today }
+            };
+            updated++;
+          });
+          return next;
+        });
+        setImportSuccess("Se actualizaron " + updated + " productos." + (notFound > 0 ? " " + notFound + " SKU no encontrados." : ""));
+      } catch (err) {
+        setImportError("Error al leer el archivo. Verificá que sea un Excel válido.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  };
+
+  const downloadTemplate = () => {
+    const rows = [
+      ["SKU", "Precio ARS (s/IVA)", "Precio USD (s/IVA)"],
+      ...products.filter(p => p.tracksStock !== false).map(p => [p.sku, getArs(p) || "", getUsd(p) || ""])
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 16 }, { wch: 20 }, { wch: 20 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Lista de precios");
+    XLSX.writeFile(wb, "plantilla_" + (list?.label || selectedList) + ".xlsx");
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, gap: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {priceLists.map(l => (
+            <button key={l.id} onClick={() => setSelectedList(l.id)}
+              style={{ padding: "7px 16px", borderRadius: 8, border: `1px solid ${selectedList === l.id ? T.accent : T.border}`, background: selectedList === l.id ? T.accentLight : "transparent", color: selectedList === l.id ? T.accent : T.muted, fontWeight: selectedList === l.id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              {l.label}
+            </button>
+          ))}
+          <button onClick={() => setShowNewList(v => !v)}
+            style={{ padding: "7px 14px", borderRadius: 8, border: `1px dashed ${T.border}`, background: "transparent", color: T.muted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            + Nueva lista
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={downloadTemplate}
+            style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            ⬇ Descargar plantilla
+          </button>
+          <label style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${T.blue}40`, background: T.blueLight, color: T.blue, fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
+            📥 Importar Excel
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} style={{ display: "none" }} />
+          </label>
+        </div>
+      </div>
+
+      {/* Form nueva lista */}
+      {showNewList && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 18px", marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
+          <input value={newListLabel} onChange={e => setNewListLabel(e.target.value)} onKeyDown={e => e.key === "Enter" && addList()} placeholder="Nombre de la lista (ej: Lista D · Revendedor)"
+            style={{ flex: 1, padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+          <Btn sm onClick={addList} disabled={!newListLabel.trim()}>Crear</Btn>
+          <Btn sm v="ghost" onClick={() => { setShowNewList(false); setNewListLabel(""); }}>Cancelar</Btn>
+        </div>
+      )}
+
+      {/* Feedback */}
+      {importSuccess && (
+        <div style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "10px 16px", marginBottom: 14, fontSize: 13, color: T.accent, display: "flex", justifyContent: "space-between" }}>
+          ✓ {importSuccess}
+          <button onClick={() => setImportSuccess("")} style={{ background: "none", border: "none", color: T.accent, cursor: "pointer", fontSize: 14 }}>✕</button>
+        </div>
+      )}
+      {importError && (
+        <div style={{ background: T.redLight, border: `1px solid ${T.red}40`, borderRadius: 8, padding: "10px 16px", marginBottom: 14, fontSize: 13, color: T.red, display: "flex", justifyContent: "space-between" }}>
+          ⚠ {importError}
+          <button onClick={() => setImportError("")} style={{ background: "none", border: "none", color: T.red, cursor: "pointer", fontSize: 14 }}>✕</button>
+        </div>
+      )}
+
+      {/* Alertas */}
+      {(missingPrice.length > 0 || stalePrice.length > 0) && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+          {missingPrice.length > 0 && (
+            <div style={{ background: T.redLight, border: `1px solid ${T.red}30`, borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.red, marginBottom: 10 }}>⚠ Sin precio en esta lista ({missingPrice.length})</div>
+              {missingPrice.slice(0, 5).map(p => (
+                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.red}20` }}>
+                  <div>
+                    <span style={{ fontSize: 12, color: T.ink }}>{p.name}</span>
+                    <span style={{ fontSize: 11, color: T.muted, marginLeft: 8, fontFamily: "monospace" }}>{p.sku}</span>
+                  </div>
+                  <button onClick={() => setEditingPrice({ productId: p.id, ars: "", usd: "" })}
+                    style={{ fontSize: 11, background: T.redLight, color: T.red, border: `1px solid ${T.red}40`, borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                    Cargar precio
+                  </button>
+                </div>
+              ))}
+              {missingPrice.length > 5 && <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>y {missingPrice.length - 5} más...</div>}
+            </div>
+          )}
+          {stalePrice.length > 0 && (
+            <div style={{ background: T.yellowLight, border: `1px solid ${T.yellow}30`, borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.yellow, marginBottom: 10 }}>🕐 Precio desactualizado +{STALE_DAYS} días ({stalePrice.length})</div>
+              {stalePrice.slice(0, 5).map(p => {
+                const updatedAt = p.priceUpdatedAt?.[selectedList];
+                return (
+                  <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.yellow}20` }}>
+                    <div>
+                      <span style={{ fontSize: 12, color: T.ink }}>{p.name}</span>
+                      <span style={{ fontSize: 11, color: T.muted, marginLeft: 6 }}>{updatedAt ? "Últ: " + updatedAt : "Sin fecha"}</span>
+                    </div>
+                    <button onClick={() => setEditingPrice({ productId: p.id, ars: String(getArs(p) || ""), usd: String(getUsd(p) || "") })}
+                      style={{ fontSize: 11, background: T.yellowLight, color: T.yellow, border: `1px solid ${T.yellow}40`, borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                      Actualizar
+                    </button>
+                  </div>
+                );
+              })}
+              {stalePrice.length > 5 && <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>y {stalePrice.length - 5} más...</div>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal edición de precio — dual moneda */}
+      {editingPrice && (() => {
+        const prod = products.find(p => p.id === editingPrice.productId);
+        return (
+          <Modal title={"Actualizar precio · " + (prod?.name || "")} onClose={() => setEditingPrice(null)}>
+            <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>Podés cargar precio en ARS, en USD, o en ambas. Dejá en 0 si no aplica para esta lista.</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>PRECIO ARS (s/IVA)</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 14, color: T.muted, fontWeight: 700 }}>$</span>
+                  <input type="number" value={editingPrice.ars} onChange={e => setEditingPrice(ep => ({ ...ep, ars: e.target.value }))}
+                    placeholder="0.00" autoFocus
+                    style={{ flex: 1, padding: "11px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 15, fontFamily: "monospace", outline: "none" }} />
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>PRECIO USD (s/IVA)</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 14, color: T.muted, fontWeight: 700 }}>US$</span>
+                  <input type="number" value={editingPrice.usd} onChange={e => setEditingPrice(ep => ({ ...ep, usd: e.target.value }))}
+                    placeholder="0.00"
+                    style={{ flex: 1, padding: "11px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 15, fontFamily: "monospace", outline: "none" }} />
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <Btn v="ghost" onClick={() => setEditingPrice(null)}>Cancelar</Btn>
+              <Btn onClick={() => savePrice(editingPrice.productId, editingPrice.ars, editingPrice.usd)}
+                disabled={!editingPrice.ars && !editingPrice.usd}>Guardar</Btn>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {/* Tabla */}
+      <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{list?.label || selectedList}</span>
+          <span style={{ fontSize: 12, color: T.muted }}>{products.filter(p => p.tracksStock !== false).length} productos</span>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: T.surface }}>
+              {["SKU", "Producto", "Categoría", "Precio ARS", "Precio USD", "Últ. actualización", ""].map(h => (
+                <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {products.filter(p => p.tracksStock !== false).map(p => {
+              const ars = getArs(p);
+              const usd = getUsd(p);
+              const updatedAt = p.priceUpdatedAt?.[selectedList];
+              const noPrice = ars === 0 && usd === 0;
+              const isStale = !noPrice && (!updatedAt || updatedAt < cutoffStr);
+              return (
+                <tr key={p.id} style={{ borderTop: `1px solid ${T.border}`, background: noPrice ? T.redLight + "22" : isStale ? T.yellowLight + "22" : "transparent" }}>
+                  <td style={{ padding: "11px 16px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{p.sku}</td>
+                  <td style={{ padding: "11px 16px", fontSize: 13, fontWeight: 600, color: T.ink }}>{p.name}</td>
+                  <td style={{ padding: "11px 16px", fontSize: 12, color: T.muted }}>{p.category}</td>
+                  <td style={{ padding: "11px 16px" }}>
+                    {ars > 0
+                      ? <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{fmt(ars)}</span>
+                      : <span style={{ fontSize: 12, color: T.faint }}>—</span>
+                    }
+                  </td>
+                  <td style={{ padding: "11px 16px" }}>
+                    {usd > 0
+                      ? <span style={{ fontSize: 14, fontWeight: 800, color: T.blue }}>US$ {Number(usd).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      : <span style={{ fontSize: 12, color: T.faint }}>—</span>
+                    }
+                  </td>
+                  <td style={{ padding: "11px 16px", fontSize: 12, color: isStale ? T.yellow : T.muted }}>
+                    {updatedAt || <span style={{ color: noPrice ? T.red : T.muted }}>Sin fecha</span>}
+                    {isStale && <span style={{ marginLeft: 6, fontSize: 10, color: T.yellow, fontWeight: 700 }}>⚠ +{STALE_DAYS}d</span>}
+                  </td>
+                  <td style={{ padding: "11px 16px" }}>
+                    <button onClick={() => setEditingPrice({ productId: p.id, ars: String(ars || ""), usd: String(usd || "") })}
+                      style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                      {noPrice ? "Cargar" : "Editar"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Instrucciones */}
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 18px", marginTop: 16, fontSize: 12, color: T.muted, lineHeight: 1.8 }}>
+        <span style={{ fontWeight: 700, color: T.ink }}>Formato de importación Excel:</span> tres columnas: SKU, Precio ARS y Precio USD (sin IVA). Podés dejar una columna en 0 si el producto solo se vende en una moneda. La primera fila puede ser encabezado. Usá la plantilla para ver el formato exacto.
+      </div>
+    </div>
+  );
+}
+
+// ─── MODULE: COMPRAS ──────────────────────────────────────────────────────────
+function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, onNewPurchase }) {
+  const [tab, setTab] = useState("invoices");
+  const [showSupForm, setShowSupForm] = useState(false);
+  const [supForm, setSupForm] = useState({ name: "", cuit: "", contact: "", email: "", phone: "", paymentDays: 30, bank: "", cbu: "", direccion: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" });
+  const [searchInvNum, setSearchInvNum] = useState("");
+  const [searchInvSupplier, setSearchInvSupplier] = useState("");
+  const [searchInvDateFrom, setSearchInvDateFrom] = useState("");
+  const [searchInvDateTo, setSearchInvDateTo] = useState("");
+  const [searchInvStatus, setSearchInvStatus] = useState("");
+  const [searchInvAmount, setSearchInvAmount] = useState("");
+  const [searchSupName, setSearchSupName] = useState("");
+  const [searchSupCuit, setSearchSupCuit] = useState("");
+
+  const filteredInvoices = purchaseInvoices.filter(inv => {
+    if (searchInvNum && !inv.id?.toLowerCase().includes(searchInvNum.toLowerCase()) && !inv.nroFactura?.toLowerCase().includes(searchInvNum.toLowerCase())) return false;
+    if (searchInvSupplier && !inv.supplierName?.toLowerCase().includes(searchInvSupplier.toLowerCase())) return false;
+    if (searchInvDateFrom && inv.date < searchInvDateFrom) return false;
+    if (searchInvDateTo && inv.date > searchInvDateTo) return false;
+    if (searchInvStatus && !inv.status?.toLowerCase().includes(searchInvStatus.toLowerCase())) return false;
+    if (searchInvAmount && !String(inv.total).includes(searchInvAmount)) return false;
+    return true;
+  });
+
+  const filteredSuppliers = suppliers.filter(s => {
+    if (searchSupName && !s.name?.toLowerCase().includes(searchSupName.toLowerCase())) return false;
+    if (searchSupCuit && !s.cuit?.toLowerCase().includes(searchSupCuit.toLowerCase())) return false;
+    return true;
+  });
+
+  const markPagada = (id) => setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pagada" } : i));
+  const unmarkPagada = (id) => setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i));
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div><div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Compras</div><div style={{ fontSize: 13, color: T.muted }}>Proveedores, facturas y listas de precios</div></div>
+        <Btn onClick={onNewPurchase}>+ Nueva factura de compra</Btn>
+      </div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 22, background: T.surface, borderRadius: 10, padding: 4, width: "fit-content" }}>
+        {[["invoices", "Facturas a pagar"], ["suppliers", "Proveedores"], ["prices", "Listas de precios"]].map(([v, l]) => (
+          <button key={v} onClick={() => setTab(v)} style={{ padding: "7px 16px", borderRadius: 7, border: "none", background: tab === v ? T.paper : "transparent", color: tab === v ? T.ink : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+        ))}
+      </div>
+
+      {tab === "invoices" && (
+        <>
+          <div style={{ display: "flex", gap: 14, marginBottom: 16 }}>
+            {[
+              { l: "Total comprado mes", v: fmt(purchaseInvoices.filter(i => i.date?.startsWith("2026-03")).reduce((s, i) => s + i.total, 0)) },
+              { l: "Pendiente de pago", v: fmt(purchaseInvoices.filter(i => i.status === "pendiente").reduce((s, i) => s + i.total, 0)), c: T.orange },
+            ].map((k, i) => (
+              <div key={i} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", flex: 1 }}>
+                <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 6 }}>{k.l}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: k.c || T.ink }}>{k.v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+            <SearchBar value={searchInvNum} onChange={setSearchInvNum} placeholder="N° de factura..." />
+            <SearchBar value={searchInvSupplier} onChange={setSearchInvSupplier} placeholder="Proveedor..." />
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+              <SearchBar value={searchInvStatus} onChange={setSearchInvStatus} placeholder="Estado (pendiente / pagada)..." />
+              <SearchBar value={searchInvAmount} onChange={setSearchInvAmount} placeholder="Monto..." />
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>FECHA DESDE</label>
+                <input type="date" value={searchInvDateFrom} onChange={e => setSearchInvDateFrom(e.target.value)}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${searchInvDateFrom ? T.blue : T.border}`, background: T.surface, color: searchInvDateFrom ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>FECHA HASTA</label>
+                <input type="date" value={searchInvDateTo} onChange={e => setSearchInvDateTo(e.target.value)}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${searchInvDateTo ? T.blue : T.border}`, background: T.surface, color: searchInvDateTo ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+              </div>
+              {(searchInvDateFrom || searchInvDateTo) && (
+                <button onClick={() => { setSearchInvDateFrom(""); setSearchInvDateTo(""); }} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14, paddingBottom: 2 }}>✕</button>
+              )}
+            </div>
+          </div>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>{["Número", "Proveedor", "Fecha", "Vencimiento", "Total", "Estado", ""].map(h => <th key={h} style={{ padding: "11px 15px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+              <tbody>{filteredInvoices.map(inv => (
+                <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "12px 15px" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{inv.id}</div>
+                    {inv.nroFactura && <div style={{ fontFamily: "monospace", fontSize: 11, color: T.muted, marginTop: 2 }}>{inv.nroFactura}</div>}
+                  </td>
+                  <td style={{ padding: "12px 15px", fontSize: 13, fontWeight: 600 }}>{inv.supplierName}</td>
+                  <td style={{ padding: "12px 15px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                  <td style={{ padding: "12px 15px", fontSize: 12, color: inv.status === "pendiente" ? T.yellow : T.muted }}>{inv.dueDate}</td>
+                  <td style={{ padding: "12px 15px", fontSize: 14, fontWeight: 800 }}>{fmt(inv.total)}</td>
+                  <td style={{ padding: "12px 15px" }}><Badge status={inv.status} /></td>
+                  <td style={{ padding: "12px 15px" }}>
+                    {inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => markPagada(inv.id)}>Marcar pagada</Btn>}
+                    {inv.status === "pagada" && <Btn sm v="ghost" onClick={() => unmarkPagada(inv.id)}>↩ Revertir a pendiente</Btn>}
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {tab === "suppliers" && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, marginBottom: 14, alignItems: "flex-end" }}>
+            <SearchBar value={searchSupName} onChange={setSearchSupName} placeholder="Nombre..." />
+            <SearchBar value={searchSupCuit} onChange={setSearchSupCuit} placeholder="CUIT..." />
+            <Btn sm onClick={() => setShowSupForm(true)}>+ Nuevo proveedor</Btn>
+          </div>
+          {showSupForm && (
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20, marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>Nuevo proveedor</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 }}>
+                {[["name","NOMBRE"], ["cuit","CUIT"], ["contact","CONTACTO"], ["email","EMAIL"], ["phone","TELÉFONO"], ["bank","BANCO"]].map(([k, l]) => <Input key={k} label={l} value={supForm[k] || ""} onChange={v => setSupForm(f => ({ ...f, [k]: v }))} />)}
+                <Input label="DÍAS DE PAGO" type="number" value={supForm.paymentDays} onChange={v => setSupForm(f => ({ ...f, paymentDays: parseInt(v) || 0 }))} />
+                <Input label="CBU" value={supForm.cbu || ""} onChange={v => setSupForm(f => ({ ...f, cbu: v }))} mono />
+              </div>
+              <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 14, marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>LOGÍSTICA · DIRECCIÓN Y HORARIOS</div>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12 }}>
+                  <Input label="DIRECCIÓN" value={supForm.direccion || ""} onChange={v => setSupForm(f => ({ ...f, direccion: v }))} />
+                  <Input label="ABRE" type="time" value={supForm.horarioAbre || ""} onChange={v => setSupForm(f => ({ ...f, horarioAbre: v }))} />
+                  <Input label="CIERRA" type="time" value={supForm.horarioCierra || ""} onChange={v => setSupForm(f => ({ ...f, horarioCierra: v }))} />
+                  <Input label="DÍAS" value={supForm.diasDisponibles || ""} onChange={v => setSupForm(f => ({ ...f, diasDisponibles: v }))} />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn v="ghost" sm onClick={() => setShowSupForm(false)}>Cancelar</Btn>
+                <Btn sm onClick={() => { setSuppliers([...suppliers, { ...supForm, id: `s${Date.now()}`, productCodes: [] }]); setShowSupForm(false); setSupForm({ name: "", cuit: "", contact: "", email: "", phone: "", paymentDays: 30, bank: "", cbu: "", direccion: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" }); }}>Guardar</Btn>
+              </div>
+            </div>
+          )}
+          <div style={{ display: "grid", gap: 10 }}>
+            {filteredSuppliers.map(s => {
+              const pending = purchaseInvoices.filter(i => i.supplierId === s.id && i.status === "pendiente").reduce((sum, i) => sum + i.total, 0);
+              return (
+                <div key={s.id} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12, alignItems: "center" }}>
+                  <div><div style={{ fontSize: 14, fontWeight: 700 }}>{s.name}</div><div style={{ fontSize: 12, color: T.muted }}>CUIT: {s.cuit} · {s.contact}</div></div>
+                  <div style={{ fontSize: 12, color: T.muted }}>{s.paymentDays === 0 ? "Contado" : `${s.paymentDays} días`}</div>
+                  <div style={{ fontSize: 12 }}>{s.productCodes.length} producto(s)</div>
+                  <div style={{ fontWeight: 700, color: pending > 0 ? T.orange : T.muted, textAlign: "right" }}>{pending > 0 ? fmt(pending) : "Sin deuda"}</div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {tab === "prices" && (
+        <PriceListsTab products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} />
+      )}
+    </div>
+  );
+}
+
+// ─── MODULE: INVENTARIO ───────────────────────────────────────────────────────
+const EMPTY_FORM = { name: "", sku: "", category: "", unit: "unidad", minStock: 10, cost: 0, iva: 21, tracksStock: true, prices: { lista_a: 0, lista_b: 0, lista_c: 0 }, clientCodes: [] };
+
+function InventarioModule({ products, setProducts, clients, suppliers }) {
+  const [showForm, setShowForm] = useState(false);
+  const [adjustProd, setAdjustProd] = useState(null);
+  const [adjustQty, setAdjustQty] = useState(0);
+  const [adjustType, setAdjustType] = useState("add");
+  const [adjustNote, setAdjustNote] = useState("");
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [search, setSearch] = useState("");
+
+  // client-code row being built inside the form
+  const [ccClient, setCcClient] = useState("");
+  const [ccCode, setCcCode] = useState("");
+
+  const filtered = useMemo(() => products.filter(p => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return p.name.toLowerCase().includes(s) || p.sku.toLowerCase().includes(s) ||
+      (p.clientOverrides || []).some(o => o.customCode?.toLowerCase().includes(s));
+  }), [products, search]);
+
+  const doAdjust = () => {
+    const qty = parseInt(adjustQty) || 0;
+    setProducts(products.map(p => p.id === adjustProd.id
+      ? { ...p, stock: Math.max(0, adjustType === "add" ? p.stock + qty : p.stock - qty) }
+      : p));
+    setAdjustProd(null); setAdjustQty(0); setAdjustNote("");
+  };
+
+  const addClientCode = () => {
+    if (!ccClient || !ccCode.trim()) return;
+    if (form.clientCodes.some(r => r.clientId === ccClient)) return; // ya existe
+    setForm(f => ({ ...f, clientCodes: [...f.clientCodes, { clientId: ccClient, customCode: ccCode.trim(), sku: f.sku }] }));
+    setCcClient(""); setCcCode("");
+  };
+
+  const removeClientCode = (clientId) => setForm(f => ({ ...f, clientCodes: f.clientCodes.filter(r => r.clientId !== clientId) }));
+
+  const addProduct = () => {
+    // clientCodes → stored as clientOverrides for compatibility with existing getClientPrice/getClientCode helpers
+    const overrides = form.clientCodes.map(r => ({ clientId: r.clientId, customCode: r.customCode, skuRef: form.sku }));
+    setProducts([...products, { ...form, id: `p${Date.now()}`, stock: 0, clientOverrides: overrides }]);
+    setShowForm(false);
+    setForm(EMPTY_FORM);
+    setCcClient(""); setCcCode("");
+  };
+
+  const critical = products.filter(p => p.tracksStock !== false && p.stock < p.minStock);
+
+  // ── Importación masiva ─────────────────────────────────────────────────────
+  const [importMsg, setImportMsg] = useState(null);
+  const [dupConfirm, setDupConfirm] = useState(null); // { pending: [...], ccRows: [...] }
+  const [editingProduct, setEditingProduct] = useState(null); // producto a editar
+
+  const downloadTemplate = () => { /* usa el xlsx externo */ };
+
+  const applyImport = (prodRows, ccRows, skipSkus) => {
+    let created = 0; let updated = 0; let skipped = 0;
+    setProducts(prev => {
+      const next = [...prev];
+      prodRows.forEach(row => {
+        const sku = String(row[0] || "").trim();
+        const name = String(row[1] || "").trim();
+        if (!sku || !name) return;
+        if (skipSkus.includes(sku)) { skipped++; return; }
+        const category = String(row[2] || "").trim();
+        const unit = String(row[3] || "unidad").trim();
+        const ivaRaw = parseFloat(String(row[4] || "21").replace(",", "."));
+        const iva = [21, 10.5].includes(ivaRaw) ? ivaRaw : 21;
+        const tracksStock = String(row[5] || "P").trim().toUpperCase() !== "S";
+        const stockInit = tracksStock ? (parseInt(row[6]) || 0) : 0;
+        const minStock = tracksStock ? (parseInt(row[7]) || 0) : 0;
+        const cost = parseFloat(String(row[8] || "0").replace(",", ".")) || 0;
+        const priceArs = parseFloat(String(row[9] || "0").replace(",", ".")) || 0;
+        const priceUsd = parseFloat(String(row[10] || "0").replace(",", ".")) || 0;
+        const existing = next.findIndex(p => p.sku === sku);
+        if (existing >= 0) {
+          next[existing] = {
+            ...next[existing], name, category, unit, iva, tracksStock, minStock, cost,
+            prices: priceArs > 0 ? { ...next[existing].prices, lista_a: priceArs } : next[existing].prices,
+            pricesUsd: priceUsd > 0 ? { ...(next[existing].pricesUsd || {}), lista_a: priceUsd } : (next[existing].pricesUsd || {}),
+          };
+          updated++;
+        } else {
+          next.push({
+            id: "p" + Date.now() + "_" + next.length,
+            sku, name, category, unit, iva, tracksStock,
+            stock: stockInit, minStock, cost,
+            prices: { lista_a: priceArs, lista_b: 0, lista_c: 0 },
+            pricesUsd: { lista_a: priceUsd, lista_b: 0, lista_c: 0 },
+            clientOverrides: [],
+          });
+          created++;
+        }
+      });
+      ccRows.forEach(row => {
+        const sku = String(row[0] || "").trim();
+        const clientRef = String(row[1] || "").trim().toLowerCase();
+        const customCode = String(row[2] || "").trim();
+        const fixedPrice = row[3] !== "" && row[3] != null ? parseFloat(String(row[3]).replace(",", ".")) : null;
+        const discount = row[4] !== "" && row[4] != null ? parseFloat(String(row[4]).replace(",", ".")) : null;
+        const prodIdx = next.findIndex(p => p.sku === sku);
+        if (prodIdx === -1) return;
+        const client = clients.find(c => c.codigo?.toLowerCase() === clientRef || c.name?.toLowerCase() === clientRef);
+        if (!client) return;
+        const overrides = [...(next[prodIdx].clientOverrides || [])];
+        const ovIdx = overrides.findIndex(o => o.clientId === client.id);
+        const newOv = { clientId: client.id, customCode, ...(fixedPrice != null && !isNaN(fixedPrice) ? { price: fixedPrice } : {}), ...(discount != null && !isNaN(discount) ? { discount } : {}) };
+        if (ovIdx >= 0) overrides[ovIdx] = newOv; else overrides.push(newOv);
+        next[prodIdx] = { ...next[prodIdx], clientOverrides: overrides };
+      });
+      return next;
+    });
+    const parts = [];
+    if (created > 0) parts.push(created + " creado(s)");
+    if (updated > 0) parts.push(updated + " actualizado(s)");
+    if (skipped > 0) parts.push(skipped + " omitido(s) por duplicado");
+    if (ccRows.length > 0) parts.push(ccRows.length + " código(s) de cliente");
+    setImportMsg({ type: "ok", text: parts.join(" · ") || "Sin cambios." });
+  };
+
+  const handleBulkImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportMsg(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: "binary" });
+        const wsProd = wb.Sheets["Productos"] || wb.Sheets[wb.SheetNames[0]];
+        const prodRows = XLSX.utils.sheet_to_json(wsProd, { header: 1 }).slice(1).filter(r => r[0] && r[1]);
+        const wsCC = wb.Sheets["Codigos clientes"] || wb.Sheets["Códigos clientes"];
+        const ccRows = wsCC ? XLSX.utils.sheet_to_json(wsCC, { header: 1 }).slice(1).filter(r => r[0] && r[1] && r[2]) : [];
+        // Detectar duplicados
+        const duplicates = prodRows.filter(row => {
+          const sku = String(row[0] || "").trim();
+          return products.some(p => p.sku === sku);
+        });
+        if (duplicates.length > 0) {
+          setDupConfirm({ prodRows, ccRows, duplicates });
+        } else {
+          applyImport(prodRows, ccRows, []);
+        }
+      } catch {
+        setImportMsg({ type: "error", text: "Error al leer el archivo. Verificá que uses la plantilla correcta." });
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Inventario</div>
+          <div style={{ fontSize: 13, color: T.muted }}>
+            {products.length} items · {critical.length > 0
+              ? <span style={{ color: T.red }}>{critical.length} con stock crítico</span>
+              : "todo en orden"}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <a href="https://cdn.example.com" style={{ display: "none" }}>.</a>
+          <label style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${T.blue}40`, background: T.blueLight, color: T.blue, fontSize: 12, cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+            📥 Importar masivo
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleBulkImport} style={{ display: "none" }} />
+          </label>
+          <Btn onClick={() => setShowForm(true)}>+ Nuevo producto</Btn>
+        </div>
+      </div>
+
+      {/* Modal confirmación duplicados */}
+      {dupConfirm && (
+        <Modal title="SKUs duplicados detectados" onClose={() => setDupConfirm(null)} wide>
+          <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>
+            Los siguientes SKUs ya existen en el sistema. Confirmá cuáles querés sobreescribir:
+          </div>
+          <div style={{ background: T.surface, borderRadius: 10, padding: 14, marginBottom: 18, maxHeight: 260, overflowY: "auto" }}>
+            {dupConfirm.duplicates.map(row => {
+              const sku = String(row[0]).trim();
+              const existing = products.find(p => p.sku === sku);
+              return (
+                <div key={sku} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${T.border}` }}>
+                  <div>
+                    <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.yellow }}>{sku}</span>
+                    <span style={{ fontSize: 12, color: T.muted, marginLeft: 10 }}>En sistema: <span style={{ color: T.ink }}>{existing?.name}</span></span>
+                    <span style={{ fontSize: 11, color: T.blue, marginLeft: 10 }}>→ Excel: <span style={{ color: T.ink }}>{String(row[1])}</span></span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 18, lineHeight: 1.7 }}>
+            <strong style={{ color: T.ink }}>Reemplazar:</strong> sobreescribe nombre, categoría, IVA y tipo. Los precios y códigos de cliente existentes se conservan.<br />
+            <strong style={{ color: T.ink }}>Omitir duplicados:</strong> procesa solo los artículos nuevos, ignora los que ya existen.
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <Btn v="ghost" onClick={() => setDupConfirm(null)}>Cancelar todo</Btn>
+            <button onClick={() => { const { prodRows, ccRows } = dupConfirm; setDupConfirm(null); applyImport(prodRows, ccRows, dupConfirm.duplicates.map(r => String(r[0]).trim())); }}
+              style={{ padding: "9px 18px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              Omitir duplicados
+            </button>
+            <Btn onClick={() => { const { prodRows, ccRows } = dupConfirm; setDupConfirm(null); applyImport(prodRows, ccRows, []); }}>
+              Reemplazar todos
+            </Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal editar producto */}
+      {editingProduct && (
+        <Modal title={"Editar · " + editingProduct.name} onClose={() => setEditingProduct(null)} xl>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 18 }}>
+            <div style={{ gridColumn: "span 2" }}>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>NOMBRE <span style={{ color: T.accent }}>*</span></label>
+              <input value={editingProduct.name} onChange={e => setEditingProduct(p => ({...p, name: e.target.value}))}
+                style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>SKU <span style={{ color: T.accent }}>*</span></label>
+              <input value={editingProduct.sku} onChange={e => setEditingProduct(p => ({...p, sku: e.target.value}))}
+                style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <Input label="CATEGORÍA" value={editingProduct.category || ""} onChange={v => setEditingProduct(p => ({...p, category: v}))} />
+            <Input label="UNIDAD" value={editingProduct.unit || ""} onChange={v => setEditingProduct(p => ({...p, unit: v}))} />
+            <Input label="COSTO ($)" type="number" value={editingProduct.cost || 0} onChange={v => setEditingProduct(p => ({...p, cost: parseFloat(v) || 0}))} />
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 8, letterSpacing: 1 }}>ALÍCUOTA IVA</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[21, 10.5].map(rate => (
+                <button key={rate} onClick={() => setEditingProduct(p => ({...p, iva: rate}))}
+                  style={{ padding: "9px 20px", borderRadius: 8, border: `2px solid ${editingProduct.iva === rate ? T.yellow : T.border}`, background: editingProduct.iva === rate ? T.yellowLight : T.surface, color: editingProduct.iva === rate ? T.yellow : T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                  {rate}%
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 8, letterSpacing: 1 }}>MANEJO DE STOCK</label>
+            <div style={{ display: "flex", gap: 10 }}>
+              {[[true, "📦 Producto", T.accent, T.accentLight], [false, "🔧 Servicio", T.purple, T.purpleLight]].map(([val, label, col, bg]) => (
+                <button key={String(val)} onClick={() => setEditingProduct(p => ({...p, tracksStock: val}))}
+                  style={{ padding: "10px 20px", borderRadius: 9, border: `2px solid ${editingProduct.tracksStock === val ? col : T.border}`, background: editingProduct.tracksStock === val ? bg : T.surface, color: editingProduct.tracksStock === val ? col : T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {editingProduct.tracksStock && (
+              <div style={{ marginTop: 10, maxWidth: 200 }}>
+                <Input label="STOCK MÍNIMO" type="number" value={editingProduct.minStock || 0} onChange={v => setEditingProduct(p => ({...p, minStock: parseInt(v) || 0}))} />
+              </div>
+            )}
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>PRECIOS DE VENTA (S/IVA)</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+              {initPriceLists.map(pl => (
+                <Input key={pl.id} label={pl.label.toUpperCase() + " · ARS"} type="number"
+                  value={editingProduct.prices?.[pl.id] || 0}
+                  onChange={v => setEditingProduct(p => ({...p, prices: {...(p.prices||{}), [pl.id]: parseFloat(v)||0}}))} />
+              ))}
+              {initPriceLists.map(pl => (
+                <Input key={pl.id + "_usd"} label={pl.label.toUpperCase() + " · USD"} type="number"
+                  value={editingProduct.pricesUsd?.[pl.id] || 0}
+                  onChange={v => setEditingProduct(p => ({...p, pricesUsd: {...(p.pricesUsd||{}), [pl.id]: parseFloat(v)||0}}))} />
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <Btn v="ghost" onClick={() => setEditingProduct(null)}>Cancelar</Btn>
+            <Btn disabled={!editingProduct.name || !editingProduct.sku} onClick={() => {
+              setProducts(prev => prev.map(p => p.id === editingProduct.id ? editingProduct : p));
+              setEditingProduct(null);
+            }}>Guardar cambios</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Feedback importación */}
+      {importMsg && (
+        <div style={{ background: importMsg.type === "ok" ? T.accentLight : T.redLight, border: `1px solid ${importMsg.type === "ok" ? T.accent : T.red}40`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: importMsg.type === "ok" ? T.accent : T.red, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          {importMsg.type === "ok" ? "✓ " : "⚠ "}{importMsg.text}
+          <button onClick={() => setImportMsg(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 14, marginLeft: 12 }}>✕</button>
+        </div>
+      )}
+
+      {/* ── MODAL AJUSTE STOCK ── */}
+      {adjustProd && (
+        <Modal title={`Ajustar stock: ${adjustProd.name}`} onClose={() => setAdjustProd(null)}>
+          <div style={{ marginBottom: 16, background: T.surface, borderRadius: 10, padding: "14px 16px" }}>
+            <div style={{ fontSize: 12, color: T.muted }}>Stock actual</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: T.ink }}>{adjustProd.stock} <span style={{ fontSize: 14 }}>{adjustProd.unit}s</span></div>
+          </div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            {[["add", "➕ Agregar"], ["sub", "➖ Quitar"]].map(([v, l]) => (
+              <button key={v} onClick={() => setAdjustType(v)}
+                style={{ flex: 1, padding: "10px", borderRadius: 8, border: `2px solid ${adjustType === v ? (v === "add" ? T.accent : T.red) : T.border}`, background: adjustType === v ? (v === "add" ? T.accentLight : T.redLight) : "transparent", color: adjustType === v ? (v === "add" ? T.accent : T.red) : T.muted, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+            ))}
+          </div>
+          <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
+            <Input label="CANTIDAD" type="number" value={adjustQty} onChange={setAdjustQty} />
+            <Input label="MOTIVO (opcional)" value={adjustNote} onChange={setAdjustNote} placeholder="ej: Devolución, merma, ajuste inventario..." />
+          </div>
+          {adjustQty > 0 && (
+            <div style={{ background: T.surface, borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: T.muted }}>
+              Nuevo stock: <strong style={{ color: T.ink }}>{Math.max(0, adjustType === "add" ? adjustProd.stock + parseInt(adjustQty) : adjustProd.stock - parseInt(adjustQty))} {adjustProd.unit}s</strong>
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <Btn v="ghost" onClick={() => setAdjustProd(null)}>Cancelar</Btn>
+            <Btn onClick={doAdjust} disabled={!adjustQty}>Confirmar ajuste</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── MODAL NUEVO PRODUCTO ── */}
+      {showForm && (
+        <Modal title="Nuevo producto / servicio" onClose={() => { setShowForm(false); setForm(EMPTY_FORM); setCcClient(""); setCcCode(""); }} xl>
+
+          {/* ── SECCIÓN 1: datos básicos ── */}
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>DATOS BÁSICOS</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 6 }}>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>
+                NOMBRE <span style={{ color: T.accent }}>*</span>
+              </label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nombre del producto o servicio"
+                style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${form.name ? T.border : T.red + "60"}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>
+                SKU INTERNO <span style={{ color: T.accent }}>*</span>
+              </label>
+              <input value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} placeholder="ej: PRD-001"
+                style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${form.sku ? T.border : T.red + "60"}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <Input label="CATEGORÍA" value={form.category} onChange={v => setForm(f => ({ ...f, category: v }))} />
+            <Input label="UNIDAD" value={form.unit} onChange={v => setForm(f => ({ ...f, unit: v }))} />
+            <Input label="COSTO PROMEDIO ($)" type="number" value={form.cost} onChange={v => setForm(f => ({ ...f, cost: parseFloat(v) || 0 }))} />
+
+            {/* ALÍCUOTA IVA */}
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>ALÍCUOTA IVA</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[21, 10.5].map(rate => (
+                  <button key={rate} onClick={() => setForm(f => ({ ...f, iva: rate }))}
+                    style={{ flex: 1, padding: "10px", borderRadius: 8, border: `2px solid ${form.iva === rate ? T.yellow : T.border}`, background: form.iva === rate ? T.yellowLight : T.surface, color: form.iva === rate ? T.yellow : T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                    {rate}%
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── MUEVE STOCK ── */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 8, letterSpacing: 1 }}>MANEJO DE STOCK</label>
+            <div style={{ display: "flex", gap: 10 }}>
+              {[[true, "📦 Producto (mueve stock)", T.accent, T.accentLight], [false, "🔧 Servicio (no mueve stock)", T.purple, T.purpleLight]].map(([val, label, col, bg]) => (
+                <button key={String(val)} onClick={() => setForm(f => ({ ...f, tracksStock: val }))}
+                  style={{ flex: 1, padding: "12px 14px", borderRadius: 10, border: `2px solid ${form.tracksStock === val ? col : T.border}`, background: form.tracksStock === val ? bg : T.surface, color: form.tracksStock === val ? col : T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {form.tracksStock && (
+              <div style={{ marginTop: 10 }}>
+                <Input label="STOCK MÍNIMO" type="number" value={form.minStock} onChange={v => setForm(f => ({ ...f, minStock: parseInt(v) || 0 }))} />
+              </div>
+            )}
+          </div>
+
+          {/* ── PRECIOS ── */}
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>PRECIOS DE VENTA POR LISTA (S/IVA)</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 24 }}>
+            {initPriceLists.map(pl => (
+              <Input key={pl.id} label={pl.label.toUpperCase()} type="number" value={form.prices[pl.id]}
+                onChange={v => setForm(f => ({ ...f, prices: { ...f.prices, [pl.id]: parseFloat(v) || 0 } }))} />
+            ))}
+          </div>
+
+          {/* ── CÓDIGOS POR CLIENTE ── */}
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 6 }}>CÓDIGOS ESPECIALES POR CLIENTE</div>
+          <div style={{ fontSize: 12, color: T.faint, marginBottom: 12 }}>
+            Cada código queda vinculado al SKU interno <span style={{ fontFamily: "monospace", color: form.sku ? T.blue : T.muted, fontWeight: 700 }}>{form.sku || "—"}</span>.
+            Cuando ese cliente busque o reciba un documento, verá su código propio.
+          </div>
+
+          {/* Tabla de códigos ya agregados */}
+          {form.clientCodes.length > 0 && (
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 14 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: T.surface }}>
+                    {["Cliente", "Código del cliente", "SKU vinculado", ""].map(h => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {form.clientCodes.map(r => {
+                    const cl = clients.find(c => c.id === r.clientId);
+                    return (
+                      <tr key={r.clientId} style={{ borderTop: `1px solid ${T.border}` }}>
+                        <td style={{ padding: "9px 12px", fontSize: 13 }}>{cl?.name || r.clientId}</td>
+                        <td style={{ padding: "9px 12px", fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: T.blue }}>{r.customCode} <span style={{ color: T.accent, fontSize: 11 }}>✦</span></td>
+                        <td style={{ padding: "9px 12px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{form.sku}</td>
+                        <td style={{ padding: "9px 12px" }}>
+                          <button onClick={() => removeClientCode(r.clientId)}
+                            style={{ background: "none", border: "none", color: T.red, cursor: "pointer", fontSize: 14 }}>✕</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Agregar nuevo código */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "flex-end", marginBottom: 24 }}>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>CLIENTE</label>
+              <select value={ccClient} onChange={e => setCcClient(e.target.value)}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: ccClient ? T.ink : T.muted, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                <option value="">Seleccionar cliente...</option>
+                {clients.filter(c => !form.clientCodes.some(r => r.clientId === c.id)).map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>CÓDIGO DEL CLIENTE</label>
+              <input value={ccCode} onChange={e => setCcCode(e.target.value)} placeholder="ej: CLI-A-4892"
+                onKeyDown={e => e.key === "Enter" && addClientCode()}
+                style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <Btn onClick={addClientCode} disabled={!ccClient || !ccCode.trim()}>+ Agregar</Btn>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <Btn v="ghost" onClick={() => { setShowForm(false); setForm(EMPTY_FORM); setCcClient(""); setCcCode(""); }}>Cancelar</Btn>
+            <Btn onClick={addProduct} disabled={!form.name || !form.sku}>Crear</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── BUSCADOR ── */}
+      <div style={{ marginBottom: 16 }}>
+        <SearchBar value={search} onChange={setSearch} placeholder="Buscar por nombre, SKU o código de cliente..." />
+      </div>
+
+      {/* ── TABLA ── */}
+      <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: T.surface }}>
+              {["SKU", "Producto / Servicio", "Categoría", "Stock", "Lista A", "Lista B / C", "Estado", ""].map(h => (
+                <th key={h} style={{ padding: "11px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.7 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>{filtered.map(p => {
+            const isCritical = p.tracksStock !== false && p.stock < p.minStock;
+            const isService = p.tracksStock === false;
+            return (
+              <tr key={p.id} style={{ borderTop: `1px solid ${T.border}`, background: isCritical ? `${T.red}08` : "transparent" }}>
+                <td style={{ padding: "12px 14px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{p.sku}</td>
+                <td style={{ padding: "12px 14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</span>
+                    {isService && <span style={{ fontSize: 10, fontWeight: 700, color: T.purple, background: T.purpleLight, padding: "2px 7px", borderRadius: 5 }}>SERVICIO</span>}
+                  </div>
+                  {(p.clientOverrides || []).length > 0 && (
+                    <div style={{ fontSize: 11, color: T.blue, marginTop: 2 }}>
+                      {p.clientOverrides.length} código{p.clientOverrides.length > 1 ? "s" : ""} especial{p.clientOverrides.length > 1 ? "es" : ""}
+                    </div>
+                  )}
+                </td>
+                <td style={{ padding: "12px 14px" }}>
+                  <span style={{ background: T.surface, color: T.muted, padding: "2px 8px", borderRadius: 6, fontSize: 11 }}>{p.category || "—"}</span>
+                </td>
+                <td style={{ padding: "12px 14px" }}>
+                  {isService
+                    ? <span style={{ fontSize: 12, color: T.muted }}>N/A</span>
+                    : <span style={{ fontSize: 18, fontWeight: 800, color: isCritical ? T.red : T.accent }}>
+                        {p.stock} <span style={{ fontSize: 11, fontWeight: 400, color: T.muted }}>mín.{p.minStock}</span>
+                      </span>}
+                </td>
+                <td style={{ padding: "12px 14px", fontSize: 14, fontWeight: 700 }}>{fmt(p.prices?.lista_a)}</td>
+                <td style={{ padding: "12px 14px", fontSize: 12, color: T.muted }}>{fmt(p.prices?.lista_b)} / {fmt(p.prices?.lista_c)}</td>
+                <td style={{ padding: "12px 14px" }}>
+                  {isService
+                    ? <span style={{ background: T.purpleLight, color: T.purple, padding: "2px 9px", borderRadius: 12, fontSize: 11, fontWeight: 700 }}>Servicio</span>
+                    : isCritical
+                      ? <span style={{ background: T.redLight, color: T.red, padding: "2px 9px", borderRadius: 12, fontSize: 11, fontWeight: 700 }}>⚠ Crítico</span>
+                      : <span style={{ background: T.accentLight, color: T.accent, padding: "2px 9px", borderRadius: 12, fontSize: 11, fontWeight: 700 }}>OK</span>}
+                </td>
+                <td style={{ padding: "12px 14px" }}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {!isService && <Btn sm v="ghost" onClick={() => { setAdjustProd(p); setAdjustQty(0); }}>Ajustar</Btn>}
+                    <button onClick={() => setEditingProduct({...p})}
+                      style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                      Editar
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── MODULE: MÉTRICAS ─────────────────────────────────────────────────────────
+function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, suppliers }) {
+  const [from, setFrom] = useState("2026-01-01");
+  const [to, setTo] = useState("2026-03-31");
+
+  // ── drill-down state ──────────────────────────────────────────────────────
+  const [drillChart, setDrillChart] = useState(null); // null | "ventas" | "compras" | "ganancia"
+  const [drillFrom, setDrillFrom] = useState("");
+  const [drillTo, setDrillTo] = useState("");
+  const [drillClients, setDrillClients] = useState([]); // [] = todos
+
+  // ── tabla pendientes state ─────────────────────────────────────────────────
+  const [pendingPanel, setPendingPanel] = useState(null); // null | "cobros" | "pagos"
+  const [fCobroCliente, setFCobroCliente] = useState("");
+  const [fCobroCuit, setFCobroCuit] = useState("");
+  const [fCobroMontoMin, setFCobroMontoMin] = useState("");
+  const [fCobroMontoMax, setFCobroMontoMax] = useState("");
+  const [fPagoProveedor, setFPagoProveedor] = useState("");
+  const [fPagoMontoMin, setFPagoMontoMin] = useState("");
+  const [fPagoMontoMax, setFPagoMontoMax] = useState("");
+
+  // ── helpers ───────────────────────────────────────────────────────────────
+  const getLastPurchasePrice = (productId) => {
+    const allLines = purchaseInvoices
+      .filter(inv => inv.date)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .flatMap(inv => (inv.lines || []).map(l => ({ ...l, date: inv.date })));
+    const hit = allLines.find(l => l.productId === productId);
+    return hit ? (hit.unitPrice ?? hit.price ?? 0) : 0;
+  };
+
+  // ── período principal ──────────────────────────────────────────────────────
+  const salesInRange = saleInvoices.filter(i => i.type === "factura" && i.date >= from && i.date <= to);
+  const purchasesInRange = purchaseInvoices.filter(i => i.date >= from && i.date <= to);
+
+  // ── meses ─────────────────────────────────────────────────────────────────
+  const buildMonths = (f, t) => {
+    const months = [];
+    const [fy, fm] = f.split("-").map(Number);
+    const [ty, tm] = t.split("-").map(Number);
+    let y = fy, m = fm;
+    while (y < ty || (y === ty && m <= tm)) {
+      months.push(`${y}-${String(m).padStart(2, "0")}`);
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    return months;
+  };
+
+  const monthsInRange = useMemo(() => buildMonths(from, to), [from, to]);
+
+  const buildMonthlyData = (months, clientFilter) => months.map(ym => {
+    const mSales = saleInvoices.filter(i =>
+      i.type === "factura" && i.date?.startsWith(ym) &&
+      (clientFilter.length === 0 || clientFilter.includes(i.clientName))
+    );
+    const ventasBrutas = mSales.reduce((s, i) => s + i.total, 0);
+    const mPurch = purchaseInvoices.filter(i => i.date?.startsWith(ym));
+    const costoCompras = mPurch.reduce((s, i) => s + i.total, 0);
+    const costoVentas = mSales.flatMap(inv => inv.lines || []).reduce((sum, line) => {
+      return sum + getLastPurchasePrice(line.productId) * (line.qty || 0);
+    }, 0);
+    const label = new Date(ym + "-01").toLocaleDateString("es-AR", { month: "short", year: "2-digit" });
+    return { ym, label, ventasBrutas, costoCompras, costoVentas, gananciaBruta: ventasBrutas - costoVentas };
+  });
+
+  const monthlyData = useMemo(() => buildMonthlyData(monthsInRange, []), [monthsInRange, saleInvoices, purchaseInvoices]);
+
+  // drill data
+  const drillMonths = useMemo(() =>
+    drillFrom && drillTo ? buildMonths(drillFrom, drillTo) : monthsInRange,
+    [drillFrom, drillTo, monthsInRange]);
+  const drillData = useMemo(() =>
+    buildMonthlyData(drillMonths, drillClients),
+    [drillMonths, drillClients, saleInvoices, purchaseInvoices]);
+
+  // ── totales ───────────────────────────────────────────────────────────────
+  const totVentas   = monthlyData.reduce((s, d) => s + d.ventasBrutas, 0);
+  const totCompras  = monthlyData.reduce((s, d) => s + d.costoCompras, 0);
+  const totCostoV   = monthlyData.reduce((s, d) => s + d.costoVentas, 0);
+  const totGanancia = monthlyData.reduce((s, d) => s + d.gananciaBruta, 0);
+  const margin      = totVentas > 0 ? ((totGanancia / totVentas) * 100).toFixed(1) : 0;
+
+  // ── rankings ──────────────────────────────────────────────────────────────
+  const byClient = {};
+  salesInRange.forEach(inv => { byClient[inv.clientName] = (byClient[inv.clientName] || 0) + inv.total; });
+  const clientRanking = Object.entries(byClient).sort((a, b) => b[1] - a[1]);
+
+  const byProduct = {};
+  salesInRange.flatMap(i => i.lines || []).forEach(l => {
+    if (!byProduct[l.name]) byProduct[l.name] = { qty: 0, revenue: 0, productId: l.productId };
+    byProduct[l.name].qty += l.qty; byProduct[l.name].revenue += l.subtotal;
+  });
+  const productRanking = Object.entries(byProduct).sort((a, b) => b[1].revenue - a[1].revenue);
+
+  // ── pendientes ────────────────────────────────────────────────────────────
+  const cobrosPendientes = saleInvoices.filter(i => i.status === "pendiente" && i.type === "factura");
+  const pagosPendientes  = purchaseInvoices.filter(i => i.status === "pendiente");
+
+  const filteredCobros = cobrosPendientes.filter(inv => {
+    const cli = clients.find(c => c.id === inv.clientId);
+    if (fCobroCliente && !inv.clientName?.toLowerCase().includes(fCobroCliente.toLowerCase())) return false;
+    if (fCobroCuit && !cli?.cuit?.toLowerCase().includes(fCobroCuit.toLowerCase())) return false;
+    if (fCobroMontoMin && inv.total < parseFloat(fCobroMontoMin)) return false;
+    if (fCobroMontoMax && inv.total > parseFloat(fCobroMontoMax)) return false;
+    return true;
+  });
+  const filteredPagos = pagosPendientes.filter(inv => {
+    if (fPagoProveedor && !inv.supplierName?.toLowerCase().includes(fPagoProveedor.toLowerCase())) return false;
+    if (fPagoMontoMin && inv.total < parseFloat(fPagoMontoMin)) return false;
+    if (fPagoMontoMax && inv.total > parseFloat(fPagoMontoMax)) return false;
+    return true;
+  });
+
+  // ── Excel ─────────────────────────────────────────────────────────────────
+  const downloadExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.aoa_to_sheet([
+      ["Mes", "Ventas Brutas", "Costo de Compras", "Costo de Ventas", "Ganancia Bruta"],
+      ...monthlyData.map(d => [d.label, d.ventasBrutas, d.costoCompras, d.costoVentas, d.gananciaBruta]),
+      ["TOTAL", totVentas, totCompras, totCostoV, totGanancia],
+    ]);
+    ws1["!cols"] = [{ wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "Resumen mensual");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Fecha", "N° Factura", "Cliente", "Total c/IVA"],
+      ...salesInRange.map(i => [i.date, i.id, i.clientName, i.total]),
+    ]), "Ventas");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Fecha", "N° OC", "N° Factura Prov.", "Proveedor", "Total c/IVA"],
+      ...purchasesInRange.map(i => [i.date, i.id, i.nroFactura || "", i.supplierName, i.total]),
+    ]), "Compras");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Mes", "Producto", "Cant.", "Últ. precio compra", "Costo total", "Ingresos", "Ganancia"],
+      ...salesInRange.flatMap(inv => (inv.lines || []).map(l => {
+        const lp = getLastPurchasePrice(l.productId);
+        return [inv.date?.slice(0, 7), l.name, l.qty, lp, lp * l.qty, l.subtotal, l.subtotal - lp * l.qty];
+      })),
+    ]), "Ganancia detalle");
+    XLSX.writeFile(wb, `nexopyme_metricas_${from}_${to}.xlsx`);
+  };
+
+  // ── sub-components ────────────────────────────────────────────────────────
+  const Bar = ({ value, max, color }) => (
+    <div style={{ height: 6, background: T.surface, borderRadius: 3, overflow: "hidden" }}>
+      <div style={{ height: "100%", width: `${Math.round((Math.max(value,0) / max) * 100)}%`, background: color, borderRadius: 3, transition: "width 0.4s" }} />
+    </div>
+  );
+
+  const CHART_CONFIGS = {
+    ventas:   { label: "Ventas brutas mensuales",  valueKey: "ventasBrutas",  color: T.accent },
+    compras:  { label: "Costo de compras mensual", valueKey: "costoCompras",  color: T.orange },
+    ganancia: { label: "Ganancia bruta mensual",   valueKey: "gananciaBruta", color: T.blue   },
+  };
+
+  // Small bar chart for summary view (clickable)
+  const MiniBarChart = ({ chartKey }) => {
+    const cfg = CHART_CONFIGS[chartKey];
+    const data = monthlyData;
+    const max = Math.max(...data.map(d => Math.abs(d[cfg.valueKey])), 1);
+    const total = data.reduce((s, d) => s + d[cfg.valueKey], 0);
+    const chartH = 120;
+    return (
+      <div onClick={() => { setDrillChart(chartKey); setDrillFrom(from); setDrillTo(to); setDrillClients([]); }}
+        style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18, cursor: "pointer", transition: "border-color 0.2s, transform 0.15s" }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = cfg.color; e.currentTarget.style.transform = "translateY(-2px)"; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.transform = "translateY(0)"; }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 4 }}>{cfg.label.toUpperCase()}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: cfg.color }}>{fmt(total)}</div>
+          </div>
+          <span style={{ fontSize: 11, color: cfg.color, background: cfg.color + "20", padding: "3px 9px", borderRadius: 6, fontWeight: 700 }}>Ver detalle →</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: chartH, paddingBottom: 20, position: "relative" }}>
+          {[0.25, 0.5, 0.75, 1].map(r => (
+            <div key={r} style={{ position: "absolute", left: 0, right: 0, bottom: 20 + r * (chartH - 20), borderTop: `1px dashed ${T.border}`, pointerEvents: "none" }} />
+          ))}
+          {data.map(d => {
+            const val = d[cfg.valueKey];
+            const h = Math.max(3, Math.round((Math.abs(val) / max) * (chartH - 20)));
+            return (
+              <div key={d.ym} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", height: "100%", justifyContent: "flex-end" }}>
+                <div style={{ width: "100%", height: h, background: val < 0 ? T.red : cfg.color, borderRadius: "3px 3px 0 0", opacity: 0.85 }} />
+                <div style={{ fontSize: 9, color: T.muted, position: "absolute", bottom: 0, whiteSpace: "nowrap" }}>{d.label}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // Full drill-down chart
+  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
+  const [clientSearchInput, setClientSearchInput] = useState("");
+
+  const DrillChart = () => {
+    const cfg = CHART_CONFIGS[drillChart];
+
+    // Clientes que tienen ventas en el rango del drill
+    const clientsInDrillRange = useMemo(() => {
+      const names = new Set(
+        saleInvoices
+          .filter(i => i.type === "factura" && i.date >= (drillFrom || "0000") && i.date <= (drillTo || "9999"))
+          .map(i => i.clientName).filter(Boolean)
+      );
+      return [...names].sort();
+    }, [drillFrom, drillTo]);
+
+    // drillClients = [] significa "todos tildados". Al abrir el drill por primera vez lo inicializamos con todos.
+    const activeClients = drillClients.length === 0 ? clientsInDrillRange : drillClients;
+    const allChecked = drillClients.length === 0 || drillClients.length === clientsInDrillRange.length;
+    const deselectedCount = clientsInDrillRange.length - activeClients.length;
+
+    const toggleClient = (name) => {
+      // Si estaban todos tildados, al destildar uno construimos la lista sin ese
+      if (drillClients.length === 0) {
+        setDrillClients(clientsInDrillRange.filter(n => n !== name));
+      } else {
+        const next = drillClients.includes(name)
+          ? drillClients.filter(n => n !== name)
+          : [...drillClients, name];
+        // Si quedan todos, volvemos a [] (todos)
+        setDrillClients(next.length === clientsInDrillRange.length ? [] : next);
+      }
+    };
+
+    const isChecked = (name) => drillClients.length === 0 || drillClients.includes(name);
+
+    const visibleClients = clientsInDrillRange.filter(n =>
+      n.toLowerCase().includes(clientSearchInput.toLowerCase())
+    );
+
+    const data = drillData;
+    const max = Math.max(...data.map(d => Math.abs(d[cfg.valueKey])), 1);
+    const total = data.reduce((s, d) => s + d[cfg.valueKey], 0);
+    const chartH = 220;
+
+    return (
+      <div style={{ background: T.paper, border: `1px solid ${cfg.color}40`, borderRadius: 14, overflow: "hidden", marginBottom: 24 }}>
+
+        {/* ── Header ── */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 22px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <button onClick={() => { setDrillChart(null); setClientDropdownOpen(false); setClientSearchInput(""); }}
+              style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}>←</button>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{cfg.label}</div>
+              <div style={{ fontSize: 12, color: T.muted }}>
+                Total: <span style={{ color: cfg.color, fontWeight: 700 }}>{fmt(total)}</span>
+                {deselectedCount > 0 && (
+                  <span style={{ marginLeft: 8, background: T.orangeLight, color: T.orange, padding: "1px 8px", borderRadius: 8, fontSize: 11, fontWeight: 700 }}>
+                    {deselectedCount} cliente{deselectedCount > 1 ? "s" : ""} oculto{deselectedCount > 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button onClick={() => { setDrillFrom(from); setDrillTo(to); setDrillClients([]); setClientSearchInput(""); }}
+            style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            Resetear filtros
+          </button>
+        </div>
+
+        {/* ── Controles: fechas + clientes ── */}
+        <div style={{ display: "flex", gap: 12, padding: "14px 22px", borderBottom: `1px solid ${T.border}`, background: T.surface2, alignItems: "flex-end", flexWrap: "wrap" }}>
+
+          {/* Fecha desde */}
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 5, letterSpacing: 0.8 }}>DESDE</div>
+            <input type="date" value={drillFrom} onChange={e => { setDrillFrom(e.target.value); setDrillClients([]); }}
+              style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${drillFrom !== from ? T.blue : T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+          </div>
+
+          {/* Fecha hasta */}
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 5, letterSpacing: 0.8 }}>HASTA</div>
+            <input type="date" value={drillTo} onChange={e => { setDrillTo(e.target.value); setDrillClients([]); }}
+              style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${drillTo !== to ? T.blue : T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+          </div>
+
+          {/* Dropdown clientes con checkboxes */}
+          <div style={{ position: "relative" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 5, letterSpacing: 0.8 }}>CLIENTES</div>
+            <button
+              onClick={() => setClientDropdownOpen(v => !v)}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "8px 14px", borderRadius: 8,
+                border: `1px solid ${deselectedCount > 0 ? T.orange : T.border}`,
+                background: deselectedCount > 0 ? T.orangeLight : T.surface,
+                color: deselectedCount > 0 ? T.orange : T.ink,
+                fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                minWidth: 200, justifyContent: "space-between"
+              }}>
+              <span>
+                {deselectedCount === 0
+                  ? `Todos (${clientsInDrillRange.length})`
+                  : `${activeClients.length} de ${clientsInDrillRange.length} clientes`}
+              </span>
+              <span style={{ fontSize: 10, opacity: 0.6 }}>{clientDropdownOpen ? "▲" : "▼"}</span>
+            </button>
+
+            {clientDropdownOpen && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: 280,
+                background: T.paper, border: `1px solid ${T.border}`, borderRadius: 10,
+                zIndex: 50, boxShadow: "0 12px 32px #0006", overflow: "hidden"
+              }}>
+                {/* Buscador interno */}
+                <div style={{ padding: "10px 12px", borderBottom: `1px solid ${T.border}` }}>
+                  <input
+                    value={clientSearchInput}
+                    onChange={e => setClientSearchInput(e.target.value)}
+                    placeholder="🔍 Buscar cliente..."
+                    style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                {/* Tildar/destildar todos */}
+                <div
+                  onClick={() => { setDrillClients([]); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: `1px solid ${T.border}`, cursor: "pointer", background: allChecked ? T.accentLight : "transparent" }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.surface}
+                  onMouseLeave={e => e.currentTarget.style.background = allChecked ? T.accentLight : "transparent"}>
+                  <div style={{
+                    width: 16, height: 16, borderRadius: 4, border: `2px solid ${allChecked ? T.accent : T.border}`,
+                    background: allChecked ? T.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+                  }}>
+                    {allChecked && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: allChecked ? T.accent : T.ink }}>Seleccionar todos</span>
+                </div>
+
+                {/* Lista de clientes */}
+                <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                  {visibleClients.length === 0 && (
+                    <div style={{ padding: "12px 14px", fontSize: 12, color: T.muted }}>Sin resultados.</div>
+                  )}
+                  {visibleClients.map(name => {
+                    const checked = isChecked(name);
+                    return (
+                      <div key={name}
+                        onClick={() => toggleClient(name)}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", cursor: "pointer", borderBottom: `1px solid ${T.border}` }}
+                        onMouseEnter={e => e.currentTarget.style.background = T.surface}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <div style={{
+                          width: 16, height: 16, borderRadius: 4, border: `2px solid ${checked ? cfg.color : T.border}`,
+                          background: checked ? cfg.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+                        }}>
+                          {checked && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
+                        </div>
+                        <span style={{ fontSize: 13, color: checked ? T.ink : T.muted }}>{name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Footer */}
+                <div style={{ padding: "8px 14px", borderTop: `1px solid ${T.border}`, background: T.surface2, display: "flex", justifyContent: "flex-end" }}>
+                  <button onClick={() => setClientDropdownOpen(false)}
+                    style={{ background: cfg.color, color: "#fff", border: "none", borderRadius: 7, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    Listo
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Gráfico ── */}
+        <div style={{ padding: "24px 22px 16px" }}>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: chartH + 32, paddingBottom: 28, position: "relative" }}>
+            {[0.25, 0.5, 0.75, 1].map(r => (
+              <div key={r} style={{ position: "absolute", left: 0, right: 0, bottom: 28 + r * chartH, borderTop: `1px dashed ${T.border}`, pointerEvents: "none" }}>
+                <span style={{ fontSize: 9, color: T.faint, paddingLeft: 2 }}>{fmt(max * r)}</span>
+              </div>
+            ))}
+            {data.map(d => {
+              const val = d[cfg.valueKey];
+              const h = Math.max(3, Math.round((Math.abs(val) / max) * chartH));
+              return (
+                <div key={d.ym} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", height: "100%", justifyContent: "flex-end" }}>
+                  <div style={{ fontSize: 10, color: cfg.color, fontWeight: 700, marginBottom: 4, whiteSpace: "nowrap", textAlign: "center" }}>{val !== 0 ? fmt(val) : "—"}</div>
+                  <div style={{ width: "100%", height: h, background: val < 0 ? T.red : cfg.color, borderRadius: "4px 4px 0 0", opacity: 0.88, transition: "height 0.3s" }} />
+                  <div style={{ fontSize: 10, color: T.muted, position: "absolute", bottom: 0, whiteSpace: "nowrap" }}>{d.label}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Pending panels (cobros / pagos)
+  const PendingPanelContent = () => {
+    const isCobros = pendingPanel === "cobros";
+    const list = isCobros ? filteredCobros : filteredPagos;
+    const total = list.reduce((s, i) => s + i.total, 0);
+    const color = isCobros ? T.yellow : T.orange;
+    const allCount = isCobros ? cobrosPendientes.length : pagosPendientes.length;
+
+    return (
+      <div style={{ background: T.paper, border: `1px solid ${color}40`, borderRadius: 14, overflow: "hidden", marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+          <button onClick={() => setPendingPanel(null)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}>←</button>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{isCobros ? "Cobros pendientes" : "Pagos pendientes"}</div>
+            <div style={{ fontSize: 12, color: T.muted }}>{list.length} de {allCount} · Total filtrado: <span style={{ color, fontWeight: 700 }}>{fmt(total)}</span></div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        {isCobros ? (
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10, padding: "12px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface2 }}>
+            {[[fCobroCliente, setFCobroCliente, "Cliente..."], [fCobroCuit, setFCobroCuit, "CUIT..."], [fCobroMontoMin, setFCobroMontoMin, "Monto mín."], [fCobroMontoMax, setFCobroMontoMax, "Monto máx."]].map(([v, s, ph]) => (
+              <div key={ph} style={{ position: "relative" }}>
+                <input value={v} onChange={e => s(e.target.value)} placeholder={`🔍 ${ph}`}
+                  style={{ width: "100%", padding: "7px 26px 7px 10px", borderRadius: 7, border: `1px solid ${v ? T.yellow + "80" : T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                {v && <button onClick={() => s("")} style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 11 }}>✕</button>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10, padding: "12px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface2 }}>
+            {[[fPagoProveedor, setFPagoProveedor, "Proveedor..."], [fPagoMontoMin, setFPagoMontoMin, "Monto mín."], [fPagoMontoMax, setFPagoMontoMax, "Monto máx."]].map(([v, s, ph]) => (
+              <div key={ph} style={{ position: "relative" }}>
+                <input value={v} onChange={e => s(e.target.value)} placeholder={`🔍 ${ph}`}
+                  style={{ width: "100%", padding: "7px 26px 7px 10px", borderRadius: 7, border: `1px solid ${v ? T.orange + "80" : T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                {v && <button onClick={() => s("")} style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 11 }}>✕</button>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ overflowY: "auto", maxHeight: 400 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: T.surface, position: "sticky", top: 0 }}>
+                {isCobros
+                  ? ["N° Factura", "Cliente", "CUIT", "Fecha", "Vence", "Total"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)
+                  : ["N° OC", "N° Factura Prov.", "Proveedor", "Fecha", "Vence", "Total"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)
+                }
+              </tr>
+            </thead>
+            <tbody>
+              {list.length === 0 && <tr><td colSpan={6} style={{ padding: "24px", textAlign: "center", color: T.muted, fontSize: 13 }}>Sin resultados.</td></tr>}
+              {isCobros
+                ? filteredCobros.map(inv => {
+                    const cli = clients.find(c => c.id === inv.clientId);
+                    const prox = inv.due && inv.due <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+                    return (
+                      <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: prox ? `${T.yellow}08` : "transparent" }}>
+                        <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{inv.id}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.clientName}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted, fontFamily: "monospace" }}>{cli?.cuit || "—"}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 12, color: prox ? T.yellow : T.muted, fontWeight: prox ? 700 : 400 }}>{inv.due}{prox && " ⚠"}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.yellow }}>{fmt(inv.total)}</td>
+                      </tr>
+                    );
+                  })
+                : filteredPagos.map(inv => {
+                    const prox = inv.dueDate && inv.dueDate <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+                    return (
+                      <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: prox ? `${T.orange}08` : "transparent" }}>
+                        <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{inv.id}</td>
+                        <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{inv.nroFactura || "—"}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.supplierName}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 12, color: prox ? T.orange : T.muted, fontWeight: prox ? 700 : 400 }}>{inv.dueDate}{prox && " ⚠"}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.orange }}>{fmt(inv.total)}</td>
+                      </tr>
+                    );
+                  })
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  // ── render ────────────────────────────────────────────────────────────────
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Métricas</div>
+          <div style={{ fontSize: 13, color: T.muted }}>Ventas, compras y rentabilidad por período</div>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+          {[["DESDE", from, setFrom], ["HASTA", to, setTo]].map(([lbl, val, setter]) => (
+            <div key={lbl}>
+              <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 5 }}>{lbl}</div>
+              <input type="date" value={val} onChange={e => setter(e.target.value)}
+                style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.paper, color: T.ink, fontSize: 13, fontFamily: "inherit" }} />
+            </div>
+          ))}
+          <button onClick={downloadExcel}
+            style={{ padding: "9px 18px", borderRadius: 8, border: `1px solid ${T.accent}40`, background: T.accentLight, color: T.accent, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            ⬇ Excel
+          </button>
+        </div>
+      </div>
+
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 24 }}>
+        {[
+          { label: "Ventas brutas", value: fmt(totVentas), sub: `${salesInRange.length} facturas`, color: T.accent },
+          { label: "Costo de compras", value: fmt(totCompras), sub: `${purchasesInRange.length} facturas`, color: T.orange },
+          { label: "Ganancia bruta", value: fmt(totGanancia), sub: `Margen ${margin}%`, color: totGanancia >= 0 ? T.accent : T.red },
+          { label: "Costo de ventas", value: fmt(totCostoV), sub: "Últ. precio de compra", color: T.muted },
+        ].map((k, i) => (
+          <div key={i} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "20px 22px" }}>
+            <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 8 }}>{k.label.toUpperCase()}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: k.color, marginBottom: 4 }}>{k.value}</div>
+            <div style={{ fontSize: 12, color: T.muted }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Drill-down chart (si hay uno activo) */}
+      {drillChart && <DrillChart />}
+
+      {/* Pending panel (si hay uno activo) */}
+      {pendingPanel && <PendingPanelContent />}
+
+      {/* Gráficos mensuales (siempre visibles en modo resumen) */}
+      {!drillChart && !pendingPanel && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
+            <MiniBarChart chartKey="ventas" />
+            <MiniBarChart chartKey="compras" />
+            <MiniBarChart chartKey="ganancia" />
+          </div>
+
+          {/* Cobros / Pagos pendientes */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+            {[
+              { key: "cobros", label: "Cobros pendientes", list: cobrosPendientes, color: T.yellow, bg: T.yellowLight },
+              { key: "pagos",  label: "Pagos pendientes",  list: pagosPendientes,  color: T.orange, bg: T.orangeLight },
+            ].map(p => (
+              <div key={p.key} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>{p.label.toUpperCase()}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: p.color, marginTop: 4 }}>{fmt(p.list.reduce((s, i) => s + i.total, 0))}</div>
+                  </div>
+                  <button onClick={() => setPendingPanel(p.key)}
+                    style={{ background: p.bg, color: p.color, border: "none", borderRadius: 7, padding: "5px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    Ver todos →
+                  </button>
+                </div>
+                {p.list.slice(0, 3).map(inv => (
+                  <div key={inv.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}
+                    onClick={() => setPendingPanel(p.key)}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{inv.clientName || inv.supplierName}</div>
+                    <div style={{ fontWeight: 800, color: p.color }}>{fmt(inv.total)}</div>
+                  </div>
+                ))}
+                {p.list.length === 0 && <div style={{ fontSize: 13, color: T.muted }}>Sin pendientes.</div>}
+              </div>
+            ))}
+          </div>
+
+          {/* Rankings */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 22 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 18 }}>RANKING CLIENTES</div>
+              {clientRanking.length === 0 && <div style={{ color: T.muted, fontSize: 13 }}>Sin ventas en el período.</div>}
+              {clientRanking.map(([name, total], i) => (
+                <div key={name} style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}><span style={{ color: T.muted, marginRight: 8 }}>#{i + 1}</span>{name}</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>{fmt(total)}</span>
+                  </div>
+                  <Bar value={total} max={clientRanking[0]?.[1] || 1} color={T.accent} />
+                </div>
+              ))}
+            </div>
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 22 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 18 }}>RANKING PRODUCTOS</div>
+              {productRanking.length === 0 && <div style={{ color: T.muted, fontSize: 13 }}>Sin ventas en el período.</div>}
+              {productRanking.map(([name, data], i) => {
+                const lp = getLastPurchasePrice(data.productId);
+                const profit = data.revenue - lp * data.qty;
+                return (
+                  <div key={name} style={{ marginBottom: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}><span style={{ color: T.muted, marginRight: 8 }}>#{i + 1}</span>{name}</span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: T.blue }}>{fmt(data.revenue)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: T.muted, marginBottom: 5 }}>
+                      <span>{data.qty} uds · últ. costo {lp > 0 ? fmt(lp) : "sin datos"}</span>
+                      <span style={{ color: profit >= 0 ? T.accent : T.red }}>Ganancia: {fmt(profit)}</span>
+                    </div>
+                    <Bar value={data.revenue} max={productRanking[0]?.[1]?.revenue || 1} color={T.blue} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── MODULE: LOGÍSTICA ────────────────────────────────────────────────────────
+function LogisticaModule({ clients, suppliers }) {
+  // ── Estado de rutas guardadas ──────────────────────────────────────────────
+  const [savedRoutes, setSavedRoutes] = useState([]);
+  const [activeRoute, setActiveRoute] = useState(null); // ruta en edición/vista
+  const [view, setView] = useState("editor"); // "editor" | "lista"
+
+  // ── Estado del editor de ruta ──────────────────────────────────────────────
+  const [routeName, setRouteName] = useState("");
+  const [routeDate, setRouteDate] = useState(today);
+  const [routeStart, setRouteStart] = useState(""); // dirección de salida
+  const [stops, setStops] = useState([]); // { id, type:"cliente"|"proveedor"|"custom", refId, name, address, horarioAbre, horarioCierra, diasDisponibles, note, order }
+  const [optimized, setOptimized] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [showSavePanel, setShowSavePanel] = useState(false);
+
+  // ── Agregar parada ─────────────────────────────────────────────────────────
+  const [addMode, setAddMode] = useState(null); // null | "cliente" | "proveedor" | "custom"
+  const [addSearch, setAddSearch] = useState("");
+  const [customAddr, setCustomAddr] = useState({ name: "", address: "", note: "" });
+
+  const addStop = (type, ref) => {
+    const id = `stop_${Date.now()}`;
+    setStops(prev => [...prev, {
+      id, type, refId: ref.id,
+      name: ref.name,
+      address: ref.direccion || "",
+      horarioAbre: ref.horarioAbre || "",
+      horarioCierra: ref.horarioCierra || "",
+      diasDisponibles: ref.diasDisponibles || "",
+      note: "",
+      order: prev.length + 1,
+    }]);
+    setAddMode(null); setAddSearch("");
+    setOptimized(false);
+  };
+
+  const addCustomStop = () => {
+    if (!customAddr.name || !customAddr.address) return;
+    const id = `stop_${Date.now()}`;
+    setStops(prev => [...prev, { id, type: "custom", refId: null, name: customAddr.name, address: customAddr.address, horarioAbre: "", horarioCierra: "", diasDisponibles: "", note: customAddr.note, order: prev.length + 1 }]);
+    setCustomAddr({ name: "", address: "", note: "" });
+    setAddMode(null);
+    setOptimized(false);
+  };
+
+  const removeStop = (id) => { setStops(prev => prev.filter(s => s.id !== id).map((s, i) => ({ ...s, order: i + 1 }))); setOptimized(false); };
+
+  const moveStop = (id, dir) => {
+    setStops(prev => {
+      const arr = [...prev];
+      const idx = arr.findIndex(s => s.id === id);
+      const target = idx + dir;
+      if (target < 0 || target >= arr.length) return arr;
+      [arr[idx], arr[target]] = [arr[target], arr[idx]];
+      return arr.map((s, i) => ({ ...s, order: i + 1 }));
+    });
+    setOptimized(false);
+  };
+
+  const updateStopNote = (id, note) => setStops(prev => prev.map(s => s.id === id ? { ...s, note } : s));
+  const updateStopAddr = (id, address) => setStops(prev => prev.map(s => s.id === id ? { ...s, address } : s));
+
+  // ── Optimización con IA ────────────────────────────────────────────────────
+  const optimizeRoute = async () => {
+    if (stops.length < 2) return;
+    setIsOptimizing(true);
+    try {
+      const stopsDesc = stops.map((s, i) =>
+        `${i + 1}. ${s.name} | Dirección: ${s.address || "sin dirección"} | Horario: ${s.horarioAbre || "?"}-${s.horarioCierra || "?"} ${s.diasDisponibles || ""}`
+      ).join("\n");
+
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 600,
+          system: `Sos un optimizador de rutas logísticas para una PyME argentina del Gran Buenos Aires. 
+Tu tarea es ordenar una lista de paradas para minimizar el tiempo de viaje y respetar los horarios de atención de cada lugar.
+Respondé SOLO con un JSON array con el orden óptimo de índices (base 0) de las paradas. 
+Ejemplo: [2, 0, 3, 1]
+No incluyas texto adicional, solo el JSON array.`,
+          messages: [{
+            role: "user",
+            content: `Punto de salida: ${routeStart || "Buenos Aires, Argentina"}
+Hora de salida estimada: 08:00
+Paradas (en orden actual):
+${stopsDesc}
+Devolveme el orden óptimo como JSON array de índices.`
+          }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content?.[0]?.text || "[]";
+      const cleanJson = text.replace(/```json|```/g, "").trim();
+      const order = JSON.parse(cleanJson);
+      if (Array.isArray(order) && order.length === stops.length) {
+        const reordered = order.map((idx, i) => ({ ...stops[idx], order: i + 1 }));
+        setStops(reordered);
+        setOptimized(true);
+      }
+    } catch (e) {
+      console.error("Optimize error", e);
+    }
+    setIsOptimizing(false);
+  };
+
+  // ── URL Google Maps con todas las paradas ─────────────────────────────────
+  const googleMapsUrl = () => {
+    if (stops.length === 0) return "#";
+    const origin = encodeURIComponent(routeStart || "Buenos Aires, Argentina");
+    const waypoints = stops.map(s => encodeURIComponent(s.address || s.name)).join("|");
+    const waypointsParam = waypoints ? "&waypoints=" + waypoints : "";
+    return "https://www.google.com/maps/dir/?api=1&origin=" + origin + "&destination=" + origin + waypointsParam + "&travelmode=driving";
+  };
+
+  // ── Guardar ruta ───────────────────────────────────────────────────────────
+  const saveRoute = () => {
+    if (!routeName || stops.length === 0) return;
+    const route = { id: activeRoute || `r${Date.now()}`, name: routeName, date: routeDate, start: routeStart, stops: [...stops], optimized, createdAt: today };
+    if (activeRoute) {
+      setSavedRoutes(prev => prev.map(r => r.id === activeRoute ? route : r));
+    } else {
+      setSavedRoutes(prev => [...prev, route]);
+      setActiveRoute(route.id);
+    }
+  };
+
+  const loadRoute = (r) => {
+    setRouteName(r.name); setRouteDate(r.date); setRouteStart(r.start);
+    setStops(r.stops); setOptimized(r.optimized); setActiveRoute(r.id);
+    setShowSavePanel(true);
+    setView("editor");
+  };
+
+  const deleteRoute = (id) => { setSavedRoutes(prev => prev.filter(r => r.id !== id)); if (activeRoute === id) { setActiveRoute(null); setView("lista"); } };
+
+  const newRoute = () => {
+    setRouteName(""); setRouteDate(today); setRouteStart(""); setStops([]);
+    setOptimized(false); setActiveRoute(null); setShowSavePanel(false); setView("editor");
+  };
+
+  // ── Helper URL Maps para ruta guardada ───────────────────────────────────
+  const routeMapsUrl = (r) => {
+    if (!r.stops.length) return "#";
+    const origin = encodeURIComponent(r.start || "Buenos Aires, Argentina");
+    const wp = r.stops.map(s => encodeURIComponent(s.address || s.name)).join("|");
+    const wpParam = wp ? "&waypoints=" + wp : "";
+    return "https://www.google.com/maps/dir/?api=1&origin=" + origin + "&destination=" + origin + wpParam + "&travelmode=driving";
+  };
+
+  // ── Filtros de búsqueda para paradas ──────────────────────────────────────
+  const clientResults = clients.filter(c =>
+    addSearch === "" || c.name.toLowerCase().includes(addSearch.toLowerCase()) || c.direccion?.toLowerCase().includes(addSearch.toLowerCase())
+  ).filter(c => !stops.some(s => s.refId === c.id));
+
+  const supplierResults = suppliers.filter(s =>
+    addSearch === "" || s.name.toLowerCase().includes(addSearch.toLowerCase()) || s.direccion?.toLowerCase().includes(addSearch.toLowerCase())
+  ).filter(s => !stops.some(st => st.refId === s.id));
+
+  // ── Helpers de horario ────────────────────────────────────────────────────
+  const horarioLabel = (s) => {
+    if (s.horarioAbre && s.horarioCierra) return `${s.horarioAbre} – ${s.horarioCierra}`;
+    if (s.horarioAbre) return `Desde ${s.horarioAbre}`;
+    return "Sin horario";
+  };
+
+  const TYPE_COLORS = {
+    cliente:   { color: T.accent,  bg: T.accentLight,  label: "Cliente" },
+    proveedor: { color: T.orange,  bg: T.orangeLight,  label: "Proveedor" },
+    custom:    { color: T.purple,  bg: T.purpleLight,  label: "Especial" },
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Logística</div>
+          <div style={{ fontSize: 13, color: T.muted }}>Armá la ruta de hoy, optimizala y compartila con el chofer</div>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          {savedRoutes.length > 0 && view === "editor" && (
+            <button onClick={() => setView("lista")}
+              style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 8, padding: "9px 16px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              Rutas guardadas ({savedRoutes.length})
+            </button>
+          )}
+          {view === "lista" && (
+            <button onClick={() => { setView("editor"); setActiveRoute(null); }}
+              style={{ background: T.accent, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              + Nueva ruta
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ══ LISTA DE RUTAS GUARDADAS ══ */}
+      {view === "lista" && (
+        <div>
+          <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>Rutas guardadas como referencia. Podés cargarlas para reutilizarlas o editarlas.</div>
+          {savedRoutes.length === 0 ? (
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "32px", textAlign: "center", color: T.muted, fontSize: 13 }}>
+              No hay rutas guardadas todavía.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {savedRoutes.map(r => (
+                <div key={r.id} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{r.name}</span>
+                      {r.optimized && <span style={{ fontSize: 10, fontWeight: 700, color: T.accent, background: T.accentLight, padding: "2px 8px", borderRadius: 8 }}>✦ Optimizada</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>
+                      📅 {r.date} · {r.stops.length} parada{r.stops.length !== 1 ? "s" : ""}
+                      {r.start && <span> · Salida: {r.start}</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {r.stops.slice(0, 4).map(s => {
+                        const tc = TYPE_COLORS[s.type];
+                        return <span key={s.id} style={{ fontSize: 11, background: tc.bg, color: tc.color, padding: "2px 8px", borderRadius: 8, fontWeight: 600 }}>{s.order}. {s.name}</span>;
+                      })}
+                      {r.stops.length > 4 && <span style={{ fontSize: 11, color: T.muted }}>+{r.stops.length - 4} más</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginLeft: 16 }}>
+                    <a href={routeMapsUrl(r)}
+                      target="_blank" rel="noreferrer"
+                      style={{ background: T.blueLight, color: T.blue, border: `1px solid ${T.blue}30`, borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                      🗺 Maps
+                    </a>
+                    <button onClick={() => loadRoute(r)} style={{ background: T.surface2, color: T.ink, border: `1px solid ${T.border}`, borderRadius: 7, padding: "6px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Editar</button>
+                    <button onClick={() => deleteRoute(r.id)} style={{ background: T.redLight, color: T.red, border: "none", borderRadius: 7, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ EDITOR DE RUTA ══ */}
+      {view === "editor" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 20 }}>
+
+          {/* Panel principal */}
+          <div>
+          {/* Header de ruta — fecha y salida siempre visibles, nombre solo para guardar */}
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 20, marginBottom: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>FECHA DE LA RUTA</label>
+                  <input type="date" value={routeDate} onChange={e => setRouteDate(e.target.value)}
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>DIRECCIÓN DE SALIDA Y LLEGADA</label>
+                  <input value={routeStart} onChange={e => setRouteStart(e.target.value)} placeholder="ej: Campana, Buenos Aires"
+                    style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                </div>
+              </div>
+              {/* Guardar — opcional, colapsable */}
+              <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 12 }}>
+                <button onClick={() => setShowSavePanel(s => !s)}
+                  style={{ background: "none", border: "none", color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", gap: 5 }}>
+                  {showSavePanel ? "▾" : "▸"} Guardar esta ruta para usarla de referencia (opcional)
+                </button>
+                {showSavePanel && (
+                  <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "flex-end" }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>NOMBRE DE LA RUTA</label>
+                      <input value={routeName} onChange={e => setRouteName(e.target.value)} placeholder="ej: Ruta GBA Norte - Jueves"
+                        style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <button onClick={saveRoute} disabled={!routeName || stops.length === 0}
+                      style={{ padding: "10px 18px", borderRadius: 8, background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}40`, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: (!routeName || stops.length === 0) ? 0.5 : 1 }}>
+                      💾 Guardar
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Lista de paradas */}
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>
+                  Paradas <span style={{ fontSize: 12, color: T.muted, fontWeight: 400 }}>({stops.length})</span>
+                </div>
+                {optimized && (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.accent, background: T.accentLight, padding: "3px 10px", borderRadius: 8 }}>
+                    ✦ Ruta optimizada por IA
+                  </span>
+                )}
+              </div>
+
+              {stops.length === 0 ? (
+                <div style={{ padding: "32px", textAlign: "center", color: T.muted, fontSize: 13 }}>
+                  Agregá paradas usando el panel de la derecha →
+                </div>
+              ) : (
+                <div>
+                  {/* Punto de salida */}
+                  {routeStart && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface2 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#fff", fontWeight: 800, flexShrink: 0 }}>🏁</div>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: T.accent }}>SALIDA</div>
+                        <div style={{ fontSize: 13, color: T.ink }}>{routeStart}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {stops.map((s, idx) => {
+                    const tc = TYPE_COLORS[s.type];
+                    const hasConflict = false; // podría calcularse vs hora estimada de llegada
+                    return (
+                      <div key={s.id} style={{ borderBottom: `1px solid ${T.border}`, background: hasConflict ? `${T.yellow}08` : "transparent" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "14px 20px" }}>
+                          {/* Número y controles de orden */}
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                            <div style={{ width: 28, height: 28, borderRadius: "50%", background: tc.bg, border: `2px solid ${tc.color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: tc.color }}>{s.order}</div>
+                            <button onClick={() => moveStop(s.id, -1)} disabled={idx === 0}
+                              style={{ background: "none", border: "none", color: idx === 0 ? T.faint : T.muted, cursor: idx === 0 ? "default" : "pointer", fontSize: 12, padding: "1px 4px" }}>▲</button>
+                            <button onClick={() => moveStop(s.id, 1)} disabled={idx === stops.length - 1}
+                              style={{ background: "none", border: "none", color: idx === stops.length - 1 ? T.faint : T.muted, cursor: idx === stops.length - 1 ? "default" : "pointer", fontSize: 12, padding: "1px 4px" }}>▼</button>
+                          </div>
+
+                          {/* Info de la parada */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, background: tc.bg, color: tc.color, padding: "2px 7px", borderRadius: 6 }}>{tc.label}</span>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{s.name}</span>
+                            </div>
+                            {/* Dirección editable */}
+                            <input value={s.address} onChange={e => updateStopAddr(s.id, e.target.value)} placeholder="Dirección..."
+                              style={{ width: "100%", padding: "6px 10px", borderRadius: 7, border: `1px solid ${s.address ? T.border : T.yellow+"60"}`, background: T.surface2, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none", marginBottom: 6, boxSizing: "border-box" }} />
+                            <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                              {(s.horarioAbre || s.horarioCierra) && (
+                                <span style={{ fontSize: 11, color: T.blue }}>🕐 {horarioLabel(s)}</span>
+                              )}
+                              {s.diasDisponibles && (
+                                <span style={{ fontSize: 11, color: T.muted }}>📅 {s.diasDisponibles}</span>
+                              )}
+                            </div>
+                            {/* Nota de la parada */}
+                            <input value={s.note} onChange={e => updateStopNote(s.id, e.target.value)} placeholder="Nota para el chofer (opcional)..."
+                              style={{ width: "100%", padding: "6px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 11, fontFamily: "inherit", outline: "none", marginTop: 6, boxSizing: "border-box" }} />
+                          </div>
+
+                          {/* Botones */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
+                            <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address || s.name)}`}
+                              target="_blank" rel="noreferrer"
+                              style={{ background: T.blueLight, color: T.blue, border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", textDecoration: "none", textAlign: "center" }}>
+                              📍
+                            </a>
+                            <button onClick={() => removeStop(s.id)}
+                              style={{ background: T.redLight, color: T.red, border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Regreso al origen */}
+                  {stops.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", background: T.surface2 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.accentLight, border: `2px solid ${T.accent}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>🏁</div>
+                      <div style={{ fontSize: 12, color: T.muted }}>Regreso a <span style={{ color: T.accent, fontWeight: 600 }}>{routeStart || "punto de salida"}</span></div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Botones de acción principales */}
+            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+              <button onClick={optimizeRoute} disabled={isOptimizing || stops.length < 2}
+                style={{ flex: 1, padding: "13px", borderRadius: 10, border: `1px solid ${stops.length < 2 ? T.border : T.accent + "50"}`, background: stops.length < 2 ? T.surface : optimized ? T.surface : T.accentLight, color: stops.length < 2 ? T.muted : T.accent, fontWeight: 700, fontSize: 14, cursor: (isOptimizing || stops.length < 2) ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: isOptimizing ? 0.7 : 1 }}>
+                {isOptimizing ? "⏳ Optimizando ruta..." : optimized ? "✦ Ruta optimizada · Reoptimizar" : "✦ Optimizar ruta con IA"}
+              </button>
+              <a href={stops.length >= 1 ? googleMapsUrl() : "#"}
+                onClick={e => stops.length < 1 && e.preventDefault()}
+                target="_blank" rel="noreferrer"
+                style={{ display: "flex", alignItems: "center", gap: 6, background: stops.length >= 1 ? T.accent : T.surface, color: stops.length >= 1 ? "#fff" : T.muted, border: `1px solid ${stops.length >= 1 ? T.accent : T.border}`, borderRadius: 10, padding: "13px 22px", fontWeight: 700, fontSize: 14, textDecoration: "none", whiteSpace: "nowrap", cursor: stops.length >= 1 ? "pointer" : "default" }}>
+                🗺 Abrir en Google Maps
+              </a>
+            </div>
+          </div>
+
+          {/* Panel lateral: agregar paradas */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+            {/* Acciones de agregar */}
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>AGREGAR PARADA</div>
+              <div style={{ display: "flex", flex: 1, flexDirection: "column", gap: 8 }}>
+                {[["cliente", "🏪 Cliente", T.accent, T.accentLight], ["proveedor", "📦 Proveedor", T.orange, T.orangeLight], ["custom", "📍 Dirección especial", T.purple, T.purpleLight]].map(([mode, label, color, bg]) => (
+                  <button key={mode} onClick={() => setAddMode(addMode === mode ? null : mode)}
+                    style={{ padding: "10px 14px", borderRadius: 9, border: `1px solid ${addMode === mode ? color : T.border}`, background: addMode === mode ? bg : "transparent", color: addMode === mode ? color : T.muted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Panel cliente */}
+              {addMode === "cliente" && (
+                <div style={{ marginTop: 14, borderTop: `1px solid ${T.border}`, paddingTop: 14 }}>
+                  <SearchBar value={addSearch} onChange={setAddSearch} placeholder="Buscar cliente..." />
+                  <div style={{ marginTop: 10, maxHeight: 220, overflowY: "auto" }}>
+                    {clientResults.length === 0 && <div style={{ fontSize: 12, color: T.muted, padding: "8px 0" }}>{stops.some(s => s.type === "cliente") ? "Todos los clientes ya están en la ruta" : "Sin clientes disponibles"}</div>}
+                    {clientResults.map(c => (
+                      <div key={c.id} onClick={() => addStop("cliente", c)}
+                        style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${T.border}`, marginBottom: 6, cursor: "pointer", background: T.surface }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = T.accent}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = T.border}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{c.name}</div>
+                        <div style={{ fontSize: 11, color: T.muted }}>{c.direccion || "Sin dirección"}</div>
+                        {(c.horarioAbre || c.horarioCierra) && <div style={{ fontSize: 11, color: T.blue }}>🕐 {c.horarioAbre || "?"} – {c.horarioCierra || "?"}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Panel proveedor */}
+              {addMode === "proveedor" && (
+                <div style={{ marginTop: 14, borderTop: `1px solid ${T.border}`, paddingTop: 14 }}>
+                  <SearchBar value={addSearch} onChange={setAddSearch} placeholder="Buscar proveedor..." />
+                  <div style={{ marginTop: 10, maxHeight: 220, overflowY: "auto" }}>
+                    {supplierResults.length === 0 && <div style={{ fontSize: 12, color: T.muted, padding: "8px 0" }}>Sin proveedores disponibles</div>}
+                    {supplierResults.map(s => (
+                      <div key={s.id} onClick={() => addStop("proveedor", s)}
+                        style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${T.border}`, marginBottom: 6, cursor: "pointer", background: T.surface }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = T.orange}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = T.border}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{s.name}</div>
+                        <div style={{ fontSize: 11, color: T.muted }}>{s.direccion || "Sin dirección"}</div>
+                        {(s.horarioAbre || s.horarioCierra) && <div style={{ fontSize: 11, color: T.blue }}>🕐 {s.horarioAbre || "?"} – {s.horarioCierra || "?"}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Panel dirección especial */}
+              {addMode === "custom" && (
+                <div style={{ marginTop: 14, borderTop: `1px solid ${T.border}`, paddingTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <input value={customAddr.name} onChange={e => setCustomAddr(f => ({...f, name: e.target.value}))} placeholder="Nombre del lugar *"
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${customAddr.name ? T.border : T.red+"50"}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  <input value={customAddr.address} onChange={e => setCustomAddr(f => ({...f, address: e.target.value}))} placeholder="Dirección *"
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${customAddr.address ? T.border : T.red+"50"}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  <input value={customAddr.note} onChange={e => setCustomAddr(f => ({...f, note: e.target.value}))} placeholder="Nota (opcional)"
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  <button onClick={addCustomStop} disabled={!customAddr.name || !customAddr.address}
+                    style={{ padding: "9px", borderRadius: 8, background: T.purpleLight, color: T.purple, border: `1px solid ${T.purple}40`, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", opacity: (!customAddr.name || !customAddr.address) ? 0.5 : 1 }}>
+                    + Agregar parada
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Info / ayuda */}
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>CÓMO USAR</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.7 }}>
+                1. Cargá la dirección de salida<br />
+                2. Agregá los clientes y proveedores a visitar<br />
+                3. Presioná <span style={{ color: T.accent, fontWeight: 700 }}>✦ Optimizar ruta</span> para que la IA ordene las paradas respetando horarios<br />
+                4. Ajustá manualmente con ▲▼ si necesitás<br />
+                5. Presioná <span style={{ color: T.accent, fontWeight: 700 }}>🗺 Abrir en Google Maps</span> para compartir con el chofer
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ROOT APP ─────────────────────────────────────────────────────────────────
+const NAV = [
+  { id: "hub",        label: "Inicio",     icon: "⬡" },
+  { id: "ventas",     label: "Ventas",     icon: "◈" },
+  { id: "comercial",  label: "Comercial",  icon: "◇" },
+  { id: "compras",    label: "Compras",    icon: "◉" },
+  { id: "inventario", label: "Inventario", icon: "▦" },
+  { id: "logistica",  label: "Logística",  icon: "🚚" },
+  { id: "metricas",   label: "Métricas",   icon: "◎" },
+];
+
+export default function App() {
+  const [module, setModule] = useState("hub");
+  const [products, setProducts] = useState(initProducts);
+  const [clients, setClients] = useState(initClients);
+  const [suppliers, setSuppliers] = useState(initSuppliers);
+  const [priceLists, setPriceLists] = useState(initPriceLists);
+  const [tipoCambio, setTipoCambio] = useState(1200); // ARS por USD
+  const [saleInvoices, setSaleInvoices] = useState(initSaleInvoices);
+  const [purchaseInvoices, setPurchaseInvoices] = useState(initPurchaseInvoices);
+  const [showDocBuilder, setShowDocBuilder] = useState(false);
+  const [docBuilderType, setDocBuilderType] = useState("factura");
+  const [preloadDoc, setPreloadDoc] = useState(null);
+
+  const openDoc = (type, preload) => { setDocBuilderType(type); setPreloadDoc(preload || null); setShowDocBuilder(true); };
+  const [showPurchaseBuilder, setShowPurchaseBuilder] = useState(false);
+  const [idCounter, setIdCounter] = useState(5);
+
+  const nextId = (prefix) => { const n = idCounter + 1; setIdCounter(n); return `${prefix}-${String(n).padStart(4, "0")}`; };
+
+  const handleQuickAction = (action) => {
+    if (action === "new_pago") { setModule("compras"); return; }
+    const typeMap = { new_factura: "factura", new_presupuesto: "presupuesto", new_remito: "remito" };
+    setModule("ventas");
+    openDoc(typeMap[action] || "factura");
+  };
+
+  const handleSaveDoc = ({ lines, total, totalNeto, totalIva, clientId, clientName, docType, originPresupuestoId, originRemitoIds, modificaStock, imprimirPDF, generarPDF }) => {
+    const prefix = { factura: "FAC", presupuesto: "PRE", remito: "REM" }[docType];
+    const id = nextId(prefix);
+    const debeDescontarStock = docType === "factura" || (docType === "presupuesto" && modificaStock);
+    if (debeDescontarStock) {
+      setProducts(prev => prev.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock - l.qty } : p; }));
+    }
+    if (originPresupuestoId) {
+      setSaleInvoices(prev => prev.map(i => i.id === originPresupuestoId ? { ...i, status: "convertido" } : i));
+    }
+    if (originRemitoIds?.length > 0) {
+      setSaleInvoices(prev => prev.map(i => originRemitoIds.includes(i.id) ? { ...i, status: "facturado" } : i));
+    }
+    const due = new Date(today); due.setDate(due.getDate() + 15);
+    setSaleInvoices(prev => [{ id, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock }, ...prev]);
+    setShowDocBuilder(false);
+    if (imprimirPDF && generarPDF) generarPDF(id);
+  };
+
+  const handleSavePurchase = ({ lines, total, totalNeto, totalIva, supplierId, supplierName, payStatus, nroFactura }) => {
+    setProducts(products.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock + l.qty } : p; }));
+    const due = new Date(today); const sup = suppliers.find(s => s.id === supplierId); due.setDate(due.getDate() + (sup?.paymentDays || 0));
+    const internalId = nextId("OC");
+    setPurchaseInvoices([{ id: internalId, nroFactura: nroFactura || null, supplierId, supplierName, date: today, dueDate: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: payStatus, lines }, ...purchaseInvoices]);
+    setShowPurchaseBuilder(false);
+  };
+
+  const criticalCount = products.filter(p => p.stock < p.minStock).length;
+  const pendienteCobrar = saleInvoices.filter(i => i.status === "pendiente" && i.type === "factura").reduce((s, i) => s + i.total, 0);
+
+  return (
+    <div style={{ display: "flex", height: "100vh", background: T.bg, fontFamily: "'DM Sans', 'Segoe UI', sans-serif", color: T.ink }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        input, select, button, textarea { font-family: inherit; }
+        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: ${T.faint}; border-radius: 3px; }
+        input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.5); }
+      `}</style>
+
+      {/* Sidebar */}
+      <div style={{ width: 210, background: T.sidebar, borderRight: `1px solid ${T.border2}`, display: "flex", flexDirection: "column", padding: "24px 12px" }}>
+        <div style={{ padding: "4px 12px", marginBottom: 32 }}>
+          <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.5 }}><span style={{ color: T.accent }}>Nexo</span>PyME</div>
+          <div style={{ fontSize: 10, color: T.muted, marginTop: 1 }}>plataforma integral</div>
+        </div>
+        <nav style={{ flex: 1 }}>
+          {NAV.map(n => (
+            <button key={n.id} onClick={() => setModule(n.id)}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, border: "none", cursor: "pointer", marginBottom: 2, textAlign: "left", background: module === n.id ? T.surface : "transparent", color: module === n.id ? T.ink : T.muted, fontWeight: module === n.id ? 700 : 500, fontSize: 13, borderLeft: `3px solid ${module === n.id ? T.accent : "transparent"}`, transition: "all 0.12s" }}>
+              <span style={{ fontSize: 15 }}>{n.icon}</span>
+              {n.label}
+              {n.id === "inventario" && criticalCount > 0 && <span style={{ marginLeft: "auto", background: T.redLight, color: T.red, padding: "1px 7px", borderRadius: 10, fontSize: 10, fontWeight: 700 }}>{criticalCount}</span>}
+              {n.id === "ventas" && pendienteCobrar > 0 && <span style={{ marginLeft: "auto", background: T.yellowLight, color: T.yellow, padding: "1px 7px", borderRadius: 10, fontSize: 10, fontWeight: 700 }}>$</span>}
+            </button>
+          ))}
+        </nav>
+        <div style={{ padding: "12px", background: T.surface, borderRadius: 10, border: `1px solid ${T.border}` }}>
+          <div style={{ fontSize: 10, color: T.muted, marginBottom: 3 }}>EMPRESA</div>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>Distribuidora SA</div>
+          <div style={{ fontSize: 11, color: T.accent }}>Plan Pro</div>
+        </div>
+      </div>
+
+      {/* Main */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "32px 36px" }}>
+        {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
+        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} />}
+        {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
+        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} onNewPurchase={() => setShowPurchaseBuilder(true)} />}
+        {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} />}
+        {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
+        {module === "metricas" && <MetricasModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} />}
+      </div>
+
+      {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} />}
+      {showPurchaseBuilder && <PurchaseBuilder suppliers={suppliers} products={products} onSave={handleSavePurchase} onClose={() => setShowPurchaseBuilder(false)} />}
+    </div>
+  );
+}
