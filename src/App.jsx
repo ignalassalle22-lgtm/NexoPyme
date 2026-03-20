@@ -4267,17 +4267,11 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
 
 // ─── MODULE: MÉTRICAS ─────────────────────────────────────────────────────────
 function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, suppliers }) {
+  const [view, setView] = useState("home"); // "home" | "operativos" | "tacticos" | "estrategicos"
   const [from, setFrom] = useState("2026-01-01");
   const [to, setTo] = useState("2026-03-31");
 
-  // ── drill-down state ──────────────────────────────────────────────────────
-  const [drillChart, setDrillChart] = useState(null); // null | "ventas" | "compras" | "ganancia"
-  const [drillFrom, setDrillFrom] = useState("");
-  const [drillTo, setDrillTo] = useState("");
-  const [drillClients, setDrillClients] = useState([]); // [] = todos
-
-  // ── tabla pendientes state ─────────────────────────────────────────────────
-  const [pendingPanel, setPendingPanel] = useState(null); // null | "cobros" | "pagos"
+  // ── Operativos filters ────────────────────────────────────────────────────
   const [fCobroCliente, setFCobroCliente] = useState("");
   const [fCobroCuit, setFCobroCuit] = useState("");
   const [fCobroMontoMin, setFCobroMontoMin] = useState("");
@@ -4296,11 +4290,10 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
     return hit ? (hit.unitPrice ?? hit.price ?? 0) : 0;
   };
 
-  // ── período principal ──────────────────────────────────────────────────────
+  // ── computed data ─────────────────────────────────────────────────────────
   const salesInRange = saleInvoices.filter(i => i.type === "factura" && i.date >= from && i.date <= to);
   const purchasesInRange = purchaseInvoices.filter(i => i.date >= from && i.date <= to);
 
-  // ── meses ─────────────────────────────────────────────────────────────────
   const buildMonths = (f, t) => {
     const months = [];
     const [fy, fm] = f.split("-").map(Number);
@@ -4315,39 +4308,23 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
 
   const monthsInRange = useMemo(() => buildMonths(from, to), [from, to]);
 
-  const buildMonthlyData = (months, clientFilter) => months.map(ym => {
-    const mSales = saleInvoices.filter(i =>
-      i.type === "factura" && i.date?.startsWith(ym) &&
-      (clientFilter.length === 0 || clientFilter.includes(i.clientName))
-    );
+  const monthlyData = useMemo(() => monthsInRange.map(ym => {
+    const mSales = saleInvoices.filter(i => i.type === "factura" && i.date?.startsWith(ym));
     const ventasBrutas = mSales.reduce((s, i) => s + i.total, 0);
     const mPurch = purchaseInvoices.filter(i => i.date?.startsWith(ym));
     const costoCompras = mPurch.reduce((s, i) => s + i.total, 0);
-    const costoVentas = mSales.flatMap(inv => inv.lines || []).reduce((sum, line) => {
-      return sum + getLastPurchasePrice(line.productId) * (line.qty || 0);
-    }, 0);
+    const costoVentas = mSales.flatMap(inv => inv.lines || []).reduce((sum, line) =>
+      sum + getLastPurchasePrice(line.productId) * (line.qty || 0), 0);
     const label = new Date(ym + "-01").toLocaleDateString("es-AR", { month: "short", year: "2-digit" });
     return { ym, label, ventasBrutas, costoCompras, costoVentas, gananciaBruta: ventasBrutas - costoVentas };
-  });
+  }), [monthsInRange, saleInvoices, purchaseInvoices]);
 
-  const monthlyData = useMemo(() => buildMonthlyData(monthsInRange, []), [monthsInRange, saleInvoices, purchaseInvoices]);
-
-  // drill data
-  const drillMonths = useMemo(() =>
-    drillFrom && drillTo ? buildMonths(drillFrom, drillTo) : monthsInRange,
-    [drillFrom, drillTo, monthsInRange]);
-  const drillData = useMemo(() =>
-    buildMonthlyData(drillMonths, drillClients),
-    [drillMonths, drillClients, saleInvoices, purchaseInvoices]);
-
-  // ── totales ───────────────────────────────────────────────────────────────
   const totVentas   = monthlyData.reduce((s, d) => s + d.ventasBrutas, 0);
   const totCompras  = monthlyData.reduce((s, d) => s + d.costoCompras, 0);
   const totCostoV   = monthlyData.reduce((s, d) => s + d.costoVentas, 0);
   const totGanancia = monthlyData.reduce((s, d) => s + d.gananciaBruta, 0);
   const margin      = totVentas > 0 ? ((totGanancia / totVentas) * 100).toFixed(1) : 0;
 
-  // ── rankings ──────────────────────────────────────────────────────────────
   const byClient = {};
   salesInRange.forEach(inv => { byClient[inv.clientName] = (byClient[inv.clientName] || 0) + inv.total; });
   const clientRanking = Object.entries(byClient).sort((a, b) => b[1] - a[1]);
@@ -4359,9 +4336,9 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
   });
   const productRanking = Object.entries(byProduct).sort((a, b) => b[1].revenue - a[1].revenue);
 
-  // ── pendientes ────────────────────────────────────────────────────────────
   const cobrosPendientes = saleInvoices.filter(i => i.status === "pendiente" && i.type === "factura");
   const pagosPendientes  = purchaseInvoices.filter(i => i.status === "pendiente");
+  const stockCritico     = products.filter(p => p.stock <= p.minStock);
 
   const filteredCobros = cobrosPendientes.filter(inv => {
     const cli = clients.find(c => c.id === inv.clientId);
@@ -4378,503 +4355,600 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
     return true;
   });
 
-  // ── Excel ─────────────────────────────────────────────────────────────────
-  const downloadExcel = () => {
-    const wb = XLSX.utils.book_new();
-    const ws1 = XLSX.utils.aoa_to_sheet([
-      ["Mes", "Ventas Brutas", "Costo de Compras", "Costo de Ventas", "Ganancia Bruta"],
-      ...monthlyData.map(d => [d.label, d.ventasBrutas, d.costoCompras, d.costoVentas, d.gananciaBruta]),
-      ["TOTAL", totVentas, totCompras, totCostoV, totGanancia],
-    ]);
-    ws1["!cols"] = [{ wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 18 }];
-    XLSX.utils.book_append_sheet(wb, ws1, "Resumen mensual");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ["Fecha", "N° Factura", "Cliente", "Total c/IVA"],
-      ...salesInRange.map(i => [i.date, i.id, i.clientName, i.total]),
-    ]), "Ventas");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ["Fecha", "N° OC", "N° Factura Prov.", "Proveedor", "Total c/IVA"],
-      ...purchasesInRange.map(i => [i.date, i.id, i.nroFactura || "", i.supplierName, i.total]),
-    ]), "Compras");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ["Mes", "Producto", "Cant.", "Últ. precio compra", "Costo total", "Ingresos", "Ganancia"],
-      ...salesInRange.flatMap(inv => (inv.lines || []).map(l => {
-        const lp = getLastPurchasePrice(l.productId);
-        return [inv.date?.slice(0, 7), l.name, l.qty, lp, lp * l.qty, l.subtotal, l.subtotal - lp * l.qty];
-      })),
-    ]), "Ganancia detalle");
-    XLSX.writeFile(wb, `nexopyme_metricas_${from}_${to}.xlsx`);
-  };
+  const abcData = useMemo(() => {
+    const total = productRanking.reduce((s, [, d]) => s + d.revenue, 0);
+    let acum = 0;
+    return productRanking.map(([name, d]) => {
+      acum += d.revenue;
+      const pct = total > 0 ? (d.revenue / total * 100) : 0;
+      const acumPct = total > 0 ? (acum / total * 100) : 0;
+      const cat = acumPct <= 80 ? "A" : acumPct <= 95 ? "B" : "C";
+      return { name, revenue: d.revenue, qty: d.qty, pct, acumPct, cat };
+    });
+  }, [productRanking]);
 
   // ── sub-components ────────────────────────────────────────────────────────
   const Bar = ({ value, max, color }) => (
     <div style={{ height: 6, background: T.surface, borderRadius: 3, overflow: "hidden" }}>
-      <div style={{ height: "100%", width: `${Math.round((Math.max(value,0) / max) * 100)}%`, background: color, borderRadius: 3, transition: "width 0.4s" }} />
+      <div style={{ height: "100%", width: `${Math.round((Math.max(value, 0) / max) * 100)}%`, background: color, borderRadius: 3, transition: "width 0.4s" }} />
     </div>
   );
 
-  const CHART_CONFIGS = {
-    ventas:   { label: "Ventas brutas mensuales",  valueKey: "ventasBrutas",  color: T.accent },
-    compras:  { label: "Costo de compras mensual", valueKey: "costoCompras",  color: T.orange },
-    ganancia: { label: "Ganancia bruta mensual",   valueKey: "gananciaBruta", color: T.blue   },
-  };
-
-  // Small bar chart for summary view (clickable)
-  const MiniBarChart = ({ chartKey }) => {
-    const cfg = CHART_CONFIGS[chartKey];
-    const data = monthlyData;
-    const max = Math.max(...data.map(d => Math.abs(d[cfg.valueKey])), 1);
-    const total = data.reduce((s, d) => s + d[cfg.valueKey], 0);
-    const chartH = 120;
+  const BarChart = ({ data, valueKey, color, height = 180 }) => {
+    const max = Math.max(...data.map(d => Math.abs(d[valueKey])), 1);
     return (
-      <div onClick={() => { setDrillChart(chartKey); setDrillFrom(from); setDrillTo(to); setDrillClients([]); }}
-        style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 18, cursor: "pointer", transition: "border-color 0.2s, transform 0.15s" }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = cfg.color; e.currentTarget.style.transform = "translateY(-2px)"; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.transform = "translateY(0)"; }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 4 }}>{cfg.label.toUpperCase()}</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: cfg.color }}>{fmt(total)}</div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: height + 28, paddingBottom: 24, position: "relative" }}>
+        {[0.25, 0.5, 0.75, 1].map(r => (
+          <div key={r} style={{ position: "absolute", left: 0, right: 0, bottom: 24 + r * height, borderTop: `1px dashed ${T.border}`, pointerEvents: "none" }}>
+            <span style={{ fontSize: 9, color: T.faint, paddingLeft: 2 }}>{fmt(max * r)}</span>
           </div>
-          <span style={{ fontSize: 11, color: cfg.color, background: cfg.color + "20", padding: "3px 9px", borderRadius: 6, fontWeight: 700 }}>Ver detalle →</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: chartH, paddingBottom: 20, position: "relative" }}>
-          {[0.25, 0.5, 0.75, 1].map(r => (
-            <div key={r} style={{ position: "absolute", left: 0, right: 0, bottom: 20 + r * (chartH - 20), borderTop: `1px dashed ${T.border}`, pointerEvents: "none" }} />
-          ))}
-          {data.map(d => {
-            const val = d[cfg.valueKey];
-            const h = Math.max(3, Math.round((Math.abs(val) / max) * (chartH - 20)));
-            return (
-              <div key={d.ym} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", height: "100%", justifyContent: "flex-end" }}>
-                <div style={{ width: "100%", height: h, background: val < 0 ? T.red : cfg.color, borderRadius: "3px 3px 0 0", opacity: 0.85 }} />
-                <div style={{ fontSize: 9, color: T.muted, position: "absolute", bottom: 0, whiteSpace: "nowrap" }}>{d.label}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  // Full drill-down chart
-  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
-  const [clientSearchInput, setClientSearchInput] = useState("");
-
-  const DrillChart = () => {
-    const cfg = CHART_CONFIGS[drillChart];
-
-    // Clientes que tienen ventas en el rango del drill
-    const clientsInDrillRange = useMemo(() => {
-      const names = new Set(
-        saleInvoices
-          .filter(i => i.type === "factura" && i.date >= (drillFrom || "0000") && i.date <= (drillTo || "9999"))
-          .map(i => i.clientName).filter(Boolean)
-      );
-      return [...names].sort();
-    }, [drillFrom, drillTo]);
-
-    // drillClients = [] significa "todos tildados". Al abrir el drill por primera vez lo inicializamos con todos.
-    const activeClients = drillClients.length === 0 ? clientsInDrillRange : drillClients;
-    const allChecked = drillClients.length === 0 || drillClients.length === clientsInDrillRange.length;
-    const deselectedCount = clientsInDrillRange.length - activeClients.length;
-
-    const toggleClient = (name) => {
-      // Si estaban todos tildados, al destildar uno construimos la lista sin ese
-      if (drillClients.length === 0) {
-        setDrillClients(clientsInDrillRange.filter(n => n !== name));
-      } else {
-        const next = drillClients.includes(name)
-          ? drillClients.filter(n => n !== name)
-          : [...drillClients, name];
-        // Si quedan todos, volvemos a [] (todos)
-        setDrillClients(next.length === clientsInDrillRange.length ? [] : next);
-      }
-    };
-
-    const isChecked = (name) => drillClients.length === 0 || drillClients.includes(name);
-
-    const visibleClients = clientsInDrillRange.filter(n =>
-      n.toLowerCase().includes(clientSearchInput.toLowerCase())
-    );
-
-    const data = drillData;
-    const max = Math.max(...data.map(d => Math.abs(d[cfg.valueKey])), 1);
-    const total = data.reduce((s, d) => s + d[cfg.valueKey], 0);
-    const chartH = 220;
-
-    return (
-      <div style={{ background: T.paper, border: `1px solid ${cfg.color}40`, borderRadius: 14, overflow: "hidden", marginBottom: 24 }}>
-
-        {/* ── Header ── */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 22px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button onClick={() => { setDrillChart(null); setClientDropdownOpen(false); setClientSearchInput(""); }}
-              style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}>←</button>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{cfg.label}</div>
-              <div style={{ fontSize: 12, color: T.muted }}>
-                Total: <span style={{ color: cfg.color, fontWeight: 700 }}>{fmt(total)}</span>
-                {deselectedCount > 0 && (
-                  <span style={{ marginLeft: 8, background: T.orangeLight, color: T.orange, padding: "1px 8px", borderRadius: 8, fontSize: 11, fontWeight: 700 }}>
-                    {deselectedCount} cliente{deselectedCount > 1 ? "s" : ""} oculto{deselectedCount > 1 ? "s" : ""}
-                  </span>
-                )}
-              </div>
+        ))}
+        {data.map(d => {
+          const val = d[valueKey];
+          const h = Math.max(3, Math.round((Math.abs(val) / max) * height));
+          return (
+            <div key={d.ym} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", height: "100%", justifyContent: "flex-end" }}>
+              <div style={{ fontSize: 9, color, fontWeight: 700, marginBottom: 3, whiteSpace: "nowrap", textAlign: "center" }}>{val !== 0 ? fmt(val) : "—"}</div>
+              <div style={{ width: "100%", height: h, background: val < 0 ? T.red : color, borderRadius: "4px 4px 0 0", opacity: 0.88 }} />
+              <div style={{ fontSize: 9, color: T.muted, position: "absolute", bottom: 0, whiteSpace: "nowrap" }}>{d.label}</div>
             </div>
-          </div>
-          <button onClick={() => { setDrillFrom(from); setDrillTo(to); setDrillClients([]); setClientSearchInput(""); }}
-            style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-            Resetear filtros
-          </button>
-        </div>
-
-        {/* ── Controles: fechas + clientes ── */}
-        <div style={{ display: "flex", gap: 12, padding: "14px 22px", borderBottom: `1px solid ${T.border}`, background: T.surface2, alignItems: "flex-end", flexWrap: "wrap" }}>
-
-          {/* Fecha desde */}
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 5, letterSpacing: 0.8 }}>DESDE</div>
-            <input type="date" value={drillFrom} onChange={e => { setDrillFrom(e.target.value); setDrillClients([]); }}
-              style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${drillFrom !== from ? T.blue : T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-          </div>
-
-          {/* Fecha hasta */}
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 5, letterSpacing: 0.8 }}>HASTA</div>
-            <input type="date" value={drillTo} onChange={e => { setDrillTo(e.target.value); setDrillClients([]); }}
-              style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${drillTo !== to ? T.blue : T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-          </div>
-
-          {/* Dropdown clientes con checkboxes */}
-          <div style={{ position: "relative" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 5, letterSpacing: 0.8 }}>CLIENTES</div>
-            <button
-              onClick={() => setClientDropdownOpen(v => !v)}
-              style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "8px 14px", borderRadius: 8,
-                border: `1px solid ${deselectedCount > 0 ? T.orange : T.border}`,
-                background: deselectedCount > 0 ? T.orangeLight : T.surface,
-                color: deselectedCount > 0 ? T.orange : T.ink,
-                fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-                minWidth: 200, justifyContent: "space-between"
-              }}>
-              <span>
-                {deselectedCount === 0
-                  ? `Todos (${clientsInDrillRange.length})`
-                  : `${activeClients.length} de ${clientsInDrillRange.length} clientes`}
-              </span>
-              <span style={{ fontSize: 10, opacity: 0.6 }}>{clientDropdownOpen ? "▲" : "▼"}</span>
-            </button>
-
-            {clientDropdownOpen && (
-              <div style={{
-                position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: 280,
-                background: T.paper, border: `1px solid ${T.border}`, borderRadius: 10,
-                zIndex: 50, boxShadow: "0 12px 32px #0006", overflow: "hidden"
-              }}>
-                {/* Buscador interno */}
-                <div style={{ padding: "10px 12px", borderBottom: `1px solid ${T.border}` }}>
-                  <input
-                    value={clientSearchInput}
-                    onChange={e => setClientSearchInput(e.target.value)}
-                    placeholder="🔍 Buscar cliente..."
-                    style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
-                  />
-                </div>
-
-                {/* Tildar/destildar todos */}
-                <div
-                  onClick={() => { setDrillClients([]); }}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: `1px solid ${T.border}`, cursor: "pointer", background: allChecked ? T.accentLight : "transparent" }}
-                  onMouseEnter={e => e.currentTarget.style.background = T.surface}
-                  onMouseLeave={e => e.currentTarget.style.background = allChecked ? T.accentLight : "transparent"}>
-                  <div style={{
-                    width: 16, height: 16, borderRadius: 4, border: `2px solid ${allChecked ? T.accent : T.border}`,
-                    background: allChecked ? T.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-                  }}>
-                    {allChecked && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
-                  </div>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: allChecked ? T.accent : T.ink }}>Seleccionar todos</span>
-                </div>
-
-                {/* Lista de clientes */}
-                <div style={{ maxHeight: 240, overflowY: "auto" }}>
-                  {visibleClients.length === 0 && (
-                    <div style={{ padding: "12px 14px", fontSize: 12, color: T.muted }}>Sin resultados.</div>
-                  )}
-                  {visibleClients.map(name => {
-                    const checked = isChecked(name);
-                    return (
-                      <div key={name}
-                        onClick={() => toggleClient(name)}
-                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", cursor: "pointer", borderBottom: `1px solid ${T.border}` }}
-                        onMouseEnter={e => e.currentTarget.style.background = T.surface}
-                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                        <div style={{
-                          width: 16, height: 16, borderRadius: 4, border: `2px solid ${checked ? cfg.color : T.border}`,
-                          background: checked ? cfg.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-                        }}>
-                          {checked && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
-                        </div>
-                        <span style={{ fontSize: 13, color: checked ? T.ink : T.muted }}>{name}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Footer */}
-                <div style={{ padding: "8px 14px", borderTop: `1px solid ${T.border}`, background: T.surface2, display: "flex", justifyContent: "flex-end" }}>
-                  <button onClick={() => setClientDropdownOpen(false)}
-                    style={{ background: cfg.color, color: "#fff", border: "none", borderRadius: 7, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                    Listo
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ── Gráfico ── */}
-        <div style={{ padding: "24px 22px 16px" }}>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: chartH + 32, paddingBottom: 28, position: "relative" }}>
-            {[0.25, 0.5, 0.75, 1].map(r => (
-              <div key={r} style={{ position: "absolute", left: 0, right: 0, bottom: 28 + r * chartH, borderTop: `1px dashed ${T.border}`, pointerEvents: "none" }}>
-                <span style={{ fontSize: 9, color: T.faint, paddingLeft: 2 }}>{fmt(max * r)}</span>
-              </div>
-            ))}
-            {data.map(d => {
-              const val = d[cfg.valueKey];
-              const h = Math.max(3, Math.round((Math.abs(val) / max) * chartH));
-              return (
-                <div key={d.ym} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", height: "100%", justifyContent: "flex-end" }}>
-                  <div style={{ fontSize: 10, color: cfg.color, fontWeight: 700, marginBottom: 4, whiteSpace: "nowrap", textAlign: "center" }}>{val !== 0 ? fmt(val) : "—"}</div>
-                  <div style={{ width: "100%", height: h, background: val < 0 ? T.red : cfg.color, borderRadius: "4px 4px 0 0", opacity: 0.88, transition: "height 0.3s" }} />
-                  <div style={{ fontSize: 10, color: T.muted, position: "absolute", bottom: 0, whiteSpace: "nowrap" }}>{d.label}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+          );
+        })}
       </div>
     );
   };
 
-  // Pending panels (cobros / pagos)
-  const PendingPanelContent = () => {
-    const isCobros = pendingPanel === "cobros";
-    const list = isCobros ? filteredCobros : filteredPagos;
-    const total = list.reduce((s, i) => s + i.total, 0);
-    const color = isCobros ? T.yellow : T.orange;
-    const allCount = isCobros ? cobrosPendientes.length : pagosPendientes.length;
+  const FilterInput = ({ value, onChange, placeholder, color }) => (
+    <div style={{ position: "relative" }}>
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={`🔍 ${placeholder}`}
+        style={{ width: "100%", padding: "7px 26px 7px 10px", borderRadius: 7, border: `1px solid ${value ? (color || T.yellow) + "80" : T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+      {value && <button onClick={() => onChange("")} style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 11 }}>✕</button>}
+    </div>
+  );
 
-    return (
-      <div style={{ background: T.paper, border: `1px solid ${color}40`, borderRadius: 14, overflow: "hidden", marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
-          <button onClick={() => setPendingPanel(null)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}>←</button>
+  const SectionTitle = ({ label, count, color }) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: T.muted, letterSpacing: 1 }}>{label.toUpperCase()}</div>
+      {count !== undefined && <span style={{ fontSize: 10, fontWeight: 700, background: (color || T.accent) + "20", color: color || T.accent, padding: "2px 8px", borderRadius: 10 }}>{count}</span>}
+    </div>
+  );
+
+  const PageHeader = ({ title, subtitle, color, onPDF, onExcel, extraFilters }) => (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <button onClick={() => setView("home")}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>
+            ← Reportes
+          </button>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{isCobros ? "Cobros pendientes" : "Pagos pendientes"}</div>
-            <div style={{ fontSize: 12, color: T.muted }}>{list.length} de {allCount} · Total filtrado: <span style={{ color, fontWeight: 700 }}>{fmt(total)}</span></div>
+            <span style={{ fontSize: 10, fontWeight: 800, color, background: color + "20", padding: "3px 10px", borderRadius: 20, letterSpacing: 0.8 }}>{title.toUpperCase()}</span>
+            {subtitle && <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>{subtitle}</div>}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          {extraFilters}
+          {onExcel && <button onClick={onExcel} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${T.accent}40`, background: T.accentLight, color: T.accent, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>⬇ Excel</button>}
+          {onPDF && <button onClick={onPDF} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${T.blue}40`, background: T.blueLight, color: T.blue, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>🖨 PDF</button>}
+        </div>
+      </div>
+    </div>
+  );
+
+  const DateInputs = () => (
+    <>
+      {[["DESDE", from, setFrom], ["HASTA", to, setTo]].map(([lbl, val, setter]) => (
+        <div key={lbl}>
+          <div style={{ fontSize: 9, color: T.muted, fontWeight: 700, marginBottom: 4 }}>{lbl}</div>
+          <input type="date" value={val} onChange={e => setter(e.target.value)}
+            style={{ padding: "7px 8px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.paper, color: T.ink, fontSize: 12, fontFamily: "inherit" }} />
+        </div>
+      ))}
+    </>
+  );
+
+  // ── PDF generators ────────────────────────────────────────────────────────
+  const pdfStyle = `body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:24px}h1{font-size:18px;margin-bottom:2px}h2{font-size:13px;color:#444;margin:18px 0 8px}table{width:100%;border-collapse:collapse;margin-bottom:16px}th{background:#f0f0f0;padding:7px 10px;text-align:left;font-size:11px;border-bottom:2px solid #ccc}td{padding:6px 10px;border-bottom:1px solid #e0e0e0}.tot{font-weight:700;background:#fafafa}@media print{button{display:none}}`;
+
+  const openPDF = (title, html) => {
+    const w = window.open("", "_blank");
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>${pdfStyle}</style></head><body><h1>NexoPyme · ${title}</h1><p style="color:#888;font-size:11px;margin-bottom:16px">Generado: ${new Date().toLocaleDateString("es-AR")}</p>${html}<script>window.onload=()=>window.print()<\/script></body></html>`);
+    w.document.close();
+  };
+
+  const pdfOperativos = () => {
+    const cobroRows = filteredCobros.map(inv => { const cli = clients.find(c => c.id === inv.clientId); return `<tr><td>${inv.id}</td><td>${inv.clientName}</td><td>${cli?.cuit || "—"}</td><td>${inv.date}</td><td>${inv.due || "—"}</td><td>${fmt(inv.total)}</td></tr>`; }).join("");
+    const pagoRows = filteredPagos.map(inv => `<tr><td>${inv.id}</td><td>${inv.nroFactura || "—"}</td><td>${inv.supplierName}</td><td>${inv.date}</td><td>${inv.dueDate || "—"}</td><td>${fmt(inv.total)}</td></tr>`).join("");
+    const stockRows = stockCritico.map(p => `<tr><td>${p.sku}</td><td>${p.name}</td><td>${p.category}</td><td>${p.stock}</td><td>${p.minStock}</td><td style="color:red;font-weight:700">−${p.minStock - p.stock}</td></tr>`).join("");
+    openPDF("Reportes Operativos", `
+      <h2>Cobros Pendientes</h2><table><thead><tr><th>Factura</th><th>Cliente</th><th>CUIT</th><th>Fecha</th><th>Vence</th><th>Total</th></tr></thead><tbody>${cobroRows || "<tr><td colspan='6'>Sin datos</td></tr>"}</tbody><tfoot><tr class="tot"><td colspan="5">Total</td><td>${fmt(filteredCobros.reduce((s,i)=>s+i.total,0))}</td></tr></tfoot></table>
+      <h2>Pagos Pendientes</h2><table><thead><tr><th>OC</th><th>N° Fact. Prov.</th><th>Proveedor</th><th>Fecha</th><th>Vence</th><th>Total</th></tr></thead><tbody>${pagoRows || "<tr><td colspan='6'>Sin datos</td></tr>"}</tbody><tfoot><tr class="tot"><td colspan="5">Total</td><td>${fmt(filteredPagos.reduce((s,i)=>s+i.total,0))}</td></tr></tfoot></table>
+      <h2>Stock Crítico</h2><table><thead><tr><th>SKU</th><th>Producto</th><th>Categoría</th><th>Stock actual</th><th>Mínimo</th><th>Faltante</th></tr></thead><tbody>${stockRows || "<tr><td colspan='6'>Sin productos críticos</td></tr>"}</tbody></table>
+    `);
+  };
+
+  const pdfTacticos = () => {
+    const vRows = salesInRange.map(i => `<tr><td>${i.id}</td><td>${i.clientName}</td><td>${i.date}</td><td>${fmt(i.total)}</td></tr>`).join("");
+    const cliRows = clientRanking.map(([name, total], i) => `<tr><td>#${i+1}</td><td>${name}</td><td>${fmt(total)}</td></tr>`).join("");
+    const prodRows = productRanking.map(([name, d], i) => { const lp = getLastPurchasePrice(d.productId); return `<tr><td>#${i+1}</td><td>${name}</td><td>${d.qty}</td><td>${fmt(d.revenue)}</td><td>${fmt(d.revenue - lp * d.qty)}</td></tr>`; }).join("");
+    const cRows = purchasesInRange.map(i => `<tr><td>${i.id}</td><td>${i.supplierName}</td><td>${i.date}</td><td>${fmt(i.total)}</td></tr>`).join("");
+    openPDF("Reportes Tácticos", `
+      <p style="color:#666">Período: ${from} al ${to}</p>
+      <h2>Ventas del Período</h2><table><thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th>Total</th></tr></thead><tbody>${vRows || "<tr><td colspan='4'>Sin datos</td></tr>"}</tbody><tfoot><tr class="tot"><td colspan="3">Total</td><td>${fmt(salesInRange.reduce((s,i)=>s+i.total,0))}</td></tr></tfoot></table>
+      <h2>Ranking Clientes</h2><table><thead><tr><th>#</th><th>Cliente</th><th>Total vendido</th></tr></thead><tbody>${cliRows || "<tr><td colspan='3'>Sin datos</td></tr>"}</tbody></table>
+      <h2>Ranking Productos</h2><table><thead><tr><th>#</th><th>Producto</th><th>Cant.</th><th>Ingresos</th><th>Ganancia</th></tr></thead><tbody>${prodRows || "<tr><td colspan='5'>Sin datos</td></tr>"}</tbody></table>
+      <h2>Compras del Período</h2><table><thead><tr><th>OC</th><th>Proveedor</th><th>Fecha</th><th>Total</th></tr></thead><tbody>${cRows || "<tr><td colspan='4'>Sin datos</td></tr>"}</tbody><tfoot><tr class="tot"><td colspan="3">Total</td><td>${fmt(purchasesInRange.reduce((s,i)=>s+i.total,0))}</td></tr></tfoot></table>
+    `);
+  };
+
+  const pdfEstrategicos = () => {
+    const mRows = monthlyData.map(d => { const mg = d.ventasBrutas > 0 ? (d.gananciaBruta/d.ventasBrutas*100).toFixed(1)+"%" : "—"; return `<tr><td>${d.label}</td><td>${fmt(d.ventasBrutas)}</td><td>${fmt(d.costoCompras)}</td><td>${fmt(d.costoVentas)}</td><td>${fmt(d.gananciaBruta)}</td><td>${mg}</td></tr>`; }).join("");
+    const abcRows = abcData.map(d => `<tr><td>${d.name}</td><td>${fmt(d.revenue)}</td><td>${d.pct.toFixed(1)}%</td><td>${d.acumPct.toFixed(1)}%</td><td style="font-weight:700">${d.cat}</td></tr>`).join("");
+    openPDF("Reportes Estratégicos", `
+      <p style="color:#666">Período: ${from} al ${to}</p>
+      <h2>Rentabilidad Mensual</h2><table><thead><tr><th>Mes</th><th>Ventas brutas</th><th>Costo compras</th><th>Costo ventas</th><th>Ganancia bruta</th><th>Margen</th></tr></thead><tbody>${mRows}</tbody><tfoot><tr class="tot"><td>TOTAL</td><td>${fmt(totVentas)}</td><td>${fmt(totCompras)}</td><td>${fmt(totCostoV)}</td><td>${fmt(totGanancia)}</td><td>${margin}%</td></tr></tfoot></table>
+      <h2>Análisis ABC de Productos</h2><table><thead><tr><th>Producto</th><th>Ingresos</th><th>% del total</th><th>% acumulado</th><th>Cat.</th></tr></thead><tbody>${abcRows || "<tr><td colspan='5'>Sin datos</td></tr>"}</tbody></table>
+    `);
+  };
+
+  // ── Excel generators ──────────────────────────────────────────────────────
+  const excelOperativos = () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Factura","Cliente","CUIT","Fecha","Vence","Total"],
+      ...filteredCobros.map(inv => { const cli = clients.find(c => c.id === inv.clientId); return [inv.id, inv.clientName, cli?.cuit||"", inv.date, inv.due||"", inv.total]; }),
+      ["","","","","TOTAL", filteredCobros.reduce((s,i)=>s+i.total,0)],
+    ]), "Cobros pendientes");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["OC","N° Fact. Prov.","Proveedor","Fecha","Vence","Total"],
+      ...filteredPagos.map(inv => [inv.id, inv.nroFactura||"", inv.supplierName, inv.date, inv.dueDate||"", inv.total]),
+      ["","","","","TOTAL", filteredPagos.reduce((s,i)=>s+i.total,0)],
+    ]), "Pagos pendientes");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["SKU","Producto","Categoría","Stock actual","Stock mínimo","Faltante"],
+      ...stockCritico.map(p => [p.sku, p.name, p.category, p.stock, p.minStock, p.minStock - p.stock]),
+    ]), "Stock crítico");
+    XLSX.writeFile(wb, `nexopyme_operativos_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
+  const excelTacticos = () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["N° Factura","Cliente","Fecha","Total c/IVA"],
+      ...salesInRange.map(i => [i.id, i.clientName, i.date, i.total]),
+      ["","","TOTAL", salesInRange.reduce((s,i)=>s+i.total,0)],
+    ]), "Ventas");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["#","Cliente","Total vendido"],
+      ...clientRanking.map(([name, total], i) => [i+1, name, total]),
+    ]), "Ranking clientes");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["#","Producto","Cantidad","Ingresos","Ganancia"],
+      ...productRanking.map(([name, d], i) => { const lp = getLastPurchasePrice(d.productId); return [i+1, name, d.qty, d.revenue, d.revenue - lp * d.qty]; }),
+    ]), "Ranking productos");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["N° OC","N° Fact. Prov.","Proveedor","Fecha","Total"],
+      ...purchasesInRange.map(i => [i.id, i.nroFactura||"", i.supplierName, i.date, i.total]),
+      ["","","","TOTAL", purchasesInRange.reduce((s,i)=>s+i.total,0)],
+    ]), "Compras");
+    XLSX.writeFile(wb, `nexopyme_tacticos_${from}_${to}.xlsx`);
+  };
+
+  const excelEstrategicos = () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Mes","Ventas brutas","Costo compras","Costo ventas","Ganancia bruta","Margen %"],
+      ...monthlyData.map(d => [d.label, d.ventasBrutas, d.costoCompras, d.costoVentas, d.gananciaBruta, d.ventasBrutas > 0 ? +(d.gananciaBruta/d.ventasBrutas*100).toFixed(1) : 0]),
+      ["TOTAL", totVentas, totCompras, totCostoV, totGanancia, +margin],
+    ]), "Rentabilidad mensual");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Producto","Ingresos","% del total","% acumulado","Categoría ABC"],
+      ...abcData.map(d => [d.name, d.revenue, +d.pct.toFixed(1), +d.acumPct.toFixed(1), d.cat]),
+    ]), "Análisis ABC");
+    XLSX.writeFile(wb, `nexopyme_estrategicos_${from}_${to}.xlsx`);
+  };
+
+  // ── HOME ──────────────────────────────────────────────────────────────────
+  if (view === "home") {
+    const cats = [
+      { id: "operativos", label: "Operativos", desc: "Control diario de cobros, pagos y stock", color: T.yellow, bg: T.yellowLight, icon: "◉",
+        items: ["Cobros pendientes", "Pagos pendientes", "Stock crítico"],
+        badges: [{ label: `${cobrosPendientes.length} cobros`, color: T.yellow }, { label: `${pagosPendientes.length} pagos`, color: T.orange }, { label: `${stockCritico.length} alertas`, color: T.red }] },
+      { id: "tacticos", label: "Tácticos", desc: "Análisis de ventas, compras y rankings del período", color: T.blue, bg: T.blueLight, icon: "◈",
+        items: ["Ventas del período", "Compras del período", "Ranking de clientes", "Ranking de productos"],
+        badges: [{ label: `${saleInvoices.filter(i=>i.type==="factura").length} facturas`, color: T.blue }] },
+      { id: "estrategicos", label: "Estratégicos", desc: "Rentabilidad, márgenes y análisis ABC", color: T.purple, bg: T.purpleLight, icon: "▦",
+        items: ["Rentabilidad mensual", "Evolución de márgenes", "Análisis ABC de productos"],
+        badges: [] },
+    ];
+    return (
+      <div>
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Reportes</div>
+          <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Seleccioná una categoría para ver y filtrar los datos</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+          {cats.map(cat => (
+            <div key={cat.id} onClick={() => setView(cat.id)}
+              style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 16, padding: 28, cursor: "pointer", transition: "border-color 0.2s, transform 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = cat.color; e.currentTarget.style.transform = "translateY(-3px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.transform = "translateY(0)"; }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: cat.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: cat.color }}>{cat.icon}</div>
+                <span style={{ fontSize: 10, color: cat.color, background: cat.bg, padding: "4px 10px", borderRadius: 8, fontWeight: 800, letterSpacing: 0.5 }}>Ver reporte →</span>
+              </div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{cat.label}</div>
+              <div style={{ fontSize: 12, color: T.muted, marginBottom: 18, lineHeight: 1.5 }}>{cat.desc}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+                {cat.items.map(item => (
+                  <div key={item} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: T.muted }}>
+                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: cat.color, flexShrink: 0 }} />{item}
+                  </div>
+                ))}
+              </div>
+              {cat.badges.length > 0 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", borderTop: `1px solid ${T.border}`, paddingTop: 14 }}>
+                  {cat.badges.map(b => (
+                    <span key={b.label} style={{ fontSize: 11, fontWeight: 700, background: b.color + "20", color: b.color, padding: "3px 10px", borderRadius: 20 }}>{b.label}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── OPERATIVOS ────────────────────────────────────────────────────────────
+  if (view === "operativos") {
+    const totalCobros = filteredCobros.reduce((s, i) => s + i.total, 0);
+    const totalPagos  = filteredPagos.reduce((s, i) => s + i.total, 0);
+    const nearDate    = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    return (
+      <div>
+        <PageHeader title="Operativos" subtitle="Cobros, pagos y stock crítico" color={T.yellow} onPDF={pdfOperativos} onExcel={excelOperativos} />
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 28 }}>
+          {[{ label: "Cobros pendientes", value: fmt(cobrosPendientes.reduce((s,i)=>s+i.total,0)), sub: `${cobrosPendientes.length} facturas`, color: T.yellow },
+            { label: "Pagos pendientes",  value: fmt(pagosPendientes.reduce((s,i)=>s+i.total,0)),  sub: `${pagosPendientes.length} OC`,       color: T.orange },
+            { label: "Productos críticos", value: stockCritico.length, sub: "Stock ≤ mínimo",      color: T.red }].map((k, i) => (
+            <div key={i} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 22px" }}>
+              <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 8 }}>{k.label.toUpperCase()}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: k.color, marginBottom: 4 }}>{k.value}</div>
+              <div style={{ fontSize: 12, color: T.muted }}>{k.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Cobros */}
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+            <SectionTitle label="Cobros pendientes" count={filteredCobros.length} color={T.yellow} />
+            <div style={{ fontSize: 12, color: T.muted, marginTop: -8 }}>Total filtrado: <span style={{ color: T.yellow, fontWeight: 700 }}>{fmt(totalCobros)}</span></div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10, padding: "12px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface2 }}>
+            <FilterInput value={fCobroCliente} onChange={setFCobroCliente} placeholder="Cliente..." color={T.yellow} />
+            <FilterInput value={fCobroCuit} onChange={setFCobroCuit} placeholder="CUIT..." color={T.yellow} />
+            <FilterInput value={fCobroMontoMin} onChange={setFCobroMontoMin} placeholder="Monto mín." color={T.yellow} />
+            <FilterInput value={fCobroMontoMax} onChange={setFCobroMontoMax} placeholder="Monto máx." color={T.yellow} />
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>
+                {["N° Factura","Cliente","CUIT","Fecha","Vence","Total"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {filteredCobros.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: T.muted }}>Sin cobros pendientes.</td></tr>}
+                {filteredCobros.map(inv => { const cli = clients.find(c => c.id === inv.clientId); const prox = inv.due && inv.due <= nearDate; return (
+                  <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: prox ? `${T.yellow}08` : "transparent" }}>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{inv.id}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.clientName}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted, fontFamily: "monospace" }}>{cli?.cuit || "—"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: prox ? T.yellow : T.muted, fontWeight: prox ? 700 : 400 }}>{inv.due || "—"}{prox && " ⚠"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.yellow }}>{fmt(inv.total)}</td>
+                  </tr>); })}
+              </tbody>
+              {filteredCobros.length > 0 && <tfoot><tr style={{ background: T.surface, borderTop: `2px solid ${T.border}` }}>
+                <td colSpan={5} style={{ padding: "10px 14px", fontSize: 12, fontWeight: 700, color: T.muted }}>TOTAL</td>
+                <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.yellow }}>{fmt(totalCobros)}</td>
+              </tr></tfoot>}
+            </table>
           </div>
         </div>
 
-        {/* Filters */}
-        {isCobros ? (
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10, padding: "12px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface2 }}>
-            {[[fCobroCliente, setFCobroCliente, "Cliente..."], [fCobroCuit, setFCobroCuit, "CUIT..."], [fCobroMontoMin, setFCobroMontoMin, "Monto mín."], [fCobroMontoMax, setFCobroMontoMax, "Monto máx."]].map(([v, s, ph]) => (
-              <div key={ph} style={{ position: "relative" }}>
-                <input value={v} onChange={e => s(e.target.value)} placeholder={`🔍 ${ph}`}
-                  style={{ width: "100%", padding: "7px 26px 7px 10px", borderRadius: 7, border: `1px solid ${v ? T.yellow + "80" : T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-                {v && <button onClick={() => s("")} style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 11 }}>✕</button>}
-              </div>
-            ))}
+        {/* Pagos */}
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+            <SectionTitle label="Pagos pendientes" count={filteredPagos.length} color={T.orange} />
+            <div style={{ fontSize: 12, color: T.muted, marginTop: -8 }}>Total filtrado: <span style={{ color: T.orange, fontWeight: 700 }}>{fmt(totalPagos)}</span></div>
           </div>
-        ) : (
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10, padding: "12px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface2 }}>
-            {[[fPagoProveedor, setFPagoProveedor, "Proveedor..."], [fPagoMontoMin, setFPagoMontoMin, "Monto mín."], [fPagoMontoMax, setFPagoMontoMax, "Monto máx."]].map(([v, s, ph]) => (
-              <div key={ph} style={{ position: "relative" }}>
-                <input value={v} onChange={e => s(e.target.value)} placeholder={`🔍 ${ph}`}
-                  style={{ width: "100%", padding: "7px 26px 7px 10px", borderRadius: 7, border: `1px solid ${v ? T.orange + "80" : T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-                {v && <button onClick={() => s("")} style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 11 }}>✕</button>}
-              </div>
-            ))}
+            <FilterInput value={fPagoProveedor} onChange={setFPagoProveedor} placeholder="Proveedor..." color={T.orange} />
+            <FilterInput value={fPagoMontoMin} onChange={setFPagoMontoMin} placeholder="Monto mín." color={T.orange} />
+            <FilterInput value={fPagoMontoMax} onChange={setFPagoMontoMax} placeholder="Monto máx." color={T.orange} />
           </div>
-        )}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>
+                {["N° OC","N° Fact. Prov.","Proveedor","Fecha","Vence","Total"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {filteredPagos.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: T.muted }}>Sin pagos pendientes.</td></tr>}
+                {filteredPagos.map(inv => { const prox = inv.dueDate && inv.dueDate <= nearDate; return (
+                  <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: prox ? `${T.orange}08` : "transparent" }}>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{inv.id}</td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{inv.nroFactura || "—"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.supplierName}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: prox ? T.orange : T.muted, fontWeight: prox ? 700 : 400 }}>{inv.dueDate || "—"}{prox && " ⚠"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.orange }}>{fmt(inv.total)}</td>
+                  </tr>); })}
+              </tbody>
+              {filteredPagos.length > 0 && <tfoot><tr style={{ background: T.surface, borderTop: `2px solid ${T.border}` }}>
+                <td colSpan={5} style={{ padding: "10px 14px", fontSize: 12, fontWeight: 700, color: T.muted }}>TOTAL</td>
+                <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.orange }}>{fmt(totalPagos)}</td>
+              </tr></tfoot>}
+            </table>
+          </div>
+        </div>
 
-        <div style={{ overflowY: "auto", maxHeight: 400 }}>
+        {/* Stock crítico */}
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+            <SectionTitle label="Stock crítico" count={stockCritico.length} color={T.red} />
+            <div style={{ fontSize: 12, color: T.muted, marginTop: -8 }}>Productos con stock ≤ mínimo requerido</div>
+          </div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: T.surface, position: "sticky", top: 0 }}>
-                {isCobros
-                  ? ["N° Factura", "Cliente", "CUIT", "Fecha", "Vence", "Total"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)
-                  : ["N° OC", "N° Factura Prov.", "Proveedor", "Fecha", "Vence", "Total"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)
-                }
-              </tr>
-            </thead>
+            <thead><tr style={{ background: T.surface }}>
+              {["SKU","Producto","Categoría","Stock actual","Stock mínimo","Faltante"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+            </tr></thead>
             <tbody>
-              {list.length === 0 && <tr><td colSpan={6} style={{ padding: "24px", textAlign: "center", color: T.muted, fontSize: 13 }}>Sin resultados.</td></tr>}
-              {isCobros
-                ? filteredCobros.map(inv => {
-                    const cli = clients.find(c => c.id === inv.clientId);
-                    const prox = inv.due && inv.due <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-                    return (
-                      <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: prox ? `${T.yellow}08` : "transparent" }}>
-                        <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{inv.id}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.clientName}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted, fontFamily: "monospace" }}>{cli?.cuit || "—"}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 12, color: prox ? T.yellow : T.muted, fontWeight: prox ? 700 : 400 }}>{inv.due}{prox && " ⚠"}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.yellow }}>{fmt(inv.total)}</td>
-                      </tr>
-                    );
-                  })
-                : filteredPagos.map(inv => {
-                    const prox = inv.dueDate && inv.dueDate <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-                    return (
-                      <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: prox ? `${T.orange}08` : "transparent" }}>
-                        <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{inv.id}</td>
-                        <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{inv.nroFactura || "—"}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.supplierName}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 12, color: prox ? T.orange : T.muted, fontWeight: prox ? 700 : 400 }}>{inv.dueDate}{prox && " ⚠"}</td>
-                        <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.orange }}>{fmt(inv.total)}</td>
-                      </tr>
-                    );
-                  })
-              }
+              {stockCritico.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: T.muted }}>Sin productos críticos.</td></tr>}
+              {stockCritico.map(p => (
+                <tr key={p.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{p.sku}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{p.name}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{p.category}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 700, color: p.stock === 0 ? T.red : T.orange }}>{p.stock}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{p.minStock}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 800, color: T.red }}>−{p.minStock - p.stock} uds</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
     );
-  };
+  }
 
-  // ── render ────────────────────────────────────────────────────────────────
-  return (
-    <div>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Métricas</div>
-          <div style={{ fontSize: 13, color: T.muted }}>Ventas, compras y rentabilidad por período</div>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-          {[["DESDE", from, setFrom], ["HASTA", to, setTo]].map(([lbl, val, setter]) => (
-            <div key={lbl}>
-              <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 5 }}>{lbl}</div>
-              <input type="date" value={val} onChange={e => setter(e.target.value)}
-                style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.paper, color: T.ink, fontSize: 13, fontFamily: "inherit" }} />
+  // ── TÁCTICOS ──────────────────────────────────────────────────────────────
+  if (view === "tacticos") {
+    const totalVentas  = salesInRange.reduce((s, i) => s + i.total, 0);
+    const totalCompras = purchasesInRange.reduce((s, i) => s + i.total, 0);
+    return (
+      <div>
+        <PageHeader title="Tácticos" subtitle={`Período: ${from} al ${to}`} color={T.blue} onPDF={pdfTacticos} onExcel={excelTacticos}
+          extraFilters={<div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}><DateInputs /></div>} />
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
+          {[{ label: "Ventas del período",  value: fmt(totalVentas),         sub: `${salesInRange.length} facturas`,      color: T.accent },
+            { label: "Compras del período", value: fmt(totalCompras),        sub: `${purchasesInRange.length} OC`,         color: T.orange },
+            { label: "Clientes activos",    value: clientRanking.length,     sub: "Con ventas en el período",              color: T.blue },
+            { label: "Productos vendidos",  value: productRanking.length,    sub: "Con movimiento",                        color: T.purple }].map((k, i) => (
+            <div key={i} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 22px" }}>
+              <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 8 }}>{k.label.toUpperCase()}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: k.color, marginBottom: 4 }}>{k.value}</div>
+              <div style={{ fontSize: 12, color: T.muted }}>{k.sub}</div>
             </div>
           ))}
-          <button onClick={downloadExcel}
-            style={{ padding: "9px 18px", borderRadius: 8, border: `1px solid ${T.accent}40`, background: T.accentLight, color: T.accent, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-            ⬇ Excel
-          </button>
         </div>
-      </div>
 
-      {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 24 }}>
-        {[
-          { label: "Ventas brutas", value: fmt(totVentas), sub: `${salesInRange.length} facturas`, color: T.accent },
-          { label: "Costo de compras", value: fmt(totCompras), sub: `${purchasesInRange.length} facturas`, color: T.orange },
-          { label: "Ganancia bruta", value: fmt(totGanancia), sub: `Margen ${margin}%`, color: totGanancia >= 0 ? T.accent : T.red },
-          { label: "Costo de ventas", value: fmt(totCostoV), sub: "Últ. precio de compra", color: T.muted },
-        ].map((k, i) => (
-          <div key={i} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "20px 22px" }}>
-            <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 8 }}>{k.label.toUpperCase()}</div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: k.color, marginBottom: 4 }}>{k.value}</div>
-            <div style={{ fontSize: 12, color: T.muted }}>{k.sub}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Drill-down chart (si hay uno activo) */}
-      {drillChart && <DrillChart />}
-
-      {/* Pending panel (si hay uno activo) */}
-      {pendingPanel && <PendingPanelContent />}
-
-      {/* Gráficos mensuales (siempre visibles en modo resumen) */}
-      {!drillChart && !pendingPanel && (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
-            <MiniBarChart chartKey="ventas" />
-            <MiniBarChart chartKey="compras" />
-            <MiniBarChart chartKey="ganancia" />
-          </div>
-
-          {/* Cobros / Pagos pendientes */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
-            {[
-              { key: "cobros", label: "Cobros pendientes", list: cobrosPendientes, color: T.yellow, bg: T.yellowLight },
-              { key: "pagos",  label: "Pagos pendientes",  list: pagosPendientes,  color: T.orange, bg: T.orangeLight },
-            ].map(p => (
-              <div key={p.key} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 20 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>{p.label.toUpperCase()}</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: p.color, marginTop: 4 }}>{fmt(p.list.reduce((s, i) => s + i.total, 0))}</div>
-                  </div>
-                  <button onClick={() => setPendingPanel(p.key)}
-                    style={{ background: p.bg, color: p.color, border: "none", borderRadius: 7, padding: "5px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                    Ver todos →
-                  </button>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 22 }}>
+            <SectionTitle label="Ranking clientes" count={clientRanking.length} color={T.accent} />
+            {clientRanking.length === 0 && <div style={{ color: T.muted, fontSize: 13 }}>Sin ventas en el período.</div>}
+            {clientRanking.map(([name, total], i) => (
+              <div key={name} style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}><span style={{ color: T.muted, marginRight: 8 }}>#{i + 1}</span>{name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>{fmt(total)}</span>
                 </div>
-                {p.list.slice(0, 3).map(inv => (
-                  <div key={inv.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}
-                    onClick={() => setPendingPanel(p.key)}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{inv.clientName || inv.supplierName}</div>
-                    <div style={{ fontWeight: 800, color: p.color }}>{fmt(inv.total)}</div>
-                  </div>
-                ))}
-                {p.list.length === 0 && <div style={{ fontSize: 13, color: T.muted }}>Sin pendientes.</div>}
+                <Bar value={total} max={clientRanking[0]?.[1] || 1} color={T.accent} />
               </div>
             ))}
           </div>
-
-          {/* Rankings */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 22 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 18 }}>RANKING CLIENTES</div>
-              {clientRanking.length === 0 && <div style={{ color: T.muted, fontSize: 13 }}>Sin ventas en el período.</div>}
-              {clientRanking.map(([name, total], i) => (
-                <div key={name} style={{ marginBottom: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}><span style={{ color: T.muted, marginRight: 8 }}>#{i + 1}</span>{name}</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>{fmt(total)}</span>
-                  </div>
-                  <Bar value={total} max={clientRanking[0]?.[1] || 1} color={T.accent} />
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 22 }}>
+            <SectionTitle label="Ranking productos" count={productRanking.length} color={T.blue} />
+            {productRanking.length === 0 && <div style={{ color: T.muted, fontSize: 13 }}>Sin ventas en el período.</div>}
+            {productRanking.map(([name, data], i) => { const lp = getLastPurchasePrice(data.productId); const profit = data.revenue - lp * data.qty; return (
+              <div key={name} style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}><span style={{ color: T.muted, marginRight: 8 }}>#{i + 1}</span>{name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: T.blue }}>{fmt(data.revenue)}</span>
                 </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: T.muted, marginBottom: 5 }}>
+                  <span>{data.qty} uds</span>
+                  <span style={{ color: profit >= 0 ? T.accent : T.red }}>Ganancia: {fmt(profit)}</span>
+                </div>
+                <Bar value={data.revenue} max={productRanking[0]?.[1]?.revenue || 1} color={T.blue} />
+              </div>); })}
+          </div>
+        </div>
+
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+            <SectionTitle label="Ventas del período" count={salesInRange.length} color={T.accent} />
+            <div style={{ fontSize: 12, color: T.muted, marginTop: -8 }}>Total: <span style={{ color: T.accent, fontWeight: 700 }}>{fmt(totalVentas)}</span></div>
+          </div>
+          <div style={{ overflowX: "auto", maxHeight: 340 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface, position: "sticky", top: 0 }}>
+                {["N° Factura","Cliente","Fecha","Total c/IVA"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {salesInRange.length === 0 && <tr><td colSpan={4} style={{ padding: 24, textAlign: "center", color: T.muted }}>Sin facturas en el período.</td></tr>}
+                {salesInRange.map(inv => (
+                  <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{inv.id}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.clientName}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.accent }}>{fmt(inv.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {salesInRange.length > 0 && <tfoot><tr style={{ background: T.surface, borderTop: `2px solid ${T.border}` }}>
+                <td colSpan={3} style={{ padding: "10px 14px", fontSize: 12, fontWeight: 700, color: T.muted }}>TOTAL</td>
+                <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.accent }}>{fmt(totalVentas)}</td>
+              </tr></tfoot>}
+            </table>
+          </div>
+        </div>
+
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+            <SectionTitle label="Compras del período" count={purchasesInRange.length} color={T.orange} />
+            <div style={{ fontSize: 12, color: T.muted, marginTop: -8 }}>Total: <span style={{ color: T.orange, fontWeight: 700 }}>{fmt(totalCompras)}</span></div>
+          </div>
+          <div style={{ overflowX: "auto", maxHeight: 300 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface, position: "sticky", top: 0 }}>
+                {["N° OC","N° Fact. Prov.","Proveedor","Fecha","Total c/IVA"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {purchasesInRange.length === 0 && <tr><td colSpan={5} style={{ padding: 24, textAlign: "center", color: T.muted }}>Sin compras en el período.</td></tr>}
+                {purchasesInRange.map(inv => (
+                  <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{inv.id}</td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{inv.nroFactura || "—"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.supplierName}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.orange }}>{fmt(inv.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {purchasesInRange.length > 0 && <tfoot><tr style={{ background: T.surface, borderTop: `2px solid ${T.border}` }}>
+                <td colSpan={4} style={{ padding: "10px 14px", fontSize: 12, fontWeight: 700, color: T.muted }}>TOTAL</td>
+                <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.orange }}>{fmt(totalCompras)}</td>
+              </tr></tfoot>}
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── ESTRATÉGICOS ──────────────────────────────────────────────────────────
+  if (view === "estrategicos") {
+    return (
+      <div>
+        <PageHeader title="Estratégicos" subtitle={`Período: ${from} al ${to}`} color={T.purple} onPDF={pdfEstrategicos} onExcel={excelEstrategicos}
+          extraFilters={<div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}><DateInputs /></div>} />
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
+          {[{ label: "Ventas brutas",    value: fmt(totVentas),   sub: `${salesInRange.length} facturas`,      color: T.accent },
+            { label: "Costo de compras", value: fmt(totCompras),  sub: `${purchasesInRange.length} OC`,         color: T.orange },
+            { label: "Ganancia bruta",   value: fmt(totGanancia), sub: `Margen ${margin}%`,                     color: totGanancia >= 0 ? T.accent : T.red },
+            { label: "Costo de ventas",  value: fmt(totCostoV),   sub: "Últ. precio de compra",                 color: T.muted }].map((k, i) => (
+            <div key={i} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 22px" }}>
+              <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 8 }}>{k.label.toUpperCase()}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: k.color, marginBottom: 4 }}>{k.value}</div>
+              <div style={{ fontSize: 12, color: T.muted }}>{k.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
+          {[{ label: "Ventas brutas",    key: "ventasBrutas",  color: T.accent },
+            { label: "Costo de compras", key: "costoCompras",  color: T.orange },
+            { label: "Ganancia bruta",   key: "gananciaBruta", color: T.blue }].map(cfg => (
+            <div key={cfg.key} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 20px" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 4 }}>{cfg.label.toUpperCase()}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: cfg.color, marginBottom: 14 }}>{fmt(monthlyData.reduce((s, d) => s + d[cfg.key], 0))}</div>
+              <BarChart data={monthlyData} valueKey={cfg.key} color={cfg.color} height={140} />
+            </div>
+          ))}
+        </div>
+
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+            <SectionTitle label="Rentabilidad mensual" color={T.purple} />
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr style={{ background: T.surface }}>
+              {["Mes","Ventas brutas","Costo compras","Costo ventas","Ganancia bruta","Margen"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {monthlyData.map(d => { const m = d.ventasBrutas > 0 ? ((d.gananciaBruta / d.ventasBrutas) * 100).toFixed(1) : "—"; return (
+                <tr key={d.ym} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{d.label}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, color: T.accent, fontWeight: 700 }}>{fmt(d.ventasBrutas)}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, color: T.orange }}>{fmt(d.costoCompras)}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, color: T.muted }}>{fmt(d.costoVentas)}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 700, color: d.gananciaBruta >= 0 ? T.accent : T.red }}>{fmt(d.gananciaBruta)}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 13, color: T.muted }}>{m}{m !== "—" ? "%" : ""}</td>
+                </tr>); })}
+            </tbody>
+            <tfoot><tr style={{ background: T.surface, borderTop: `2px solid ${T.border}` }}>
+              <td style={{ padding: "10px 14px", fontSize: 12, fontWeight: 800, color: T.muted }}>TOTAL</td>
+              <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 800, color: T.accent }}>{fmt(totVentas)}</td>
+              <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 800, color: T.orange }}>{fmt(totCompras)}</td>
+              <td style={{ padding: "10px 14px", fontSize: 13, color: T.muted }}>{fmt(totCostoV)}</td>
+              <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 800, color: totGanancia >= 0 ? T.accent : T.red }}>{fmt(totGanancia)}</td>
+              <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 800, color: T.muted }}>{margin}%</td>
+            </tr></tfoot>
+          </table>
+        </div>
+
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <SectionTitle label="Análisis ABC de productos" color={T.purple} />
+              <div style={{ fontSize: 12, color: T.muted, marginTop: -8 }}>Regla de Pareto: A = top 80% ingresos · B = 80–95% · C = resto</div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[["A", T.accent], ["B", T.blue], ["C", T.muted]].map(([cat, color]) => (
+                <span key={cat} style={{ fontSize: 11, fontWeight: 700, background: color + "20", color, padding: "3px 10px", borderRadius: 20 }}>
+                  {cat}: {abcData.filter(d => d.cat === cat).length}
+                </span>
               ))}
             </div>
-            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 22 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 18 }}>RANKING PRODUCTOS</div>
-              {productRanking.length === 0 && <div style={{ color: T.muted, fontSize: 13 }}>Sin ventas en el período.</div>}
-              {productRanking.map(([name, data], i) => {
-                const lp = getLastPurchasePrice(data.productId);
-                const profit = data.revenue - lp * data.qty;
-                return (
-                  <div key={name} style={{ marginBottom: 14 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}><span style={{ color: T.muted, marginRight: 8 }}>#{i + 1}</span>{name}</span>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: T.blue }}>{fmt(data.revenue)}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: T.muted, marginBottom: 5 }}>
-                      <span>{data.qty} uds · últ. costo {lp > 0 ? fmt(lp) : "sin datos"}</span>
-                      <span style={{ color: profit >= 0 ? T.accent : T.red }}>Ganancia: {fmt(profit)}</span>
-                    </div>
-                    <Bar value={data.revenue} max={productRanking[0]?.[1]?.revenue || 1} color={T.blue} />
-                  </div>
-                );
-              })}
-            </div>
           </div>
-        </>
-      )}
-    </div>
-  );
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>
+                {["#","Producto","Ingresos","% del total","% acumulado","Categoría"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {abcData.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: T.muted }}>Sin datos de ventas.</td></tr>}
+                {abcData.map((d, i) => { const cc = d.cat === "A" ? T.accent : d.cat === "B" ? T.blue : T.muted; return (
+                  <tr key={d.name} style={{ borderTop: `1px solid ${T.border}` }}>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{i + 1}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{d.name}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 700, color: cc }}>{fmt(d.revenue)}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{d.pct.toFixed(1)}%</td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ flex: 1, height: 4, background: T.surface, borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${d.acumPct}%`, background: cc, borderRadius: 2 }} />
+                        </div>
+                        <span style={{ fontSize: 11, color: T.muted, minWidth: 36 }}>{d.acumPct.toFixed(0)}%</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, background: cc + "20", color: cc, padding: "3px 10px", borderRadius: 20 }}>{d.cat}</span>
+                    </td>
+                  </tr>); })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 // ─── MODULE: LOGÍSTICA ────────────────────────────────────────────────────────
