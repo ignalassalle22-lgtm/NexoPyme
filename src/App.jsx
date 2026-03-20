@@ -5516,6 +5516,8 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
   const [filterDesde, setFilterDesde] = useState("");
   const [filterHasta, setFilterHasta] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
+  const [ventasDiaView, setVentasDiaView] = useState("cliente");
+  const [cobranzasTab, setCobranzasTab] = useState("cobradas");
 
   const hoy = new Date().toISOString().slice(0, 10);
   const diasAtras = (n) => { const d = new Date(hoy); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
@@ -5581,50 +5583,179 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     ventas_dia: {
       title: "Resumen de ventas del día", layer: "op", mvp: true, tag: "Ventas",
       exportData: () => ({ headers: ["Fecha", "Cliente", "Nro.", "Total"], rows: facturasHoy.map(i => [i.date, i.clientName || "", i.nroFactura || "", i.total]) }),
-      render: () => (
-        <div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
-            {[
-              { l: "Total vendido hoy", v: fmt(ventasHoy), c: T.accent },
-              { l: "Operaciones", v: facturasHoy.length },
-              { l: "Ticket promedio", v: facturasHoy.length > 0 ? fmt(ventasHoy / facturasHoy.length) : "—" },
-            ].map((k, i) => <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 18px" }}><div style={{ fontSize: 10, color: T.muted, marginBottom: 6, fontWeight: 700 }}>{k.l}</div><div style={{ fontSize: 22, fontWeight: 800, color: k.c || T.ink }}>{k.v}</div></div>)}
+      render: () => {
+        const porCliente = {};
+        facturasHoy.forEach(i => { if (!porCliente[i.clientName]) porCliente[i.clientName] = { total: 0, count: 0 }; porCliente[i.clientName].total += i.total; porCliente[i.clientName].count++; });
+        const porProducto = {};
+        facturasHoy.forEach(inv => (inv.lines || []).forEach(l => { if (!l.name) return; if (!porProducto[l.name]) porProducto[l.name] = 0; porProducto[l.name] += l.subtotal; }));
+        const porVendedor = {};
+        facturasHoy.forEach(i => { const v = i.vendedorNombre || "Sin asignar"; if (!porVendedor[v]) porVendedor[v] = { total: 0, count: 0 }; porVendedor[v].total += i.total; porVendedor[v].count++; });
+        const viewBtns = [{ k: "cliente", l: "Por cliente" }, { k: "producto", l: "Por producto" }, { k: "vendedor", l: "Por vendedor" }];
+        const tabStyle = (k) => ({ padding: "6px 16px", borderRadius: 6, border: `1px solid ${ventasDiaView === k ? T.accent : T.border}`, background: ventasDiaView === k ? T.accentLight : T.surface, color: ventasDiaView === k ? T.accent : T.muted, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" });
+        return (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
+              {[{ l: "Total vendido hoy", v: fmt(ventasHoy), c: T.accent }, { l: "Operaciones", v: facturasHoy.length }, { l: "Ticket promedio", v: facturasHoy.length > 0 ? fmt(Math.round(ventasHoy / facturasHoy.length)) : "—" }].map((k, i) => (
+                <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 18px" }}>
+                  <div style={{ fontSize: 10, color: T.muted, marginBottom: 6, fontWeight: 700 }}>{k.l}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: k.c || T.ink }}>{k.v}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>Semana anterior (mismo período): <strong style={{ color: T.ink }}>{fmt(ventasSemAnt)}</strong></div>
+            {facturasHoy.length === 0 ? <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: 24 }}>Sin ventas registradas hoy.</div> : (
+              <>
+                <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                  {viewBtns.map(b => <button key={b.k} onClick={() => setVentasDiaView(b.k)} style={tabStyle(b.k)}>{b.l}</button>)}
+                </div>
+                {ventasDiaView === "cliente" && (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead><tr style={{ background: T.surface }}>{["Cliente", "Facturas", "Total"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                    <tbody>{Object.entries(porCliente).sort((a, b) => b[1].total - a[1].total).map(([nombre, d]) => (
+                      <tr key={nombre} style={{ borderTop: `1px solid ${T.border}` }}>
+                        <td style={{ padding: "9px 12px", fontWeight: 600 }}>{nombre}</td>
+                        <td style={{ padding: "9px 12px", color: T.muted }}>{d.count}</td>
+                        <td style={{ padding: "9px 12px", fontWeight: 800, color: T.accent }}>{fmt(d.total)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                )}
+                {ventasDiaView === "producto" && (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead><tr style={{ background: T.surface }}>{["Producto", "Total"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                    <tbody>{Object.entries(porProducto).length === 0
+                      ? <tr><td colSpan={2} style={{ padding: 16, color: T.muted, textAlign: "center" }}>Sin detalle de productos.</td></tr>
+                      : Object.entries(porProducto).sort((a, b) => b[1] - a[1]).map(([nombre, total]) => (
+                        <tr key={nombre} style={{ borderTop: `1px solid ${T.border}` }}>
+                          <td style={{ padding: "9px 12px", fontWeight: 600 }}>{nombre}</td>
+                          <td style={{ padding: "9px 12px", fontWeight: 800, color: T.accent }}>{fmt(total)}</td>
+                        </tr>
+                      ))}</tbody>
+                  </table>
+                )}
+                {ventasDiaView === "vendedor" && (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead><tr style={{ background: T.surface }}>{["Vendedor", "Facturas", "Total"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                    <tbody>{Object.entries(porVendedor).sort((a, b) => b[1].total - a[1].total).map(([nombre, d]) => (
+                      <tr key={nombre} style={{ borderTop: `1px solid ${T.border}` }}>
+                        <td style={{ padding: "9px 12px", fontWeight: 600 }}>{nombre}</td>
+                        <td style={{ padding: "9px 12px", color: T.muted }}>{d.count}</td>
+                        <td style={{ padding: "9px 12px", fontWeight: 800, color: T.accent }}>{fmt(d.total)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                )}
+              </>
+            )}
           </div>
-          <div style={{ fontSize: 13, color: T.muted }}>Semana anterior (mismo período): <strong style={{ color: T.ink }}>{fmt(ventasSemAnt)}</strong></div>
-        </div>
-      )
+        );
+      }
     },
     cobranzas_dia: {
       title: "Cobranzas del día", layer: "op", mvp: true, tag: "Ventas",
-      render: () => (
-        <div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
-            {[
-              { l: "Facturas cobradas total", v: fmt(totalCobrado), c: T.accent },
-              { l: "Saldo pendiente total", v: fmt(totalPendiente), c: T.red },
-            ].map((k, i) => <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 18px" }}><div style={{ fontSize: 10, color: T.muted, marginBottom: 6, fontWeight: 700 }}>{k.l}</div><div style={{ fontSize: 22, fontWeight: 800, color: k.c }}>{k.v}</div></div>)}
+      render: () => {
+        const cobradasPorCliente = {};
+        cobradas.forEach(i => { if (!cobradasPorCliente[i.clientName]) cobradasPorCliente[i.clientName] = []; cobradasPorCliente[i.clientName].push(i); });
+        const pendientesPorCliente = {};
+        pendientes.forEach(i => { if (!pendientesPorCliente[i.clientName]) pendientesPorCliente[i.clientName] = []; pendientesPorCliente[i.clientName].push(i); });
+        const tabStyle = (k) => ({ padding: "7px 20px", borderRadius: 7, border: "none", background: cobranzasTab === k ? T.accent : T.surface, color: cobranzasTab === k ? "#fff" : T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" });
+        const renderGrupo = (porCliente, accentColor) => Object.entries(porCliente).sort((a, b) => b[1].reduce((s, i) => s + i.total, 0) - a[1].reduce((s, i) => s + i.total, 0)).map(([cliente, invs]) => (
+          <div key={cliente} style={{ marginBottom: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: T.surface, borderRadius: "8px 8px 0 0", borderBottom: `2px solid ${accentColor}` }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>{cliente}</span>
+              <span style={{ fontWeight: 800, color: accentColor, fontSize: 14 }}>{fmt(invs.reduce((s, i) => s + i.total, 0))}</span>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead><tr style={{ background: T.surface2 }}>{["Nro. Factura", "Fecha emisión", "Vencimiento", "Total"].map(h => <th key={h} style={{ padding: "6px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+              <tbody>{invs.map(i => (
+                <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "7px 12px", fontFamily: "monospace", fontSize: 11, color: T.blue }}>{i.nroFactura || i.id}</td>
+                  <td style={{ padding: "7px 12px", color: T.muted }}>{i.date}</td>
+                  <td style={{ padding: "7px 12px", color: i.due < hoy && cobranzasTab === "pendientes" ? T.red : T.muted }}>{i.due}</td>
+                  <td style={{ padding: "7px 12px", fontWeight: 700, color: accentColor }}>{fmt(i.total)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
           </div>
-          <div style={{ fontSize: 13, color: T.muted }}>{cobradas.length} facturas cobradas · {pendientes.length} facturas pendientes</div>
-        </div>
-      )
+        ));
+        return (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+              {[{ l: "Total cobrado", v: fmt(totalCobrado), c: T.accent, n: cobradas.length }, { l: "Pendiente de cobro", v: fmt(totalPendiente), c: T.red, n: pendientes.length }].map((k, i) => (
+                <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 18px" }}>
+                  <div style={{ fontSize: 10, color: T.muted, marginBottom: 6, fontWeight: 700 }}>{k.l}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: k.c }}>{k.v}</div>
+                  <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>{k.n} facturas</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 20, background: T.surface2, padding: 4, borderRadius: 9, width: "fit-content" }}>
+              <button onClick={() => setCobranzasTab("cobradas")} style={tabStyle("cobradas")}>Cobradas ({cobradas.length})</button>
+              <button onClick={() => setCobranzasTab("pendientes")} style={tabStyle("pendientes")}>Pendientes ({pendientes.length})</button>
+            </div>
+            {cobranzasTab === "cobradas" && (Object.keys(cobradasPorCliente).length === 0
+              ? <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: 24 }}>Sin facturas cobradas en el período.</div>
+              : renderGrupo(cobradasPorCliente, T.accent)
+            )}
+            {cobranzasTab === "pendientes" && (Object.keys(pendientesPorCliente).length === 0
+              ? <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: 24 }}>Sin facturas pendientes.</div>
+              : renderGrupo(pendientesPorCliente, T.red)
+            )}
+          </div>
+        );
+      }
     },
     aging: {
-      title: "Facturas pendientes (aging)", layer: "op", mvp: true, tag: "Ventas",
-      exportData: () => ({ headers: ["Cliente", "Nro.", "Fecha", "Vencimiento", "Total", "Días vencida"], rows: pendientes.map(i => { const d = Math.round((new Date(hoy) - new Date(i.due)) / 86400000); return [i.clientName || "", i.nroFactura || "", i.date || "", i.due || "", i.total, d > 0 ? d : 0]; }) }),
-      render: () => (
-        <div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
-            {[["0-30 días", aging("0-30"), T.accent], ["31-60 días", aging("31-60"), T.yellow], ["61-90 días", aging("61-90"), T.orange], ["+90 días", aging("+90"), T.red]].map(([label, items, color]) => (
-              <div key={label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
-                <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 6 }}>{label}</div>
-                <div style={{ fontSize: 20, fontWeight: 800, color }}>{fmt(items.reduce((s, i) => s + i.total, 0))}</div>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>{items.length} facturas</div>
-              </div>
-            ))}
+      title: "Facturas pendientes", layer: "op", mvp: true, tag: "Ventas",
+      exportData: () => ({ headers: ["Cliente", "Nro.", "Fecha emisión", "Vencimiento", "Total", "Días vencida"], rows: pendientes.map(i => { const d = Math.round((new Date(hoy) - new Date(i.due)) / 86400000); return [i.clientName || "", i.nroFactura || i.id, i.date || "", i.due || "", i.total, d > 0 ? d : 0]; }) }),
+      render: () => {
+        const pendientesPorCliente = {};
+        pendientes.forEach(i => { if (!pendientesPorCliente[i.clientName]) pendientesPorCliente[i.clientName] = []; pendientesPorCliente[i.clientName].push(i); });
+        const getDiasColor = (due) => { const d = Math.round((new Date(hoy) - new Date(due)) / 86400000); return d > 90 ? T.red : d > 60 ? T.orange : d > 30 ? T.yellow : d > 0 ? T.accent : T.muted; };
+        const getDiasLabel = (due) => { const d = Math.round((new Date(hoy) - new Date(due)) / 86400000); return d > 0 ? `${d}d vencida` : due === hoy ? "Vence hoy" : "Vigente"; };
+        return (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 24 }}>
+              {[["0-30 días", aging("0-30"), T.accent], ["31-60 días", aging("31-60"), T.yellow], ["61-90 días", aging("61-90"), T.orange], ["+90 días", aging("+90"), T.red]].map(([label, items, color]) => (
+                <div key={label} style={{ background: T.surface, border: `1px solid ${color}40`, borderRadius: 12, padding: "12px 14px" }}>
+                  <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 6 }}>{label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color }}>{fmt(items.reduce((s, i) => s + i.total, 0))}</div>
+                  <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>{items.length} facturas</div>
+                </div>
+              ))}
+            </div>
+            {pendientes.length === 0
+              ? <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: 24 }}>Sin facturas pendientes.</div>
+              : Object.entries(pendientesPorCliente).sort((a, b) => b[1].reduce((s, i) => s + i.total, 0) - a[1].reduce((s, i) => s + i.total, 0)).map(([cliente, invs]) => (
+                <div key={cliente} style={{ marginBottom: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 14px", background: T.surface, borderRadius: "8px 8px 0 0", borderBottom: `2px solid ${T.yellow}` }}>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>{cliente}</span>
+                    <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                      <span style={{ fontSize: 12, color: T.muted }}>{invs.length} factura{invs.length !== 1 ? "s" : ""}</span>
+                      <span style={{ fontWeight: 800, color: T.yellow, fontSize: 14 }}>{fmt(invs.reduce((s, i) => s + i.total, 0))}</span>
+                    </div>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr style={{ background: T.surface2 }}>{["Nro. Factura", "Fecha emisión", "Vencimiento", "Estado", "Total"].map(h => <th key={h} style={{ padding: "6px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                    <tbody>{invs.sort((a, b) => a.due > b.due ? 1 : -1).map(i => {
+                      const color = getDiasColor(i.due);
+                      return (
+                        <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                          <td style={{ padding: "8px 14px", fontFamily: "monospace", fontSize: 11, color: T.blue }}>{i.nroFactura || i.id}</td>
+                          <td style={{ padding: "8px 14px", color: T.muted }}>{i.date}</td>
+                          <td style={{ padding: "8px 14px", color: T.muted }}>{i.due}</td>
+                          <td style={{ padding: "8px 14px" }}><span style={{ fontSize: 11, fontWeight: 700, color, background: color + "18", padding: "2px 8px", borderRadius: 4 }}>{getDiasLabel(i.due)}</span></td>
+                          <td style={{ padding: "8px 14px", fontWeight: 800, color: T.yellow }}>{fmt(i.total)}</td>
+                        </tr>
+                      );
+                    })}</tbody>
+                  </table>
+                </div>
+              ))
+            }
           </div>
-          {pendientes.slice(0, 8).map(i => <div key={i.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: `1px solid ${T.border}`, fontSize: 13 }}><span>{i.clientName}</span><span style={{ fontWeight: 700 }}>{fmt(i.total)}</span></div>)}
-        </div>
-      )
+        );
+      }
     },
     stock_alertas: {
       title: "Stock actual + alertas", layer: "op", mvp: true, tag: "Inventario",
@@ -5649,20 +5780,8 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
       )
     },
     mov_dia: { title: "Movimientos del día", layer: "op", tag: "Inventario", render: () => <div style={{ color: T.muted, fontSize: 13, padding: 20 }}>Mostrando movimientos de inventario del día (entradas por compras, salidas por ventas).<br /><br />{saleInvoices.filter(i => i.date === hoy).map(i => <div key={i.id} style={{ padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>{i.type === "factura" ? "📤 Salida" : "📋"} · {i.clientName} · {fmt(i.total)}</div>)}{purchaseInvoices.filter(i => i.date === hoy).map(i => <div key={i.id} style={{ padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>📥 Entrada · {i.supplierName} · {fmt(i.total)}</div>)}</div> },
-    morosos: { title: "Clientes morosos", layer: "op", tag: "Clientes", render: () => { const venc = pendientes.filter(i => i.due < hoy); const porCliente = {}; venc.forEach(i => { porCliente[i.clientName] = (porCliente[i.clientName] || 0) + i.total; }); return <div>{Object.entries(porCliente).sort((a,b)=>b[1]-a[1]).map(([n,t]) => <div key={n} style={{ display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${T.border}`,fontSize:13 }}><span style={{fontWeight:600}}>{n}</span><span style={{color:T.red,fontWeight:700}}>{fmt(t)}</span></div>)}</div>; } },
     entregas_dia: { title: "Entregas del día", layer: "op", tag: "Logística", render: () => <div style={{ color: T.muted, fontSize: 13, padding: 20, textAlign: "center" }}>Datos de entregas disponibles en el módulo Logística.</div> },
     pipeline: { title: "Pipeline de pedidos", layer: "op", tag: "Logística", render: () => <div style={{ color: T.muted, fontSize: 13, padding: 20, textAlign: "center" }}>Pipeline de pedidos disponible en el módulo Logística.</div> },
-    alertas_op: {
-      title: "Alertas operativas", layer: "op", mvp: true, tag: "Cross",
-      render: () => (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {stockBajo.length > 0 && <div style={{ background: T.redLight, border: `1px solid ${T.red}30`, borderRadius: 10, padding: "12px 16px", fontSize: 13 }}><strong style={{ color: T.red }}>⚠ Stock bajo:</strong> {stockBajo.map(p => p.name).join(", ")}</div>}
-          {pendientes.filter(i => i.due === hoy).length > 0 && <div style={{ background: T.redLight, border: `1px solid ${T.red}30`, borderRadius: 10, padding: "12px 16px", fontSize: 13 }}><strong style={{ color: T.red }}>⚠ Vencen hoy:</strong> {pendientes.filter(i => i.due === hoy).map(i => i.clientName).join(", ")}</div>}
-          {aging("+90").length > 0 && <div style={{ background: T.orangeLight || T.redLight, border: `1px solid ${T.orange}30`, borderRadius: 10, padding: "12px 16px", fontSize: 13 }}><strong style={{ color: T.orange }}>⚠ Más de 90 días vencidas:</strong> {aging("+90").length} facturas</div>}
-          {stockBajo.length === 0 && pendientes.filter(i => i.due === hoy).length === 0 && aging("+90").length === 0 && <div style={{ color: T.accent, fontWeight: 700, fontSize: 14 }}>✓ Sin alertas críticas hoy</div>}
-        </div>
-      )
-    },
     // TÁCTICOS
     evolucion_ventas: {
       title: "Evolución de ventas", layer: "ta", mvp: true, tag: "Ventas",
@@ -5780,7 +5899,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
   };
 
   const layers = [
-    { id: "op", label: "Operativos", freq: "Diario", desc: "Control diario de ventas, cobranzas y stock", color: "#0F6E56", colorLight: "#E1F5EE", reports: ["ventas_dia","cobranzas_dia","aging","stock_alertas","mov_dia","morosos","entregas_dia","pipeline","alertas_op"] },
+    { id: "op", label: "Operativos", freq: "Diario", desc: "Control diario de ventas, cobranzas y stock", color: "#0F6E56", colorLight: "#E1F5EE", reports: ["ventas_dia","cobranzas_dia","aging","stock_alertas","mov_dia","entregas_dia","pipeline"] },
     { id: "ta", label: "Tácticos", freq: "Semanal / Mensual", desc: "Tendencias, rankings y performance del período", color: "#185FA5", colorLight: "#E6F1FB", reports: ["evolucion_ventas","ranking_productos","margenes","abc_ventas","pago_medio","rotacion","valorizacion","merma","ranking_clientes","antiguedad_saldos","clientes_nuevos","eficiencia_log","ciclos"] },
     { id: "es", label: "Estratégicos", freq: "Trimestral / Anual", desc: "P&L, cashflow y visión financiera del negocio", color: "#534AB7", colorLight: "#EEEDFE", reports: ["pyl","equilibrio","cashflow","estacionalidad","rentabilidad_cliente","concentracion","mix_productos","scorecard"] },
   ];
