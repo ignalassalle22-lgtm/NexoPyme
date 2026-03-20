@@ -86,6 +86,12 @@ const initPurchaseInvoices = [
 
 const initVendedores = [];
 
+const initEmpleados = [
+  { id: "emp1", legajo: "0001", nombre: "Juan", apellido: "García", cuil: "20-25678901-3", puesto: "Vendedor", sector: "Ventas", fechaIngreso: "2020-03-01", sueldoBasico: 350000, cbu: "0720123400000012345678", banco: "Santander", obraSocial: "OSDE", email: "juan@empresa.com", estado: "activo" },
+  { id: "emp2", legajo: "0002", nombre: "María", apellido: "López", cuil: "27-28901234-5", puesto: "Administrativa", sector: "Administración", fechaIngreso: "2018-06-15", sueldoBasico: 420000, cbu: "0140234500000098765432", banco: "Nación", obraSocial: "Swiss Medical", email: "maria@empresa.com", estado: "activo" },
+  { id: "emp3", legajo: "0003", nombre: "Carlos", apellido: "Rodríguez", cuil: "20-30234567-8", puesto: "Depósito", sector: "Logística", fechaIngreso: "2022-09-01", sueldoBasico: 290000, cbu: "0170345600000011223344", banco: "BBVA", obraSocial: "OSECAC", email: "carlos@empresa.com", estado: "activo" },
+];
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const fmt = (n) => `$${Number(n).toLocaleString("es-AR")}`;
 const today = "2026-03-11";
@@ -2538,7 +2544,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                                   🖨 PDF
                                 </button>
                                 {mailUrl && (
-                                  <button onClick={() => { descargarHTMLFactura(inv); window.open(mailUrl, "_blank"); setReclamoSent(p => ({ ...p, [inv.id]: true })); }}
+                                  <button onClick={() => { descargarHTMLFactura(inv); window.open(mailUrl, "_blank"); setReclamoSent(p => ({ ...p, [inv.id]: true })); setReclaimMsg("PDF de " + inv.id + " descargado · Adjuntalo manualmente al correo antes de enviarlo."); }}
                                     style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.red}40`, background: T.redLight, color: T.red, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                                     ✉ Reclamar
                                   </button>
@@ -5363,7 +5369,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const facturas = saleInvoices.filter(i => i.type === "factura");
-  const hoy = todayReal;
+  const hoy = new Date().toISOString().slice(0, 10);
 
   const diasAtras = (n) => { const d = new Date(hoy); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
   const ym = (date) => date?.slice(0, 7) || "";
@@ -5674,6 +5680,433 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
   );
 }
 
+// ─── MODULE: RRHH ─────────────────────────────────────────────────────────────
+function calcVacacionesDias(fechaIngreso) {
+  const anos = (new Date() - new Date(fechaIngreso)) / (365.25 * 24 * 3600 * 1000);
+  if (anos < 5) return 14;
+  if (anos < 10) return 21;
+  if (anos < 20) return 28;
+  return 35;
+}
+
+function calcAntiguedadAnos(fechaIngreso) {
+  return Math.floor((new Date() - new Date(fechaIngreso)) / (365.25 * 24 * 3600 * 1000));
+}
+
+function calcSueldo(emp) {
+  const anos = calcAntiguedadAnos(emp.fechaIngreso);
+  const adicionalAntiguedad = emp.sueldoBasico * (anos * 0.01);
+  const bruto = emp.sueldoBasico + adicionalAntiguedad;
+  const jubilacion = bruto * 0.11;
+  const inssjp = bruto * 0.03;
+  const obraSocial = bruto * 0.03;
+  const totalRetenciones = jubilacion + inssjp + obraSocial;
+  const neto = bruto - totalRetenciones;
+  return { bruto, adicionalAntiguedad, jubilacion, inssjp, obraSocial, totalRetenciones, neto };
+}
+
+function RRHHModule({ empleados, setEmpleados }) {
+  const [tab, setTab] = useState("empleados");
+  const [showEmpForm, setShowEmpForm] = useState(false);
+  const [editingEmp, setEditingEmp] = useState(null);
+  const [empForm, setEmpForm] = useState({ legajo: "", nombre: "", apellido: "", cuil: "", puesto: "", sector: "", fechaIngreso: "", sueldoBasico: "", cbu: "", banco: "", obraSocial: "", email: "", estado: "activo" });
+
+  // Asistencia
+  const hoyRRHH = new Date().toISOString().slice(0, 10);
+  const [asistMes, setAsistMes] = useState(hoyRRHH.slice(0, 7));
+  const [asistencia, setAsistencia] = useState({}); // key: "empId-YYYY-MM-DD" → "P"|"A"|"LS"|"LP"|"V"|"ART"
+
+  // Vacaciones days taken
+  const [vacTomadas, setVacTomadas] = useState({}); // empId → number
+
+  // Recibos
+  const [reciboEmpId, setReciboEmpId] = useState("");
+  const [reciboPeriodo, setReciboPeriodo] = useState(hoyRRHH.slice(0, 7));
+
+  const openNewEmp = () => { setEmpForm({ legajo: String(empleados.length + 1).padStart(4, "0"), nombre: "", apellido: "", cuil: "", puesto: "", sector: "", fechaIngreso: "", sueldoBasico: "", cbu: "", banco: "", obraSocial: "", email: "", estado: "activo" }); setEditingEmp(null); setShowEmpForm(true); };
+  const openEditEmp = (emp) => { setEmpForm({ ...emp, sueldoBasico: String(emp.sueldoBasico) }); setEditingEmp(emp.id); setShowEmpForm(true); };
+  const saveEmp = () => {
+    const data = { ...empForm, sueldoBasico: Number(empForm.sueldoBasico) || 0 };
+    if (editingEmp) { setEmpleados(prev => prev.map(e => e.id === editingEmp ? { ...e, ...data } : e)); }
+    else { setEmpleados(prev => [...prev, { ...data, id: "emp" + Date.now() }]); }
+    setShowEmpForm(false);
+  };
+  const deleteEmp = (id) => { if (window.confirm("¿Eliminar empleado?")) setEmpleados(prev => prev.filter(e => e.id !== id)); };
+
+  const toggleAsist = (empId, dia, codigo) => {
+    const key = `${empId}-${asistMes}-${String(dia).padStart(2, "0")}`;
+    setAsistencia(prev => ({ ...prev, [key]: prev[key] === codigo ? "P" : codigo }));
+  };
+  const getAsist = (empId, dia) => asistencia[`${empId}-${asistMes}-${String(dia).padStart(2, "0")}`] || "P";
+
+  const diasDelMes = () => { const [y, m] = asistMes.split("-").map(Number); return new Date(y, m, 0).getDate(); };
+
+  const asistCodigos = [
+    { c: "P", label: "Presente", color: T.accent, bg: T.accentLight },
+    { c: "A", label: "Ausente", color: T.red, bg: T.redLight },
+    { c: "LS", label: "Lic. Médica", color: T.blue, bg: T.blueLight },
+    { c: "LP", label: "Lic. Particular", color: T.purple, bg: T.purpleLight },
+    { c: "V", label: "Vacaciones", color: T.orange, bg: T.orangeLight },
+    { c: "ART", label: "ART", color: T.yellow, bg: T.yellowLight },
+  ];
+  const asistColorMap = Object.fromEntries(asistCodigos.map(a => [a.c, a]));
+
+  const generarReciboPDF = () => {
+    const emp = empleados.find(e => e.id === reciboEmpId);
+    if (!emp) return;
+    const s = calcSueldo(emp);
+    const [y, m] = reciboPeriodo.split("-");
+    const periodoLabel = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo de Sueldo</title>
+<style>body{font-family:Arial,sans-serif;padding:32px;color:#222;max-width:800px;margin:0 auto}
+h2{font-size:18px;margin-bottom:4px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:13px}
+.row.total{font-weight:bold;font-size:15px;border-top:2px solid #333;border-bottom:none;margin-top:8px}
+.label{color:#555}.val{font-weight:600}
+.neg{color:#d32f2f}.pos{color:#2e7d32}
+table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
+td,th{padding:6px 10px;border:1px solid #ddd}th{background:#f5f5f5;font-weight:700}
+</style></head><body>
+<h2>RECIBO DE SUELDO — ${periodoLabel.toUpperCase()}</h2>
+<table><tr><th>Empleado</th><th>Legajo</th><th>CUIL</th><th>Puesto</th></tr>
+<tr><td>${emp.apellido}, ${emp.nombre}</td><td>${emp.legajo}</td><td>${emp.cuil}</td><td>${emp.puesto} · ${emp.sector}</td></tr></table>
+<table><tr><th>Fecha Ingreso</th><th>Antigüedad</th><th>Banco</th><th>CBU</th></tr>
+<tr><td>${emp.fechaIngreso}</td><td>${calcAntiguedadAnos(emp.fechaIngreso)} años</td><td>${emp.banco}</td><td>${emp.cbu}</td></tr></table>
+<h3 style="margin-top:20px">HABERES</h3>
+<div class="row"><span class="label">Sueldo Básico</span><span class="val pos">${fmt(emp.sueldoBasico)}</span></div>
+<div class="row"><span class="label">Adicional Antigüedad (${calcAntiguedadAnos(emp.fechaIngreso)}%)</span><span class="val pos">${fmt(s.adicionalAntiguedad)}</span></div>
+<div class="row total"><span>Total Bruto</span><span class="pos">${fmt(s.bruto)}</span></div>
+<h3 style="margin-top:20px">DEDUCCIONES</h3>
+<div class="row"><span class="label">Jubilación (11%)</span><span class="val neg">- ${fmt(s.jubilacion)}</span></div>
+<div class="row"><span class="label">INSSJP / PAMI (3%)</span><span class="val neg">- ${fmt(s.inssjp)}</span></div>
+<div class="row"><span class="label">Obra Social (3%) — ${emp.obraSocial}</span><span class="val neg">- ${fmt(s.obraSocial)}</span></div>
+<div class="row total"><span>Total Retenciones</span><span class="neg">- ${fmt(s.totalRetenciones)}</span></div>
+<h3 style="margin-top:20px">NETO A COBRAR</h3>
+<div style="font-size:28px;font-weight:800;color:#2e7d32;padding:16px 0;border-top:3px solid #2e7d32;">${fmt(s.neto)}</div>
+<p style="font-size:11px;color:#888;margin-top:24px">Recibo emitido por NexoPyme · Período: ${periodoLabel} · Obra Social: ${emp.obraSocial}</p>
+<div style="margin-top:40px;display:flex;justify-content:space-between">
+<div style="border-top:1px solid #333;width:200px;text-align:center;padding-top:4px;font-size:12px">Firma Empleador</div>
+<div style="border-top:1px solid #333;width:200px;text-align:center;padding-top:4px;font-size:12px">Firma Empleado</div>
+</div></body></html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `Recibo_${emp.apellido}_${emp.legajo}_${reciboPeriodo}.html`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const tabs = [
+    { id: "empleados", label: "👥 Empleados" },
+    { id: "liquidacion", label: "💰 Liquidación" },
+    { id: "vacaciones", label: "🌴 Vacaciones" },
+    { id: "asistencia", label: "📅 Asistencia" },
+    { id: "recibos", label: "📄 Recibos" },
+  ];
+
+  const activos = empleados.filter(e => e.estado === "activo");
+
+  return (
+    <div>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Recursos Humanos</div>
+        <div style={{ fontSize: 13, color: T.muted }}>{empleados.length} empleados · {activos.length} activos</div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${tab === t.id ? T.accent : T.border}`, background: tab === t.id ? T.accentLight : T.surface, color: tab === t.id ? T.accent : T.muted, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab: EMPLEADOS ───────────────────────────────────────────────────── */}
+      {tab === "empleados" && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+            <Btn onClick={openNewEmp}>+ Nuevo Empleado</Btn>
+          </div>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: T.surface }}>
+                  {["Legajo", "Apellido y Nombre", "CUIL", "Puesto", "Sector", "Ingreso", "Sueldo Básico", "Estado", ""].map(h => (
+                    <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {empleados.map(emp => (
+                  <tr key={emp.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                    <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12 }}>{emp.legajo}</td>
+                    <td style={{ padding: "10px 12px", fontWeight: 600 }}>{emp.apellido}, {emp.nombre}</td>
+                    <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{emp.cuil}</td>
+                    <td style={{ padding: "10px 12px" }}>{emp.puesto}</td>
+                    <td style={{ padding: "10px 12px", color: T.muted }}>{emp.sector}</td>
+                    <td style={{ padding: "10px 12px", color: T.muted, fontSize: 12 }}>{emp.fechaIngreso}</td>
+                    <td style={{ padding: "10px 12px", fontWeight: 700, color: T.accent }}>{fmt(emp.sueldoBasico)}</td>
+                    <td style={{ padding: "10px 12px" }}>
+                      <span style={{ background: emp.estado === "activo" ? T.accentLight : emp.estado === "licencia" ? T.blueLight : T.redLight, color: emp.estado === "activo" ? T.accent : emp.estado === "licencia" ? T.blue : T.red, padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{emp.estado}</span>
+                    </td>
+                    <td style={{ padding: "10px 12px" }}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Btn sm v="ghost" onClick={() => openEditEmp(emp)}>✏ Editar</Btn>
+                        <Btn sm v="danger" onClick={() => deleteEmp(emp.id)}>✕</Btn>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {empleados.length === 0 && (
+                  <tr><td colSpan={9} style={{ padding: 32, textAlign: "center", color: T.muted, fontSize: 13 }}>No hay empleados cargados. Agregá el primero.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {showEmpForm && (
+            <Modal title={editingEmp ? "Editar Empleado" : "Nuevo Empleado"} onClose={() => setShowEmpForm(false)} wide>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                {[
+                  ["Legajo", "legajo"], ["Nombre", "nombre"], ["Apellido", "apellido"], ["CUIL", "cuil"],
+                  ["Puesto", "puesto"], ["Sector", "sector"], ["Fecha Ingreso", "fechaIngreso", "date"],
+                  ["Sueldo Básico", "sueldoBasico", "number"], ["CBU", "cbu"], ["Banco", "banco"],
+                  ["Obra Social", "obraSocial"], ["Email", "email"],
+                ].map(([label, field, type]) => (
+                  <Input key={field} label={label} type={type || "text"} value={empForm[field]} onChange={v => setEmpForm(p => ({ ...p, [field]: v }))} />
+                ))}
+                <Select label="Estado" value={empForm.estado} onChange={v => setEmpForm(p => ({ ...p, estado: v }))}
+                  options={[{ value: "activo", label: "Activo" }, { value: "licencia", label: "Licencia" }, { value: "baja", label: "Baja" }]} />
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+                <Btn v="ghost" onClick={() => setShowEmpForm(false)}>Cancelar</Btn>
+                <Btn onClick={saveEmp}>Guardar</Btn>
+              </div>
+            </Modal>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: LIQUIDACIÓN ─────────────────────────────────────────────────── */}
+      {tab === "liquidacion" && (
+        <div>
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 12, color: T.muted }}>
+            <strong style={{ color: T.ink }}>Deducciones aplicadas:</strong> Jubilación SIPA 11% · INSSJP/PAMI 3% · Obra Social 3% · Adicional antigüedad 1% por año según LCT
+          </div>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: T.surface }}>
+                  {["Empleado", "Puesto", "Antigüedad", "Básico", "+ Antigüedad", "Bruto", "Retenciones (17%)", "Neto a Cobrar"].map(h => (
+                    <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {activos.map(emp => {
+                  const s = calcSueldo(emp);
+                  return (
+                    <tr key={emp.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{emp.apellido}, {emp.nombre}</td>
+                      <td style={{ padding: "10px 12px", color: T.muted, fontSize: 12 }}>{emp.puesto}</td>
+                      <td style={{ padding: "10px 12px", color: T.muted }}>{calcAntiguedadAnos(emp.fechaIngreso)} años</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(emp.sueldoBasico)}</td>
+                      <td style={{ padding: "10px 12px", color: T.accent }}>+{fmt(s.adicionalAntiguedad)}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmt(s.bruto)}</td>
+                      <td style={{ padding: "10px 12px", color: T.red }}>-{fmt(s.totalRetenciones)}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 800, color: T.accent, fontSize: 14 }}>{fmt(s.neto)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: T.surface, borderTop: `2px solid ${T.border}` }}>
+                  <td colSpan={5} style={{ padding: "10px 12px", fontWeight: 800, fontSize: 13 }}>TOTALES</td>
+                  <td style={{ padding: "10px 12px", fontWeight: 800 }}>{fmt(activos.reduce((s, e) => s + calcSueldo(e).bruto, 0))}</td>
+                  <td style={{ padding: "10px 12px", fontWeight: 800, color: T.red }}>{fmt(activos.reduce((s, e) => s + calcSueldo(e).totalRetenciones, 0))}</td>
+                  <td style={{ padding: "10px 12px", fontWeight: 800, color: T.accent, fontSize: 14 }}>{fmt(activos.reduce((s, e) => s + calcSueldo(e).neto, 0))}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: VACACIONES ──────────────────────────────────────────────────── */}
+      {tab === "vacaciones" && (
+        <div>
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 12, color: T.muted }}>
+            <strong style={{ color: T.ink }}>Ley 20.744 — Art. 150:</strong> hasta 5 años: 14 días · 5 a 10 años: 21 días · 10 a 20 años: 28 días · más de 20 años: 35 días. Período de goce: 1 octubre – 30 abril.
+          </div>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: T.surface }}>
+                  {["Empleado", "Ingreso", "Antigüedad", "Días correspond.", "Días tomados", "Días pendientes", "Estado"].map(h => (
+                    <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {activos.map(emp => {
+                  const anos = calcAntiguedadAnos(emp.fechaIngreso);
+                  const diasCorr = calcVacacionesDias(emp.fechaIngreso);
+                  const tomados = vacTomadas[emp.id] || 0;
+                  const pendientes = diasCorr - tomados;
+                  return (
+                    <tr key={emp.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{emp.apellido}, {emp.nombre}</td>
+                      <td style={{ padding: "10px 12px", color: T.muted, fontSize: 12 }}>{emp.fechaIngreso}</td>
+                      <td style={{ padding: "10px 12px" }}>{anos} años</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: T.blue }}>{diasCorr} días</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <input type="number" min={0} max={diasCorr} value={tomados}
+                          onChange={e => setVacTomadas(p => ({ ...p, [emp.id]: Math.min(diasCorr, Math.max(0, Number(e.target.value))) }))}
+                          style={{ width: 60, padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", textAlign: "center" }} />
+                      </td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: pendientes > 0 ? T.orange : T.accent }}>{pendientes} días</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <span style={{ background: pendientes === 0 ? T.accentLight : T.orangeLight, color: pendientes === 0 ? T.accent : T.orange, padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
+                          {pendientes === 0 ? "✓ Gozadas" : "Pendiente"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: ASISTENCIA ──────────────────────────────────────────────────── */}
+      {tab === "asistencia" && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+            <label style={{ fontSize: 12, color: T.muted, fontWeight: 700 }}>PERÍODO</label>
+            <input type="month" value={asistMes} onChange={e => setAsistMes(e.target.value)}
+              style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit" }} />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginLeft: 8 }}>
+              {asistCodigos.map(a => (
+                <span key={a.c} style={{ background: a.bg, color: a.color, padding: "2px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>{a.c} = {a.label}</span>
+              ))}
+            </div>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: T.surface }}>
+                  <th style={{ padding: "8px 14px", textAlign: "left", color: T.muted, fontWeight: 700, fontSize: 11, minWidth: 160 }}>Empleado</th>
+                  {Array.from({ length: diasDelMes() }, (_, i) => (
+                    <th key={i+1} style={{ padding: "6px 4px", textAlign: "center", color: T.muted, fontSize: 10, fontWeight: 700, minWidth: 30 }}>{i+1}</th>
+                  ))}
+                  <th style={{ padding: "8px 10px", textAlign: "center", color: T.muted, fontSize: 10, fontWeight: 700 }}>Ausc.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activos.map(emp => {
+                  let ausencias = 0;
+                  return (
+                    <tr key={emp.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                      <td style={{ padding: "6px 14px", fontWeight: 600, whiteSpace: "nowrap" }}>{emp.apellido}, {emp.nombre}</td>
+                      {Array.from({ length: diasDelMes() }, (_, i) => {
+                        const dia = i + 1;
+                        const cod = getAsist(emp.id, dia);
+                        const cfg = asistColorMap[cod] || asistColorMap["P"];
+                        if (cod !== "P") ausencias++;
+                        return (
+                          <td key={dia} style={{ padding: "3px 2px", textAlign: "center" }}>
+                            <button onClick={() => {
+                              const cur = getAsist(emp.id, dia);
+                              const idx = asistCodigos.findIndex(a => a.c === cur);
+                              const next = asistCodigos[(idx + 1) % asistCodigos.length].c;
+                              toggleAsist(emp.id, dia, next);
+                            }}
+                              style={{ width: 28, height: 24, borderRadius: 4, border: "none", background: cfg.bg, color: cfg.color, fontSize: 9, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                              {cod}
+                            </button>
+                          </td>
+                        );
+                      })}
+                      <td style={{ padding: "6px 10px", textAlign: "center", fontWeight: 700, color: ausencias > 0 ? T.red : T.accent }}>{ausencias}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: 12, fontSize: 12, color: T.muted }}>Hacé clic en cada celda para cambiar el estado. Rota entre: P → A → LS → LP → V → ART → P</div>
+        </div>
+      )}
+
+      {/* ── Tab: RECIBOS ─────────────────────────────────────────────────────── */}
+      {tab === "recibos" && (
+        <div>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24, maxWidth: 500 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <Select label="EMPLEADO" value={reciboEmpId} onChange={setReciboEmpId}
+                options={[{ value: "", label: "Seleccioná un empleado..." }, ...empleados.map(e => ({ value: e.id, label: `${e.legajo} · ${e.apellido}, ${e.nombre}` }))]} />
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>PERÍODO</label>
+                <input type="month" value={reciboPeriodo} onChange={e => setReciboPeriodo(e.target.value)}
+                  style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit" }} />
+              </div>
+
+              {reciboEmpId && (() => {
+                const emp = empleados.find(e => e.id === reciboEmpId);
+                const s = calcSueldo(emp);
+                return (
+                  <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 12, color: T.ink }}>{emp.apellido}, {emp.nombre} · Legajo {emp.legajo}</div>
+                    {[
+                      ["Sueldo Básico", fmt(emp.sueldoBasico), T.ink, false],
+                      [`Adicional Antigüedad (${calcAntiguedadAnos(emp.fechaIngreso)}%)`, fmt(s.adicionalAntiguedad), T.accent, false],
+                      ["Total Bruto", fmt(s.bruto), T.ink, true],
+                      ["Jubilación (11%)", `-${fmt(s.jubilacion)}`, T.red, false],
+                      ["INSSJP (3%)", `-${fmt(s.inssjp)}`, T.red, false],
+                      ["Obra Social (3%)", `-${fmt(s.obraSocial)}`, T.red, false],
+                      ["Total Retenciones", `-${fmt(s.totalRetenciones)}`, T.red, true],
+                      ["NETO A COBRAR", fmt(s.neto), T.accent, true],
+                    ].map(([l, v, c, bold]) => (
+                      <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${T.border}`, fontSize: bold ? 14 : 13, fontWeight: bold ? 800 : 400 }}>
+                        <span style={{ color: T.muted }}>{l}</span>
+                        <span style={{ color: c }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              <Btn onClick={generarReciboPDF} disabled={!reciboEmpId} full>⬇ Descargar Recibo (HTML → PDF)</Btn>
+              <div style={{ fontSize: 11, color: T.muted }}>El archivo se descarga como HTML. Abrilo en el navegador y usá Ctrl+P → "Guardar como PDF" para obtener el PDF final.</div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: T.ink, marginBottom: 12 }}>Generar todos los recibos del período</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input type="month" value={reciboPeriodo} onChange={e => setReciboPeriodo(e.target.value)}
+                style={{ padding: "8px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit" }} />
+              <Btn onClick={() => activos.forEach((emp, i) => setTimeout(() => {
+                const s = calcSueldo(emp);
+                const [y, m] = reciboPeriodo.split("-");
+                const periodoLabel = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+                const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo ${emp.legajo}</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#222;max-width:800px;margin:0 auto}.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:13px}.row.total{font-weight:bold;font-size:15px;}</style></head><body><h2>RECIBO DE SUELDO — ${periodoLabel.toUpperCase()}</h2><p>${emp.apellido}, ${emp.nombre} · Legajo ${emp.legajo} · ${emp.cuil}</p><div class="row"><span>Sueldo Básico</span><span>${fmt(emp.sueldoBasico)}</span></div><div class="row"><span>Adicional Antigüedad</span><span>+${fmt(s.adicionalAntiguedad)}</span></div><div class="row total"><span>Bruto</span><span>${fmt(s.bruto)}</span></div><div class="row"><span>Retenciones (17%)</span><span>-${fmt(s.totalRetenciones)}</span></div><div style="font-size:24px;font-weight:800;color:green;margin-top:16px">Neto: ${fmt(s.neto)}</div></body></html>`;
+                const blob = new Blob([html], { type: "text/html" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = `Recibo_${emp.apellido}_${emp.legajo}_${reciboPeriodo}.html`;
+                a.click(); URL.revokeObjectURL(url);
+              }, i * 300))}>⬇ Descargar Todos ({activos.length})</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 const NAV = [
   { id: "hub",        label: "Inicio",     icon: "⬡" },
@@ -5683,6 +6116,7 @@ const NAV = [
   { id: "inventario", label: "Inventario", icon: "▦" },
   { id: "logistica",  label: "Logística",  icon: "🚚" },
   { id: "reportes",   label: "Reportes",   icon: "◎" },
+  { id: "rrhh",       label: "RRHH",       icon: "👥" },
 ];
 
 export default function App() {
@@ -5692,6 +6126,7 @@ export default function App() {
   const [suppliers, setSuppliers] = useState(initSuppliers);
   const [priceLists, setPriceLists] = useState(initPriceLists);
   const [vendedores, setVendedores] = useState(initVendedores);
+  const [empleados, setEmpleados] = useState(initEmpleados);
   const [tipoCambio, setTipoCambio] = useState(1200); // ARS por USD
   const [saleInvoices, setSaleInvoices] = useState(initSaleInvoices);
   const [purchaseInvoices, setPurchaseInvoices] = useState(initPurchaseInvoices);
@@ -5804,6 +6239,7 @@ export default function App() {
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} />}
+        {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} />}
       </div>
 
       {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} priceLists={priceLists} vendedores={vendedores} />}
