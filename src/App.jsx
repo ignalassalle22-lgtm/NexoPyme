@@ -5516,7 +5516,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
   const [filterDesde, setFilterDesde] = useState("");
   const [filterHasta, setFilterHasta] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
-  const [ventasDiaView, setVentasDiaView] = useState("total");
+  const [ventasDiaView, setVentasDiaView] = useState("cliente");
   const [ventasDiaDeselClientes, setVentasDiaDeselClientes] = useState(new Set());
   const [ventasDiaDeselProductos, setVentasDiaDeselProductos] = useState(new Set());
   const [cobranzasTab, setCobranzasTab] = useState("cobradas");
@@ -5633,7 +5633,6 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>VISTA</span>
                 <select value={ventasDiaView} onChange={e => setVentasDiaView(e.target.value)} style={{ ...is, fontWeight: 600 }}>
-                  <option value="total">Total</option>
                   <option value="cliente">Por cliente</option>
                   <option value="producto">Por producto</option>
                 </select>
@@ -5653,21 +5652,6 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
             </div>
 
             {facturas.length === 0 && <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: 32 }}>Sin ventas en el período seleccionado.</div>}
-
-            {/* VISTA: TOTAL */}
-            {ventasDiaView === "total" && facturas.length > 0 && (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead><tr style={{ background: T.surface }}>{["Nro. Factura", "Cliente", "Fecha", "Total"].map(h => <th key={h} style={{ padding: "8px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
-                <tbody>{facturas.map(i => (
-                  <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                    <td style={{ padding: "9px 14px", fontFamily: "monospace", fontSize: 11, color: T.blue }}>{i.nroFactura || i.id}</td>
-                    <td style={{ padding: "9px 14px", fontWeight: 600 }}>{i.clientName}</td>
-                    <td style={{ padding: "9px 14px", color: T.muted }}>{i.date}</td>
-                    <td style={{ padding: "9px 14px", fontWeight: 800, color: T.accent }}>{fmt(i.total)}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            )}
 
             {/* VISTA: POR CLIENTE */}
             {ventasDiaView === "cliente" && facturas.length > 0 && (
