@@ -1331,6 +1331,30 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
   const criticalStock = products.filter(p => p.tracksStock !== false && p.stock < p.minStock).length;
   const [tcInput, setTcInput] = useState(String(tipoCambio));
   const [tcEditing, setTcEditing] = useState(false);
+  const [tcLoading, setTcLoading] = useState(false);
+  const [tcLastFetch, setTcLastFetch] = useState(null);
+  const [tcFetchError, setTcFetchError] = useState(false);
+
+  const fetchTC = async () => {
+    setTcLoading(true);
+    setTcFetchError(false);
+    try {
+      const res = await fetch("https://api.bluelytics.com.ar/v2/latest");
+      const data = await res.json();
+      const venta = data.oficial?.value_sell;
+      if (venta && venta > 0) {
+        setTipoCambio(venta);
+        setTcInput(String(venta));
+        setTcLastFetch(new Date());
+      }
+    } catch {
+      setTcFetchError(true);
+    } finally {
+      setTcLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchTC(); }, []);
 
   // Panel expansion
   const [expanded, setExpanded] = useState(null); // "cobros" | "pagos" | null
@@ -1503,12 +1527,14 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
       </div>
 
       {/* Tipo de cambio */}
-      <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+      <div style={{ background: T.paper, border: `1px solid ${tcFetchError ? T.orange + "60" : T.border}`, borderRadius: 12, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 18 }}>🇺🇸</span>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>TIPO DE CAMBIO DEL DÍA</div>
-            <div style={{ fontSize: 11, color: T.faint }}>Usado para cotizaciones y facturas en USD</div>
+            <div style={{ fontSize: 11, color: T.faint }}>
+              {tcFetchError ? "Error al obtener cotización · valor manual" : "Dólar oficial BNA vendedor · Bluelytics"}
+            </div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1521,12 +1547,27 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
           ) : (
             <button onClick={() => { setTcInput(String(tipoCambio)); setTcEditing(true); }}
               style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: "6px 14px", fontSize: 16, fontWeight: 800, color: T.blue, fontFamily: "monospace", cursor: "pointer" }}>
-              {fmt(tipoCambio)}
+              {tcLoading ? "..." : fmt(tipoCambio)}
             </button>
           )}
-          {!tcEditing && <span style={{ fontSize: 11, color: T.muted }}>· click para actualizar</span>}
+          {!tcEditing && <span style={{ fontSize: 11, color: T.muted }}>· click para editar</span>}
         </div>
-        <div style={{ marginLeft: "auto", fontSize: 12, color: T.muted }}>Actualizado: {today}</div>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+          {tcLastFetch && !tcFetchError && (
+            <span style={{ fontSize: 11, color: T.muted }}>
+              Actualizado: {tcLastFetch.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+          {tcFetchError && (
+            <span style={{ fontSize: 11, color: T.orange }}>Sin conexión</span>
+          )}
+          <button
+            onClick={fetchTC}
+            disabled={tcLoading}
+            style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: tcLoading ? T.muted : T.ink, cursor: tcLoading ? "default" : "pointer", fontFamily: "inherit" }}>
+            {tcLoading ? "Actualizando..." : "↻ Actualizar"}
+          </button>
+        </div>
       </div>
 
       {/* KPIs */}
