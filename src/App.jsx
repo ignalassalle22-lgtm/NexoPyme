@@ -5516,7 +5516,9 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
   const [filterDesde, setFilterDesde] = useState("");
   const [filterHasta, setFilterHasta] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
-  const [ventasDiaView, setVentasDiaView] = useState("cliente");
+  const [ventasDiaView, setVentasDiaView] = useState("total");
+  const [ventasDiaDeselClientes, setVentasDiaDeselClientes] = useState(new Set());
+  const [ventasDiaDeselProductos, setVentasDiaDeselProductos] = useState(new Set());
   const [cobranzasTab, setCobranzasTab] = useState("cobradas");
 
   const hoy = new Date().toISOString().slice(0, 10);
@@ -5582,70 +5584,172 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     // OPERATIVOS
     ventas_dia: {
       title: "Resumen de ventas del día", layer: "op", mvp: true, tag: "Ventas",
-      exportData: () => ({ headers: ["Fecha", "Cliente", "Nro.", "Total"], rows: facturasHoy.map(i => [i.date, i.clientName || "", i.nroFactura || "", i.total]) }),
+      exportData: () => ({ headers: ["Fecha", "Cliente", "Nro.", "Total"], rows: facturas.map(i => [i.date, i.clientName || "", i.nroFactura || "", i.total]) }),
       render: () => {
+        const todosClientes = [...new Set(facturas.map(i => i.clientName).filter(Boolean))].sort();
+        const todosProductos = [...new Set(facturas.flatMap(i => (i.lines || []).map(l => l.name).filter(Boolean)))].sort();
+        const clientesSel = todosClientes.filter(c => !ventasDiaDeselClientes.has(c));
+        const productosSel = todosProductos.filter(p => !ventasDiaDeselProductos.has(p));
+
         const porCliente = {};
-        facturasHoy.forEach(i => { if (!porCliente[i.clientName]) porCliente[i.clientName] = { total: 0, count: 0 }; porCliente[i.clientName].total += i.total; porCliente[i.clientName].count++; });
+        facturas.forEach(i => { if (!porCliente[i.clientName]) porCliente[i.clientName] = 0; porCliente[i.clientName] += i.total; });
         const porProducto = {};
-        facturasHoy.forEach(inv => (inv.lines || []).forEach(l => { if (!l.name) return; if (!porProducto[l.name]) porProducto[l.name] = 0; porProducto[l.name] += l.subtotal; }));
-        const porVendedor = {};
-        facturasHoy.forEach(i => { const v = i.vendedorNombre || "Sin asignar"; if (!porVendedor[v]) porVendedor[v] = { total: 0, count: 0 }; porVendedor[v].total += i.total; porVendedor[v].count++; });
-        const viewBtns = [{ k: "cliente", l: "Por cliente" }, { k: "producto", l: "Por producto" }, { k: "vendedor", l: "Por vendedor" }];
-        const tabStyle = (k) => ({ padding: "6px 16px", borderRadius: 6, border: `1px solid ${ventasDiaView === k ? T.accent : T.border}`, background: ventasDiaView === k ? T.accentLight : T.surface, color: ventasDiaView === k ? T.accent : T.muted, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" });
+        facturas.forEach(inv => (inv.lines || []).forEach(l => { if (!l.name) return; if (!porProducto[l.name]) porProducto[l.name] = 0; porProducto[l.name] += l.subtotal; }));
+
+        const totalSel = ventasDiaView === "cliente"
+          ? facturas.filter(i => clientesSel.includes(i.clientName)).reduce((s, i) => s + i.total, 0)
+          : ventasDiaView === "producto"
+            ? facturas.reduce((s, inv) => s + (inv.lines || []).filter(l => productosSel.includes(l.name)).reduce((ss, l) => ss + l.subtotal, 0), 0)
+            : facturas.reduce((s, i) => s + i.total, 0);
+        const opsSel = ventasDiaView === "cliente"
+          ? facturas.filter(i => clientesSel.includes(i.clientName)).length
+          : facturas.length;
+
+        const is = { padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none" };
+        const maxBarCliente = Math.max(...clientesSel.map(c => porCliente[c] || 0), 1);
+        const maxBarProducto = Math.max(...productosSel.map(p => porProducto[p] || 0), 1);
+
+        const toggleCliente = (c) => setVentasDiaDeselClientes(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; });
+        const toggleProducto = (p) => setVentasDiaDeselProductos(prev => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n; });
+
         return (
           <div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
-              {[{ l: "Total vendido hoy", v: fmt(ventasHoy), c: T.accent }, { l: "Operaciones", v: facturasHoy.length }, { l: "Ticket promedio", v: facturasHoy.length > 0 ? fmt(Math.round(ventasHoy / facturasHoy.length)) : "—" }].map((k, i) => (
+            {/* KPIs dinámicos */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
+              {[
+                { l: ventasDiaView === "total" ? "Total vendido" : "Total seleccionado", v: fmt(totalSel), c: T.accent },
+                { l: "Operaciones", v: opsSel },
+                { l: "Ticket promedio", v: opsSel > 0 ? fmt(Math.round(totalSel / opsSel)) : "—" },
+              ].map((k, i) => (
                 <div key={i} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 18px" }}>
                   <div style={{ fontSize: 10, color: T.muted, marginBottom: 6, fontWeight: 700 }}>{k.l}</div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: k.c || T.ink }}>{k.v}</div>
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>Semana anterior (mismo período): <strong style={{ color: T.ink }}>{fmt(ventasSemAnt)}</strong></div>
-            {facturasHoy.length === 0 ? <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: 24 }}>Sin ventas registradas hoy.</div> : (
-              <>
-                <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                  {viewBtns.map(b => <button key={b.k} onClick={() => setVentasDiaView(b.k)} style={tabStyle(b.k)}>{b.l}</button>)}
+
+            {/* Controles: selector de vista + fechas */}
+            <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 24, flexWrap: "wrap", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>VISTA</span>
+                <select value={ventasDiaView} onChange={e => setVentasDiaView(e.target.value)} style={{ ...is, fontWeight: 600 }}>
+                  <option value="total">Total</option>
+                  <option value="cliente">Por cliente</option>
+                  <option value="producto">Por producto</option>
+                </select>
+              </div>
+              <div style={{ width: 1, height: 28, background: T.border }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>DESDE</span>
+                <input type="date" value={filterDesde} onChange={e => setFilterDesde(e.target.value)} style={is} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>HASTA</span>
+                <input type="date" value={filterHasta} onChange={e => setFilterHasta(e.target.value)} style={is} />
+              </div>
+              {(filterDesde || filterHasta) && (
+                <button onClick={() => { setFilterDesde(""); setFilterHasta(""); }} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: "transparent", color: T.muted, cursor: "pointer", fontFamily: "inherit" }}>Limpiar fechas</button>
+              )}
+            </div>
+
+            {facturas.length === 0 && <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: 32 }}>Sin ventas en el período seleccionado.</div>}
+
+            {/* VISTA: TOTAL */}
+            {ventasDiaView === "total" && facturas.length > 0 && (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead><tr style={{ background: T.surface }}>{["Nro. Factura", "Cliente", "Fecha", "Total"].map(h => <th key={h} style={{ padding: "8px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                <tbody>{facturas.map(i => (
+                  <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                    <td style={{ padding: "9px 14px", fontFamily: "monospace", fontSize: 11, color: T.blue }}>{i.nroFactura || i.id}</td>
+                    <td style={{ padding: "9px 14px", fontWeight: 600 }}>{i.clientName}</td>
+                    <td style={{ padding: "9px 14px", color: T.muted }}>{i.date}</td>
+                    <td style={{ padding: "9px 14px", fontWeight: 800, color: T.accent }}>{fmt(i.total)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+
+            {/* VISTA: POR CLIENTE */}
+            {ventasDiaView === "cliente" && facturas.length > 0 && (
+              <div style={{ display: "flex", gap: 20 }}>
+                <div style={{ width: 260, flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 6 }}>CLIENTES · seleccioná para sumar</div>
+                  {todosClientes.map(c => {
+                    const checked = !ventasDiaDeselClientes.has(c);
+                    return (
+                      <label key={c} onClick={() => toggleCliente(c)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 8, background: checked ? T.accentLight : T.surface, border: `1px solid ${checked ? T.accent + "50" : T.border}`, cursor: "pointer", userSelect: "none" }}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleCliente(c)} style={{ accentColor: T.accent, width: 14, height: 14 }} />
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: checked ? 600 : 400, color: checked ? T.ink : T.muted }}>{c}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: checked ? T.accent : T.muted }}>{fmt(porCliente[c] || 0)}</span>
+                      </label>
+                    );
+                  })}
+                  <div style={{ marginTop: 10, padding: "10px 14px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 12, color: T.muted, fontWeight: 700 }}>TOTAL</span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: T.accent }}>{fmt(totalSel)}</span>
+                  </div>
                 </div>
-                {ventasDiaView === "cliente" && (
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead><tr style={{ background: T.surface }}>{["Cliente", "Facturas", "Total"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
-                    <tbody>{Object.entries(porCliente).sort((a, b) => b[1].total - a[1].total).map(([nombre, d]) => (
-                      <tr key={nombre} style={{ borderTop: `1px solid ${T.border}` }}>
-                        <td style={{ padding: "9px 12px", fontWeight: 600 }}>{nombre}</td>
-                        <td style={{ padding: "9px 12px", color: T.muted }}>{d.count}</td>
-                        <td style={{ padding: "9px 12px", fontWeight: 800, color: T.accent }}>{fmt(d.total)}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                )}
-                {ventasDiaView === "producto" && (
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead><tr style={{ background: T.surface }}>{["Producto", "Total"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
-                    <tbody>{Object.entries(porProducto).length === 0
-                      ? <tr><td colSpan={2} style={{ padding: 16, color: T.muted, textAlign: "center" }}>Sin detalle de productos.</td></tr>
-                      : Object.entries(porProducto).sort((a, b) => b[1] - a[1]).map(([nombre, total]) => (
-                        <tr key={nombre} style={{ borderTop: `1px solid ${T.border}` }}>
-                          <td style={{ padding: "9px 12px", fontWeight: 600 }}>{nombre}</td>
-                          <td style={{ padding: "9px 12px", fontWeight: 800, color: T.accent }}>{fmt(total)}</td>
-                        </tr>
-                      ))}</tbody>
-                  </table>
-                )}
-                {ventasDiaView === "vendedor" && (
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead><tr style={{ background: T.surface }}>{["Vendedor", "Facturas", "Total"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
-                    <tbody>{Object.entries(porVendedor).sort((a, b) => b[1].total - a[1].total).map(([nombre, d]) => (
-                      <tr key={nombre} style={{ borderTop: `1px solid ${T.border}` }}>
-                        <td style={{ padding: "9px 12px", fontWeight: 600 }}>{nombre}</td>
-                        <td style={{ padding: "9px 12px", color: T.muted }}>{d.count}</td>
-                        <td style={{ padding: "9px 12px", fontWeight: 800, color: T.accent }}>{fmt(d.total)}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                )}
-              </>
+                <div style={{ flex: 1 }}>
+                  {clientesSel.length === 0
+                    ? <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: 40 }}>Seleccioná al menos un cliente.</div>
+                    : clientesSel.sort((a, b) => (porCliente[b] || 0) - (porCliente[a] || 0)).map(c => (
+                      <div key={c} style={{ marginBottom: 14 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 5 }}>
+                          <span style={{ fontWeight: 600 }}>{c}</span>
+                          <span style={{ fontWeight: 800, color: T.accent }}>{fmt(porCliente[c] || 0)}</span>
+                        </div>
+                        <div style={{ height: 10, borderRadius: 5, background: T.border }}>
+                          <div style={{ height: "100%", width: `${((porCliente[c] || 0) / maxBarCliente) * 100}%`, background: T.accent, borderRadius: 5 }} />
+                        </div>
+                        <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>{((porCliente[c] || 0) / Math.max(totalSel, 1) * 100).toFixed(1)}% del total seleccionado</div>
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
+            )}
+
+            {/* VISTA: POR PRODUCTO */}
+            {ventasDiaView === "producto" && facturas.length > 0 && (
+              <div style={{ display: "flex", gap: 20 }}>
+                <div style={{ width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 6 }}>ARTÍCULOS · seleccioná para sumar</div>
+                  {todosProductos.length === 0
+                    ? <div style={{ color: T.muted, fontSize: 12, padding: 12 }}>Sin detalle de artículos en las facturas.</div>
+                    : todosProductos.map(p => {
+                      const checked = !ventasDiaDeselProductos.has(p);
+                      return (
+                        <label key={p} onClick={() => toggleProducto(p)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 8, background: checked ? T.accentLight : T.surface, border: `1px solid ${checked ? T.accent + "50" : T.border}`, cursor: "pointer", userSelect: "none" }}>
+                          <input type="checkbox" checked={checked} onChange={() => toggleProducto(p)} style={{ accentColor: T.accent, width: 14, height: 14 }} />
+                          <span style={{ flex: 1, fontSize: 12, fontWeight: checked ? 600 : 400, color: checked ? T.ink : T.muted }}>{p}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: checked ? T.accent : T.muted }}>{fmt(porProducto[p] || 0)}</span>
+                        </label>
+                      );
+                    })
+                  }
+                  <div style={{ marginTop: 10, padding: "10px 14px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 12, color: T.muted, fontWeight: 700 }}>TOTAL</span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: T.accent }}>{fmt(totalSel)}</span>
+                  </div>
+                </div>
+                <div style={{ flex: 1 }}>
+                  {productosSel.length === 0
+                    ? <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: 40 }}>Seleccioná al menos un artículo.</div>
+                    : productosSel.sort((a, b) => (porProducto[b] || 0) - (porProducto[a] || 0)).map(p => (
+                      <div key={p} style={{ marginBottom: 14 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 5 }}>
+                          <span style={{ fontWeight: 600 }}>{p}</span>
+                          <span style={{ fontWeight: 800, color: T.accent }}>{fmt(porProducto[p] || 0)}</span>
+                        </div>
+                        <div style={{ height: 10, borderRadius: 5, background: T.border }}>
+                          <div style={{ height: "100%", width: `${((porProducto[p] || 0) / maxBarProducto) * 100}%`, background: T.accent, borderRadius: 5 }} />
+                        </div>
+                        <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>{((porProducto[p] || 0) / Math.max(totalSel, 1) * 100).toFixed(1)}% del total seleccionado</div>
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
             )}
           </div>
         );
