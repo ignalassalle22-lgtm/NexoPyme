@@ -1356,6 +1356,41 @@ function SearchBar({ value, onChange, placeholder }) {
   );
 }
 
+// ─── SHARED: QUICK DATE FILTER ────────────────────────────────────────────────
+function QuickDateFilter({ setFrom, setTo, style }) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const apply = (preset) => {
+    const d = new Date(hoy);
+    if (preset === "semana") {
+      const day = d.getDay(); const diff = day === 0 ? -6 : 1 - day;
+      const lunes = new Date(d); lunes.setDate(d.getDate() + diff);
+      setFrom(lunes.toISOString().slice(0, 10)); setTo(hoy);
+    } else if (preset === "mes") {
+      setFrom(hoy.slice(0, 7) + "-01");
+      setTo(new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10));
+    } else if (preset === "6meses") {
+      const s = new Date(d); s.setMonth(d.getMonth() - 6);
+      setFrom(s.toISOString().slice(0, 10)); setTo(hoy);
+    } else if (preset === "anio") {
+      setFrom(d.getFullYear() + "-01-01"); setTo(d.getFullYear() + "-12-31");
+    } else if (preset === "anio_ant") {
+      const y = d.getFullYear() - 1;
+      setFrom(y + "-01-01"); setTo(y + "-12-31");
+    }
+  };
+  const s = style || { padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, fontFamily: "inherit", outline: "none" };
+  return (
+    <select value="" onChange={e => { if (e.target.value) apply(e.target.value); }} style={s}>
+      <option value="">Período rápido…</option>
+      <option value="semana">Esta semana</option>
+      <option value="mes">Este mes</option>
+      <option value="6meses">Últimos 6 meses</option>
+      <option value="anio">Este año</option>
+      <option value="anio_ant">Año pasado</option>
+    </select>
+  );
+}
+
 // ─── MODULE: HUB ──────────────────────────────────────────────────────────────
 function HubModule({ saleInvoices, purchaseInvoices, products, clients, suppliers, onQuickAction, tipoCambio, setTipoCambio }) {
   const thisMonth = saleInvoices.filter(i => i.date?.startsWith("2026-03") && i.type === "factura");
@@ -2376,6 +2411,9 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                 <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>HASTA</label>
                 <input type="date" value={searchDocDateTo} onChange={e => setSearchDocDateTo(e.target.value)}
                   style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${searchDocDateTo ? T.blue : T.border}`, background: T.surface, color: searchDocDateTo ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ alignSelf: "flex-end" }}>
+                <QuickDateFilter setFrom={setSearchDocDateFrom} setTo={setSearchDocDateTo} />
               </div>
               {(searchDocDateFrom || searchDocDateTo) && (
                 <button onClick={() => { setSearchDocDateFrom(""); setSearchDocDateTo(""); }} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14, marginTop: 18 }}>✕</button>
@@ -3632,6 +3670,9 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                 <input type="date" value={searchInvDateTo} onChange={e => setSearchInvDateTo(e.target.value)}
                   style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${searchInvDateTo ? T.blue : T.border}`, background: T.surface, color: searchInvDateTo ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
               </div>
+              <div style={{ alignSelf: "flex-end" }}>
+                <QuickDateFilter setFrom={setSearchInvDateFrom} setTo={setSearchInvDateTo} />
+              </div>
               {(searchInvDateFrom || searchInvDateTo) && (
                 <button onClick={() => { setSearchInvDateFrom(""); setSearchInvDateTo(""); }} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14, paddingBottom: 2 }}>✕</button>
               )}
@@ -4519,6 +4560,11 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
             style={{ padding: "7px 8px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.paper, color: T.ink, fontSize: 12, fontFamily: "inherit" }} />
         </div>
       ))}
+      <div>
+        <div style={{ fontSize: 9, color: T.muted, fontWeight: 700, marginBottom: 4 }}>PERÍODO</div>
+        <QuickDateFilter setFrom={setFrom} setTo={setTo}
+          style={{ padding: "7px 8px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.paper, color: T.muted, fontSize: 12, fontFamily: "inherit" }} />
+      </div>
     </>
   );
 
@@ -5529,35 +5575,6 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
   const diasAtras = (n) => { const d = new Date(hoy); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
   const ym = (date) => date?.slice(0, 7) || "";
 
-  const applyQuickFilter = (preset) => {
-    const d = new Date(hoy);
-    if (preset === "semana") {
-      const day = d.getDay(); const diff = day === 0 ? -6 : 1 - day;
-      const lunes = new Date(d); lunes.setDate(d.getDate() + diff);
-      setFilterDesde(lunes.toISOString().slice(0, 10)); setFilterHasta(hoy);
-    } else if (preset === "mes") {
-      setFilterDesde(hoy.slice(0, 7) + "-01");
-      setFilterHasta(new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10));
-    } else if (preset === "6meses") {
-      const s = new Date(d); s.setMonth(d.getMonth() - 6);
-      setFilterDesde(s.toISOString().slice(0, 10)); setFilterHasta(hoy);
-    } else if (preset === "anio") {
-      setFilterDesde(d.getFullYear() + "-01-01"); setFilterHasta(d.getFullYear() + "-12-31");
-    } else if (preset === "anio_ant") {
-      const y = d.getFullYear() - 1;
-      setFilterDesde(y + "-01-01"); setFilterHasta(y + "-12-31");
-    }
-  };
-  const QuickFilterSelect = ({ style }) => (
-    <select value="" onChange={e => { if (e.target.value) applyQuickFilter(e.target.value); }} style={style}>
-      <option value="">Período rápido…</option>
-      <option value="semana">Esta semana</option>
-      <option value="mes">Este mes</option>
-      <option value="6meses">Últimos 6 meses</option>
-      <option value="anio">Este año</option>
-      <option value="anio_ant">Año pasado</option>
-    </select>
-  );
 
   const allFacturas = saleInvoices.filter(i => i.type === "factura");
   const facturas = allFacturas.filter(i => {
@@ -5680,7 +5697,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
                 <span style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>HASTA</span>
                 <input type="date" value={filterHasta} onChange={e => setFilterHasta(e.target.value)} style={is} />
               </div>
-              <QuickFilterSelect style={is} />
+              <QuickDateFilter setFrom={setFilterDesde} setTo={setFilterHasta} style={is} />
               {(filterDesde || filterHasta) && (
                 <button onClick={() => { setFilterDesde(""); setFilterHasta(""); }} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: "transparent", color: T.muted, cursor: "pointer", fontFamily: "inherit" }}>Limpiar fechas</button>
               )}
@@ -6314,7 +6331,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
             <span style={{ fontSize: 12, color: T.muted }}>Hasta</span>
             <input type="date" value={filterHasta} onChange={e => setFilterHasta(e.target.value)} style={inputStyle} />
           </div>
-          <QuickFilterSelect style={inputStyle} />
+          <QuickDateFilter setFrom={setFilterDesde} setTo={setFilterHasta} style={inputStyle} />
           <input placeholder="🔍 Buscar cliente / producto..." value={filterSearch} onChange={e => setFilterSearch(e.target.value)} style={{ ...inputStyle, width: 220 }} />
           {hasFilters && <button onClick={() => { setFilterDesde(""); setFilterHasta(""); setFilterSearch(""); }} style={ghostBtn}>Limpiar</button>}
           {hasFilters && <span style={{ fontSize: 11, color: T.accent, fontWeight: 600 }}>· Datos filtrados</span>}
