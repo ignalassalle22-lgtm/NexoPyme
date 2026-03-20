@@ -5520,6 +5520,10 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
   const [ventasDiaDeselClientes, setVentasDiaDeselClientes] = useState(new Set());
   const [ventasDiaDeselProductos, setVentasDiaDeselProductos] = useState(new Set());
   const [cobranzasTab, setCobranzasTab] = useState("cobradas");
+  const [evolView, setEvolView] = useState("mes");
+  const [evolDeselClientes, setEvolDeselClientes] = useState(new Set());
+  const [evolDeselProductos, setEvolDeselProductos] = useState(new Set());
+  const [rankingDrillClient, setRankingDrillClient] = useState(null);
 
   const hoy = new Date().toISOString().slice(0, 10);
   const diasAtras = (n) => { const d = new Date(hoy); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
@@ -5875,19 +5879,93 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
       title: "Evolución de ventas", layer: "ta", mvp: true, tag: "Ventas",
       exportData: () => ({ headers: ["Mes", "Total", "Facturas"], rows: ventasPorMes.map(m => [m.label, m.total, m.count]) }),
       render: () => {
-        const maxVal = Math.max(...ventasPorMes.map(m => m.total), 1);
+        const todosClientes = [...new Set(facturas.map(i => i.clientName).filter(Boolean))].sort();
+        const todosProductos = [...new Set(facturas.flatMap(i => (i.lines||[]).map(l => l.name).filter(Boolean)))].sort();
+        const clientesSel = todosClientes.filter(c => !evolDeselClientes.has(c));
+        const productosSel = todosProductos.filter(p => !evolDeselProductos.has(p));
+        const toggleEvolCliente = (c) => setEvolDeselClientes(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; });
+        const toggleEvolProducto = (p) => setEvolDeselProductos(prev => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n; });
+        const allDates = [...new Set(facturas.map(i => i.date))].sort();
+        const dailyData = allDates.map(date => {
+          const df = facturas.filter(i => i.date === date);
+          const total = evolView === "cliente"
+            ? df.filter(i => clientesSel.includes(i.clientName)).reduce((s,i) => s+i.total, 0)
+            : evolView === "producto"
+            ? df.reduce((s,inv) => s + (inv.lines||[]).filter(l => productosSel.includes(l.name)).reduce((ss,l) => ss+l.subtotal, 0), 0)
+            : df.reduce((s,i) => s+i.total, 0);
+          return { date, total };
+        });
+        const barData = evolView === "cliente"
+          ? clientesSel.map(c => ({ label: c, total: facturas.filter(i => i.clientName === c).reduce((s,i) => s+i.total, 0) })).sort((a,b) => b.total-a.total)
+          : evolView === "producto"
+          ? productosSel.map(p => ({ label: p, total: facturas.reduce((s,inv) => s+(inv.lines||[]).filter(l=>l.name===p).reduce((ss,l)=>ss+l.subtotal,0), 0) })).sort((a,b) => b.total-a.total)
+          : ventasPorMes.map(m => ({ label: m.label.slice(5)+"/"+m.label.slice(2,4), total: m.total }));
+        const maxBar = Math.max(...barData.map(d => d.total), 1);
+        const svgW = 600, svgH = 120;
+        const maxDay = Math.max(...dailyData.map(d => d.total), 1);
+        const pts = dailyData.map((d, i) => {
+          const x = dailyData.length > 1 ? (i/(dailyData.length-1))*(svgW-40)+20 : svgW/2;
+          const y = svgH - 20 - (d.total/maxDay)*(svgH-30);
+          return `${x},${y}`;
+        }).join(" ");
+        const totalSel = evolView === "cliente"
+          ? facturas.filter(i => clientesSel.includes(i.clientName)).reduce((s,i) => s+i.total, 0)
+          : evolView === "producto"
+          ? facturas.reduce((s,inv) => s+(inv.lines||[]).filter(l=>productosSel.includes(l.name)).reduce((ss,l)=>ss+l.subtotal,0), 0)
+          : facturas.reduce((s,i) => s+i.total, 0);
         return (
           <div>
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", height: 160, marginBottom: 20 }}>
-              {ventasPorMes.map(m => (
-                <div key={m.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                  <div style={{ fontSize: 10, color: T.muted }}>{fmt(m.total)}</div>
-                  <div style={{ width: "100%", background: T.accent, borderRadius: "4px 4px 0 0", height: Math.max((m.total / maxVal) * 120, 4) }}></div>
-                  <div style={{ fontSize: 10, color: T.muted }}>{m.label.slice(5)}/{m.label.slice(2,4)}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+              <label style={{ fontSize: 12, color: T.muted }}>Vista:</label>
+              <select value={evolView} onChange={e => setEvolView(e.target.value)} style={inputStyle}>
+                <option value="mes">Por mes</option>
+                <option value="cliente">Por cliente</option>
+                <option value="producto">Por producto</option>
+              </select>
+              <span style={{ fontSize: 12, color: T.muted }}>Total: <strong style={{ color: T.ink }}>{fmt(totalSel)}</strong></span>
+            </div>
+            {evolView === "cliente" && todosClientes.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+                {todosClientes.map(c => (
+                  <label key={c} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer", padding: "4px 10px", borderRadius: 20, background: evolDeselClientes.has(c) ? T.surface : T.accentLight, border: `1px solid ${evolDeselClientes.has(c) ? T.border : T.accent}`, color: evolDeselClientes.has(c) ? T.muted : T.accent }}>
+                    <input type="checkbox" checked={!evolDeselClientes.has(c)} onChange={() => toggleEvolCliente(c)} style={{ accentColor: T.accent }} />
+                    {c}
+                  </label>
+                ))}
+              </div>
+            )}
+            {evolView === "producto" && todosProductos.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+                {todosProductos.map(p => (
+                  <label key={p} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer", padding: "4px 10px", borderRadius: 20, background: evolDeselProductos.has(p) ? T.surface : T.accentLight, border: `1px solid ${evolDeselProductos.has(p) ? T.border : T.accent}`, color: evolDeselProductos.has(p) ? T.muted : T.accent }}>
+                    <input type="checkbox" checked={!evolDeselProductos.has(p)} onChange={() => toggleEvolProducto(p)} style={{ accentColor: T.accent }} />
+                    {p}
+                  </label>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", height: 160, marginBottom: 20, overflowX: "auto" }}>
+              {barData.map((d, idx) => (
+                <div key={idx} style={{ flex: 1, minWidth: evolView === "mes" ? 0 : 80, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 10, color: T.muted }}>{fmt(d.total)}</div>
+                  <div style={{ width: "100%", background: T.accent, borderRadius: "4px 4px 0 0", height: Math.max((d.total/maxBar)*120, 4) }}></div>
+                  <div style={{ fontSize: 10, color: T.muted, textAlign: "center", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.label}</div>
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 13, color: T.muted }}>Total período: <strong style={{ color: T.ink }}>{fmt(ventasPorMes.reduce((s,m) => s+m.total,0))}</strong> · {ventasPorMes.reduce((s,m) => s+m.count,0)} facturas</div>
+            {dailyData.length > 1 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, marginBottom: 8 }}>EVOLUCIÓN DIARIA DEL PERÍODO</div>
+                <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: "100%", height: 130 }}>
+                  <polyline fill="none" stroke={T.accent} strokeWidth="2" points={pts} />
+                  {dailyData.map((d, i) => {
+                    const x = dailyData.length > 1 ? (i/(dailyData.length-1))*(svgW-40)+20 : svgW/2;
+                    const y = svgH - 20 - (d.total/maxDay)*(svgH-30);
+                    return <circle key={i} cx={x} cy={y} r="3" fill={T.accent} />;
+                  })}
+                </svg>
+              </div>
+            )}
           </div>
         );
       }
@@ -5916,21 +5994,160 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     pago_medio: { title: "Ventas por medio de pago", layer: "ta", tag: "Ventas", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Este reporte requiere registrar el medio de pago en cada factura. Próximamente.</div> },
     rotacion: { title: "Rotación de inventario", layer: "ta", tag: "Inventario", render: () => { const costoVentas = facturas.reduce((s,i)=>(i.lines||[]).reduce((ss,l)=>{const p=products.find(x=>x.id===l.productId);return ss+(p?.cost||0)*l.qty;},s),0); const valorStock=products.reduce((s,p)=>s+(p.cost||0)*p.stock,0); const rot=valorStock>0?(costoVentas/valorStock).toFixed(2):0; return <div style={{textAlign:"center",padding:20}}><div style={{fontSize:48,fontWeight:800,color:T.accent}}>{rot}x</div><div style={{fontSize:13,color:T.muted,marginTop:8}}>Índice de rotación · Costo de ventas {fmt(costoVentas)} / Valor stock {fmt(valorStock)}</div></div>; } },
     valorizacion: { title: "Valorización de stock", layer: "ta", tag: "Inventario", render: () => { const aCosto=products.reduce((s,p)=>s+(p.cost||0)*p.stock,0); const aVenta=products.reduce((s,p)=>s+(p.prices?.lista_a||0)*p.stock,0); return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}><div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:6}}>VALOR A COSTO</div><div style={{fontSize:24,fontWeight:800,color:T.ink}}>{fmt(aCosto)}</div></div><div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:6}}>VALOR A PRECIO LISTA A</div><div style={{fontSize:24,fontWeight:800,color:T.accent}}>{fmt(aVenta)}</div></div></div>; } },
-    merma: { title: "Merma y desperdicio", layer: "ta", tag: "Inventario", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Registrá ajustes negativos de stock para calcular mermas. Próximamente.</div> },
     ranking_clientes: {
       title: "Ranking de clientes", layer: "ta", mvp: true, tag: "Clientes",
       exportData: () => ({ headers: ["#", "Cliente", "Facturado", "% del total"], rows: rankingClientes.map(([name, total], i) => [i + 1, name, total, totalVentas > 0 ? (total / totalVentas * 100).toFixed(1) + "%" : "0%"]) }),
-      render: () => (
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{background:T.surface}}>{["#","Cliente","Facturado"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,color:T.muted,fontWeight:700}}>{h}</th>)}</tr></thead>
-          <tbody>{rankingClientes.map(([name,total],i)=><tr key={name} style={{borderTop:`1px solid ${T.border}`}}><td style={{padding:"8px 12px",color:T.muted,fontWeight:700}}>{i+1}</td><td style={{padding:"8px 12px"}}>{name}</td><td style={{padding:"8px 12px",fontWeight:700,color:T.accent}}>{fmt(total)}</td></tr>)}</tbody>
-        </table>
-      )
+      render: () => {
+        const durDias = filterDesde && filterHasta ? Math.round((new Date(filterHasta) - new Date(filterDesde)) / 86400000) + 1 : 30;
+        const prevEnd = filterDesde ? new Date(new Date(filterDesde).getTime() - 86400000).toISOString().slice(0,10) : diasAtras(30);
+        const prevStart = new Date(new Date(prevEnd).getTime() - (durDias - 1) * 86400000).toISOString().slice(0,10);
+        const factPrev = allFacturas.filter(i => i.date >= prevStart && i.date <= prevEnd);
+        if (rankingDrillClient) {
+          const clientName = rankingDrillClient;
+          const clientFacturas = facturas.filter(i => i.clientName === clientName);
+          const clientTotal = clientFacturas.reduce((s,i) => s+i.total, 0);
+          const clientPorMes = last6Months.map(m => ({ label: m, total: clientFacturas.filter(i => ym(i.date) === m).reduce((s,i) => s+i.total, 0) }));
+          const maxMes = Math.max(...clientPorMes.map(m => m.total), 1);
+          const clientDates = [...new Set(clientFacturas.map(i => i.date))].sort();
+          const clientDaily = clientDates.map(d => clientFacturas.filter(i => i.date === d).reduce((s,i) => s+i.total, 0));
+          const maxDayC = Math.max(...clientDaily, 1);
+          const svgW = 600, svgH = 120;
+          const ptsC = clientDaily.map((v, i) => { const x = clientDaily.length > 1 ? (i/(clientDaily.length-1))*(svgW-40)+20 : svgW/2; const y = svgH-20-(v/maxDayC)*(svgH-30); return `${x},${y}`; }).join(" ");
+          const prodMap = {};
+          clientFacturas.forEach(inv => (inv.lines||[]).forEach(l => { if (!l.name) return; prodMap[l.name] = (prodMap[l.name]||0) + l.subtotal; }));
+          const prodList = Object.entries(prodMap).sort((a,b) => b[1]-a[1]);
+          return (
+            <div>
+              <button onClick={() => setRankingDrillClient(null)} style={{ marginBottom: 16, padding: "6px 14px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>← Volver al ranking</button>
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: T.ink }}>{clientName}</div>
+                <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Total facturado: <strong style={{ color: T.accent }}>{fmt(clientTotal)}</strong> · {clientFacturas.length} factura{clientFacturas.length !== 1 ? "s" : ""}</div>
+              </div>
+              <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, marginBottom: 8 }}>VENTAS POR MES</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", height: 120, marginBottom: 20 }}>
+                {clientPorMes.map(m => (
+                  <div key={m.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                    <div style={{ fontSize: 10, color: T.muted }}>{m.total > 0 ? fmt(m.total) : ""}</div>
+                    <div style={{ width: "100%", background: m.total > 0 ? T.accent : T.border, borderRadius: "3px 3px 0 0", height: Math.max((m.total/maxMes)*90, 4) }}></div>
+                    <div style={{ fontSize: 10, color: T.muted }}>{m.label.slice(5)}/{m.label.slice(2,4)}</div>
+                  </div>
+                ))}
+              </div>
+              {clientDaily.length > 1 && (
+                <>
+                  <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, marginBottom: 8 }}>EVOLUCIÓN DIARIA</div>
+                  <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: "100%", height: 110, marginBottom: 20 }}>
+                    <polyline fill="none" stroke={T.accent} strokeWidth="2" points={ptsC} />
+                    {clientDaily.map((v, i) => { const x = clientDaily.length > 1 ? (i/(clientDaily.length-1))*(svgW-40)+20 : svgW/2; const y = svgH-20-(v/maxDayC)*(svgH-30); return <circle key={i} cx={x} cy={y} r="3" fill={T.accent} />; })}
+                  </svg>
+                </>
+              )}
+              <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, marginBottom: 8 }}>FACTURAS</div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 20 }}>
+                <thead><tr style={{ background: T.surface }}>{["Nro.", "Fecha", "Vencimiento", "Estado", "Total"].map(h => <th key={h} style={{ padding: "6px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                <tbody>{clientFacturas.sort((a,b) => b.date.localeCompare(a.date)).map(i => (
+                  <tr key={i.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                    <td style={{ padding: "7px 12px", fontFamily: "monospace", fontSize: 11, color: T.blue }}>{i.nroFactura || i.id}</td>
+                    <td style={{ padding: "7px 12px", color: T.muted }}>{i.date}</td>
+                    <td style={{ padding: "7px 12px", color: T.muted }}>{i.due}</td>
+                    <td style={{ padding: "7px 12px" }}><span style={{ fontSize: 11, fontWeight: 700, color: i.status === "cobrada" ? T.accent : T.orange }}>{i.status}</span></td>
+                    <td style={{ padding: "7px 12px", fontWeight: 700, color: T.accent }}>{fmt(i.total)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              {prodList.length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, marginBottom: 8 }}>DETALLE DE PRODUCTOS</div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr style={{ background: T.surface }}>{["Producto", "Facturado", "% del cliente"].map(h => <th key={h} style={{ padding: "6px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                    <tbody>{prodList.map(([name, total]) => (
+                      <tr key={name} style={{ borderTop: `1px solid ${T.border}` }}>
+                        <td style={{ padding: "7px 12px" }}>{name}</td>
+                        <td style={{ padding: "7px 12px", fontWeight: 700, color: T.accent }}>{fmt(total)}</td>
+                        <td style={{ padding: "7px 12px", color: T.muted }}>{clientTotal > 0 ? (total/clientTotal*100).toFixed(1) : 0}%</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </>
+              )}
+            </div>
+          );
+        }
+        return (
+          <div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead><tr style={{ background: T.surface }}>{["#", "Cliente", "Facturado", "Variación", "% del total"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+              <tbody>{rankingClientes.map(([name, total], i) => {
+                const prevTotal = factPrev.filter(inv => inv.clientName === name).reduce((s, inv) => s + inv.total, 0);
+                const variacion = prevTotal > 0 ? ((total - prevTotal) / prevTotal * 100).toFixed(1) : null;
+                const varColor = variacion !== null ? (parseFloat(variacion) >= 0 ? T.accent : T.red) : T.muted;
+                return (
+                  <tr key={name} onClick={() => setRankingDrillClient(name)} style={{ borderTop: `1px solid ${T.border}`, cursor: "pointer" }}
+                    onMouseEnter={e => e.currentTarget.style.background = T.surface}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "9px 12px", color: T.muted, fontWeight: 700 }}>{i + 1}</td>
+                    <td style={{ padding: "9px 12px", fontWeight: 600, color: T.blue }}>🔍 {name}</td>
+                    <td style={{ padding: "9px 12px", fontWeight: 700, color: T.accent }}>{fmt(total)}</td>
+                    <td style={{ padding: "9px 12px", fontWeight: 700, color: varColor }}>{variacion !== null ? (parseFloat(variacion) >= 0 ? "+" : "") + variacion + "%" : "—"}</td>
+                    <td style={{ padding: "9px 12px", color: T.muted }}>{totalVentas > 0 ? (total/totalVentas*100).toFixed(1) : 0}%</td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+            <div style={{ fontSize: 11, color: T.muted, marginTop: 10 }}>Hacé click en un cliente para ver el detalle.</div>
+          </div>
+        );
+      }
     },
     antiguedad_saldos: { title: "Antigüedad de saldos", layer: "ta", tag: "Clientes", render: () => { const a0=aging("0-30"),a1=aging("31-60"),a2=aging("61-90"),a3=aging("+90"); return <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>{[[`0-30d`,a0,T.accent],[`31-60d`,a1,T.yellow],[`61-90d`,a2,T.orange],[`+90d`,a3,T.red]].map(([l,items,c])=><div key={l} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 14px"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:6}}>{l}</div><div style={{fontSize:20,fontWeight:800,color:c}}>{fmt(items.reduce((s,i)=>s+i.total,0))}</div><div style={{fontSize:11,color:T.muted}}>{items.length} fact.</div></div>)}</div>; } },
     clientes_nuevos: { title: "Clientes nuevos vs perdidos", layer: "ta", tag: "Clientes", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Requiere registro de fecha de alta de clientes. Próximamente.</div> },
-    eficiencia_log: { title: "Eficiencia logística", layer: "ta", tag: "Logística", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Conectado al módulo Logística. Próximamente.</div> },
-    ciclos: { title: "Tiempos de ciclo", layer: "ta", tag: "Logística", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Conectado al módulo Logística. Próximamente.</div> },
+    eficiencia_log: {
+      title: "Eficiencia logística", layer: "ta", tag: "Logística",
+      render: () => {
+        const cobradas2 = facturas.filter(i => i.status === "cobrada");
+        const plazoPromedio = facturas.length > 0 ? Math.round(facturas.reduce((s,i) => s + Math.round((new Date(i.due) - new Date(i.date)) / 86400000), 0) / facturas.length) : 0;
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ background: T.surface, borderRadius: 10, padding: "14px 18px", fontSize: 12, color: T.muted }}>
+              <strong style={{ color: T.ink, display: "block", marginBottom: 6 }}>¿Qué muestra este reporte?</strong>
+              Eficiencia de entrega y cumplimiento: tasa de entregas a tiempo, tiempos de respuesta y calidad del servicio. Para métricas completas se requiere registrar fechas de entrega reales en cada pedido. Indicadores disponibles con datos actuales:
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+              {[["Plazo prom. de cobro", `${plazoPromedio} días`, T.blue], ["Facturas cobradas", cobradas2.length, T.accent], ["Facturas pendientes", facturas.filter(i => i.status === "pendiente").length, T.orange]].map(([l,v,c]) => (
+                <div key={l} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px" }}>
+                  <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 6 }}>{l.toUpperCase()}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: c }}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+    },
+    ciclos: {
+      title: "Tiempos de ciclo", layer: "ta", tag: "Logística",
+      render: () => {
+        const cicloVenta = facturas.length > 0 ? Math.round(facturas.reduce((s,i) => s + Math.round((new Date(i.due) - new Date(i.date)) / 86400000), 0) / facturas.length) : 0;
+        const cicloCompra = purchaseInvoices.length > 0 ? Math.round(purchaseInvoices.reduce((s,i) => { const d = i.dueDate && i.date ? Math.round((new Date(i.dueDate) - new Date(i.date)) / 86400000) : 0; return s+d; }, 0) / purchaseInvoices.length) : 0;
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ background: T.surface, borderRadius: 10, padding: "14px 18px", fontSize: 12, color: T.muted }}>
+              <strong style={{ color: T.ink, display: "block", marginBottom: 6 }}>¿Qué muestra este reporte?</strong>
+              Ciclo de venta: tiempo promedio entre emisión de factura y su vencimiento. Ciclo de compra: tiempo promedio entre orden de compra y su vencimiento/pago. El ciclo de entrega requiere registrar fechas reales de despacho.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+              {[["Ciclo promedio ventas", cicloVenta, T.accent], ["Ciclo promedio compras", cicloCompra, T.blue]].map(([l,v,c]) => (
+                <div key={l} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "24px 20px" }}>
+                  <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 8 }}>{l.toUpperCase()}</div>
+                  <div style={{ fontSize: 36, fontWeight: 800, color: c }}>{v}</div>
+                  <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>días promedio</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+    },
     // ESTRATÉGICOS
     pyl: {
       title: "P&L simplificado", layer: "es", mvp: true, tag: "Cross",
@@ -5988,7 +6205,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
 
   const layers = [
     { id: "op", label: "Operativos", freq: "Diario", desc: "Control diario de ventas, cobranzas y stock", color: "#0F6E56", colorLight: "#E1F5EE", reports: ["ventas_dia","cobranzas_dia","aging","stock_alertas","mov_dia","entregas_dia","pipeline"] },
-    { id: "ta", label: "Tácticos", freq: "Semanal / Mensual", desc: "Tendencias, rankings y performance del período", color: "#185FA5", colorLight: "#E6F1FB", reports: ["evolucion_ventas","ranking_productos","margenes","abc_ventas","pago_medio","rotacion","valorizacion","merma","ranking_clientes","antiguedad_saldos","clientes_nuevos","eficiencia_log","ciclos"] },
+    { id: "ta", label: "Tácticos", freq: "Semanal / Mensual", desc: "Tendencias, rankings y performance del período", color: "#185FA5", colorLight: "#E6F1FB", reports: ["evolucion_ventas","ranking_productos","margenes","abc_ventas","pago_medio","rotacion","valorizacion","ranking_clientes","antiguedad_saldos","clientes_nuevos","eficiencia_log","ciclos"] },
     { id: "es", label: "Estratégicos", freq: "Trimestral / Anual", desc: "P&L, cashflow y visión financiera del negocio", color: "#534AB7", colorLight: "#EEEDFE", reports: ["pyl","equilibrio","cashflow","estacionalidad","rentabilidad_cliente","concentracion","mix_productos","scorecard"] },
   ];
 
