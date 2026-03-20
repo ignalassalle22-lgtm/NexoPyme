@@ -5477,20 +5477,26 @@ Devolveme el orden óptimo como JSON array de índices.`
 
 // ─── MODULE: REPORTES ────────────────────────────────────────────────────────
 function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, suppliers }) {
-  const [openLayer, setOpenLayer] = useState({ op: true, ta: false, es: false });
+  const [selectedLayer, setSelectedLayer] = useState(null);
   const [activeReport, setActiveReport] = useState(null);
+  const [filterDesde, setFilterDesde] = useState("");
+  const [filterHasta, setFilterHasta] = useState("");
+  const [filterSearch, setFilterSearch] = useState("");
 
-  const toggleLayer = (k) => setOpenLayer(prev => ({ ...prev, [k]: !prev[k] }));
-
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  const facturas = saleInvoices.filter(i => i.type === "factura");
   const hoy = new Date().toISOString().slice(0, 10);
-
   const diasAtras = (n) => { const d = new Date(hoy); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
   const ym = (date) => date?.slice(0, 7) || "";
 
-  const facturasHoy = facturas.filter(i => i.date === hoy);
-  const facturasSemanaAnterior = facturas.filter(i => i.date >= diasAtras(14) && i.date <= diasAtras(7));
+  const allFacturas = saleInvoices.filter(i => i.type === "factura");
+  const facturas = allFacturas.filter(i => {
+    if (filterDesde && i.date < filterDesde) return false;
+    if (filterHasta && i.date > filterHasta) return false;
+    if (filterSearch && !i.clientName?.toLowerCase().includes(filterSearch.toLowerCase())) return false;
+    return true;
+  });
+
+  const facturasHoy = allFacturas.filter(i => i.date === hoy);
+  const facturasSemanaAnterior = allFacturas.filter(i => i.date >= diasAtras(14) && i.date <= diasAtras(7));
   const ventasHoy = facturasHoy.reduce((s, i) => s + i.total, 0);
   const ventasSemAnt = facturasSemanaAnterior.reduce((s, i) => s + i.total, 0);
 
@@ -5540,6 +5546,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     // OPERATIVOS
     ventas_dia: {
       title: "Resumen de ventas del día", layer: "op", mvp: true, tag: "Ventas",
+      exportData: () => ({ headers: ["Fecha", "Cliente", "Nro.", "Total"], rows: facturasHoy.map(i => [i.date, i.clientName || "", i.nroFactura || "", i.total]) }),
       render: () => (
         <div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
@@ -5569,6 +5576,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     },
     aging: {
       title: "Facturas pendientes (aging)", layer: "op", mvp: true, tag: "Ventas",
+      exportData: () => ({ headers: ["Cliente", "Nro.", "Fecha", "Vencimiento", "Total", "Días vencida"], rows: pendientes.map(i => { const d = Math.round((new Date(hoy) - new Date(i.due)) / 86400000); return [i.clientName || "", i.nroFactura || "", i.date || "", i.due || "", i.total, d > 0 ? d : 0]; }) }),
       render: () => (
         <div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
@@ -5586,6 +5594,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     },
     stock_alertas: {
       title: "Stock actual + alertas", layer: "op", mvp: true, tag: "Inventario",
+      exportData: () => ({ headers: ["Producto", "SKU", "Stock actual", "Mínimo", "Unidad", "Estado"], rows: products.filter(p => p.tracksStock !== false).map(p => [p.name, p.sku || "", p.stock, p.minStock, p.unit || "", p.stock < p.minStock ? "Reponer" : "OK"]) }),
       render: () => (
         <div>
           <div style={{ marginBottom: 14, fontSize: 13, color: stockBajo.length > 0 ? T.red : T.accent, fontWeight: 700 }}>{stockBajo.length > 0 ? `⚠ ${stockBajo.length} producto(s) con stock bajo mínimo` : "✓ Todos los productos con stock suficiente"}</div>
@@ -5623,6 +5632,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     // TÁCTICOS
     evolucion_ventas: {
       title: "Evolución de ventas", layer: "ta", mvp: true, tag: "Ventas",
+      exportData: () => ({ headers: ["Mes", "Total", "Facturas"], rows: ventasPorMes.map(m => [m.label, m.total, m.count]) }),
       render: () => {
         const maxVal = Math.max(...ventasPorMes.map(m => m.total), 1);
         return (
@@ -5643,6 +5653,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     },
     ranking_productos: {
       title: "Ranking de productos", layer: "ta", mvp: true, tag: "Ventas",
+      exportData: () => ({ headers: ["#", "Producto", "Facturado"], rows: rankingProductos.map(([name, total], i) => [i + 1, name, total]) }),
       render: () => (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead><tr style={{ background: T.surface }}>{["#","Producto","Facturado"].map(h=><th key={h} style={{ padding:"8px 12px",textAlign:"left",fontSize:10,color:T.muted,fontWeight:700 }}>{h}</th>)}</tr></thead>
@@ -5652,6 +5663,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     },
     margenes: {
       title: "Análisis de márgenes", layer: "ta", mvp: true, tag: "Ventas",
+      exportData: () => ({ headers: ["Producto", "SKU", "Costo", "Precio Lista A", "Margen %"], rows: products.filter(p => p.cost > 0).map(p => { const precio = p.prices?.lista_a || 0; const margen = precio > 0 ? ((precio - p.cost) / precio * 100).toFixed(1) : 0; return [p.name, p.sku || "", p.cost, precio, margen]; }) }),
       render: () => (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead><tr style={{ background: T.surface }}>{["Producto","Costo","Lista A","Margen %"].map(h=><th key={h} style={{ padding:"8px 12px",textAlign:"left",fontSize:10,color:T.muted,fontWeight:700 }}>{h}</th>)}</tr></thead>
@@ -5666,6 +5678,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     merma: { title: "Merma y desperdicio", layer: "ta", tag: "Inventario", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Registrá ajustes negativos de stock para calcular mermas. Próximamente.</div> },
     ranking_clientes: {
       title: "Ranking de clientes", layer: "ta", mvp: true, tag: "Clientes",
+      exportData: () => ({ headers: ["#", "Cliente", "Facturado", "% del total"], rows: rankingClientes.map(([name, total], i) => [i + 1, name, total, totalVentas > 0 ? (total / totalVentas * 100).toFixed(1) + "%" : "0%"]) }),
       render: () => (
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{background:T.surface}}>{["#","Cliente","Facturado"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,color:T.muted,fontWeight:700}}>{h}</th>)}</tr></thead>
@@ -5733,61 +5746,123 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
   };
 
   const layers = [
-    { id: "op", label: "Capa 1 — Operativos", freq: "Diario", color: "#0F6E56", colorLight: "#E1F5EE", reports: ["ventas_dia","cobranzas_dia","aging","stock_alertas","mov_dia","morosos","entregas_dia","pipeline","alertas_op"] },
-    { id: "ta", label: "Capa 2 — Tácticos", freq: "Semanal / Mensual", color: "#185FA5", colorLight: "#E6F1FB", reports: ["evolucion_ventas","ranking_productos","margenes","abc_ventas","pago_medio","rotacion","valorizacion","merma","ranking_clientes","antiguedad_saldos","clientes_nuevos","eficiencia_log","ciclos"] },
-    { id: "es", label: "Capa 3 — Estratégicos", freq: "Trimestral / Anual", color: "#534AB7", colorLight: "#EEEDFE", reports: ["pyl","equilibrio","cashflow","estacionalidad","rentabilidad_cliente","concentracion","mix_productos","scorecard"] },
+    { id: "op", label: "Operativos", freq: "Diario", desc: "Control diario de ventas, cobranzas y stock", color: "#0F6E56", colorLight: "#E1F5EE", reports: ["ventas_dia","cobranzas_dia","aging","stock_alertas","mov_dia","morosos","entregas_dia","pipeline","alertas_op"] },
+    { id: "ta", label: "Tácticos", freq: "Semanal / Mensual", desc: "Tendencias, rankings y performance del período", color: "#185FA5", colorLight: "#E6F1FB", reports: ["evolucion_ventas","ranking_productos","margenes","abc_ventas","pago_medio","rotacion","valorizacion","merma","ranking_clientes","antiguedad_saldos","clientes_nuevos","eficiencia_log","ciclos"] },
+    { id: "es", label: "Estratégicos", freq: "Trimestral / Anual", desc: "P&L, cashflow y visión financiera del negocio", color: "#534AB7", colorLight: "#EEEDFE", reports: ["pyl","equilibrio","cashflow","estacionalidad","rentabilidad_cliente","concentracion","mix_productos","scorecard"] },
   ];
 
   const tagColors = { Ventas: { bg: T.blueLight, c: T.blue }, Clientes: { bg: "#EEEDFE", c: "#534AB7" }, Inventario: { bg: T.accentLight, c: T.accent }, Logística: { bg: T.yellowLight || "#FFF8E1", c: T.yellow || "#B45309" }, Cross: { bg: T.surface2, c: T.muted } };
 
+  const inputStyle = { padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none" };
+  const ghostBtn = { padding: "7px 14px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
+
+  const exportExcel = (reportId) => {
+    const r = reports[reportId];
+    if (!r?.exportData) { window.print(); return; }
+    const { headers, rows } = r.exportData();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, r.title.slice(0, 31));
+    XLSX.writeFile(wb, `${reportId}_${hoy}.xlsx`);
+  };
+
+  // ── FULL PAGE REPORT ──────────────────────────────────────────────────────
+  if (activeReport) {
+    const r = reports[activeReport];
+    if (!r) { setActiveReport(null); return null; }
+    const layer = layers.find(l => l.reports.includes(activeReport));
+    const hasFilters = filterDesde || filterHasta || filterSearch;
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 20 }}>
+          <button onClick={() => setActiveReport(null)} style={{ ...ghostBtn, marginTop: 4, whiteSpace: "nowrap" }}>← {layer?.label}</button>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 4 }}>{layer?.label?.toUpperCase()} · {layer?.freq}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>{r.title}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            {r.exportData && <button onClick={() => exportExcel(activeReport)} style={{ ...ghostBtn, color: T.accent, borderColor: T.accent + "60" }}>↓ Excel</button>}
+            <button onClick={() => window.print()} style={ghostBtn}>⎙ PDF</button>
+          </div>
+        </div>
+
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 18px", marginBottom: 20, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>FILTROS</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: T.muted }}>Desde</span>
+            <input type="date" value={filterDesde} onChange={e => setFilterDesde(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: T.muted }}>Hasta</span>
+            <input type="date" value={filterHasta} onChange={e => setFilterHasta(e.target.value)} style={inputStyle} />
+          </div>
+          <input placeholder="🔍 Buscar cliente / producto..." value={filterSearch} onChange={e => setFilterSearch(e.target.value)} style={{ ...inputStyle, width: 220 }} />
+          {hasFilters && <button onClick={() => { setFilterDesde(""); setFilterHasta(""); setFilterSearch(""); }} style={ghostBtn}>Limpiar</button>}
+          {hasFilters && <span style={{ fontSize: 11, color: T.accent, fontWeight: 600 }}>· Datos filtrados</span>}
+        </div>
+
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "28px 32px" }}>
+          {r.render()}
+        </div>
+      </div>
+    );
+  }
+
+  // ── CATEGORY VIEW ─────────────────────────────────────────────────────────
+  if (selectedLayer) {
+    const layer = layers.find(l => l.id === selectedLayer);
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28 }}>
+          <button onClick={() => setSelectedLayer(null)} style={ghostBtn}>← Reportes</button>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>{layer.freq.toUpperCase()}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: T.ink }}>{layer.label}</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px,1fr))", gap: 14 }}>
+          {layer.reports.map(rId => {
+            const r = reports[rId];
+            if (!r) return null;
+            const tc = tagColors[r.tag] || tagColors.Cross;
+            return (
+              <div key={rId}
+                onClick={() => { setFilterDesde(""); setFilterHasta(""); setFilterSearch(""); setActiveReport(rId); }}
+                style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px", cursor: "pointer", position: "relative" }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.background = T.accentLight; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.surface; }}>
+                {r.mvp && <span style={{ position: "absolute", top: 10, right: 12, fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 3, background: "#FEF3C7", color: "#92400E" }}>MVP</span>}
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 10, paddingRight: r.mvp ? 40 : 0 }}>{r.title}</div>
+                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: tc.bg, color: tc.c, fontWeight: 700 }}>{r.tag}</span>
+                <div style={{ marginTop: 16, fontSize: 11, color: T.accent, fontWeight: 600 }}>Ver reporte →</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── LANDING ───────────────────────────────────────────────────────────────
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 28 }}>
         <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Reportes</div>
-        <div style={{ fontSize: 13, color: T.muted }}>32 reportes organizados en 3 capas · Datos en tiempo real del sistema</div>
+        <div style={{ fontSize: 13, color: T.muted }}>32 reportes · 3 capas de análisis · Datos en tiempo real</div>
       </div>
-
-      {activeReport && (
-        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 24, marginBottom: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{reports[activeReport]?.title}</div>
-            <button onClick={() => setActiveReport(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: T.muted }}>✕</button>
-          </div>
-          {reports[activeReport]?.render()}
-        </div>
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
         {layers.map(layer => (
-          <div key={layer.id} style={{ border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
-            <div onClick={() => toggleLayer(layer.id)} style={{ padding: "14px 20px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", background: layer.color, color: layer.colorLight }}>
-              <span style={{ fontWeight: 700, fontSize: 15 }}>{layer.label}</span>
-              <span style={{ fontSize: 12, opacity: 0.8, marginLeft: "auto" }}>{layer.freq}</span>
-              <span style={{ fontSize: 12, background: "rgba(255,255,255,0.2)", padding: "2px 8px", borderRadius: 10 }}>{layer.reports.length} reportes</span>
-              <span style={{ fontSize: 14, opacity: 0.8 }}>{openLayer[layer.id] ? "▲" : "▼"}</span>
+          <div key={layer.id} onClick={() => setSelectedLayer(layer.id)}
+            style={{ background: layer.color, borderRadius: 18, padding: "32px 28px", cursor: "pointer", color: layer.colorLight, minHeight: 190, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.75, letterSpacing: 1, marginBottom: 10 }}>{layer.freq.toUpperCase()}</div>
+              <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 10 }}>{layer.label}</div>
+              <div style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.5 }}>{layer.desc}</div>
             </div>
-            {openLayer[layer.id] && (
-              <div style={{ padding: "16px 20px", background: T.paper }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px,1fr))", gap: 10 }}>
-                  {layer.reports.map(rId => {
-                    const r = reports[rId];
-                    if (!r) return null;
-                    const tc = tagColors[r.tag] || tagColors.Cross;
-                    const isActive = activeReport === rId;
-                    return (
-                      <div key={rId} onClick={() => setActiveReport(isActive ? null : rId)}
-                        style={{ background: isActive ? T.accentLight : T.surface, border: `1px solid ${isActive ? T.accent : T.border}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer", position: "relative" }}>
-                        {r.mvp && <span style={{ position: "absolute", top: 6, right: 8, fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: T.yellowLight || "#FEF3C7", color: T.yellow || "#92400E" }}>MVP</span>}
-                        <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, marginBottom: 4, paddingRight: r.mvp ? 32 : 0 }}>{r.title}</div>
-                        <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
-                          <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: tc.bg, color: tc.c }}>{r.tag}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, background: "rgba(255,255,255,0.15)", padding: "4px 10px", borderRadius: 8 }}>{layer.reports.length} reportes</span>
+              <span style={{ fontSize: 14, fontWeight: 800 }}>Entrar →</span>
+            </div>
           </div>
         ))}
       </div>
