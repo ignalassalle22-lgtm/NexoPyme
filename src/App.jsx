@@ -6013,9 +6013,38 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
   const inputStyle = { padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none" };
   const ghostBtn = { padding: "7px 14px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 
+  const printReport = () => {
+    const existing = document.getElementById("__nexo_print_style");
+    if (existing) existing.remove();
+    const style = document.createElement("style");
+    style.id = "__nexo_print_style";
+    style.textContent = `
+      @media print {
+        @page { margin: 18mm 14mm; }
+        body * { visibility: hidden !important; }
+        #nexopyme-report-content, #nexopyme-report-content * { visibility: visible !important; }
+        #nexopyme-report-content {
+          position: fixed !important;
+          inset: 0 !important;
+          width: 100% !important;
+          padding: 24px 32px !important;
+          background: #fff !important;
+          color: #000 !important;
+          overflow: visible !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    window.print();
+    window.addEventListener("afterprint", () => {
+      const s = document.getElementById("__nexo_print_style");
+      if (s) s.remove();
+    }, { once: true });
+  };
+
   const exportExcel = (reportId) => {
     const r = reports[reportId];
-    if (!r?.exportData) { window.print(); return; }
+    if (!r?.exportData) { printReport(); return; }
     const { headers, rows } = r.exportData();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
@@ -6039,7 +6068,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             {r.exportData && <button onClick={() => exportExcel(activeReport)} style={{ ...ghostBtn, color: T.accent, borderColor: T.accent + "60" }}>↓ Excel</button>}
-            <button onClick={() => window.print()} style={ghostBtn}>⎙ PDF</button>
+            <button onClick={printReport} style={ghostBtn}>⎙ PDF</button>
           </div>
         </div>
 
@@ -6058,7 +6087,8 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
           {hasFilters && <span style={{ fontSize: 11, color: T.accent, fontWeight: 600 }}>· Datos filtrados</span>}
         </div>
 
-        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "28px 32px" }}>
+        <div id="nexopyme-report-content" style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "28px 32px" }}>
+          <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, paddingBottom: 10, borderBottom: `1px solid ${T.border}`, display: "none" }} className="print-title">{r.title}</div>
           {r.render()}
         </div>
       </div>
