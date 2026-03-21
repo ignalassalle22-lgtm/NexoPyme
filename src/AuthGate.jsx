@@ -44,12 +44,13 @@ export default function AuthGate({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  const withTimeout = (promise, ms = 8000) =>
+  const withTimeout = (promise, ms = 20000) =>
     Promise.race([promise, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))])
 
   const loadProfile = async (userId, userEmail = '') => {
     console.log('[AuthGate] loadProfile iniciado, userId:', userId)
     setLoading(true)
+    setError('')
     try {
       console.log('[AuthGate] consultando profiles...')
       const profResult = await withTimeout(
