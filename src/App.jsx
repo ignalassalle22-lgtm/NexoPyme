@@ -5705,7 +5705,21 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     // OPERATIVOS
     ventas_dia: {
       title: "Resumen de ventas del día", layer: "op", mvp: true, tag: "Ventas",
-      exportData: () => ({ headers: ["Fecha", "Cliente", "Nro.", "Total"], rows: facturas.map(i => [i.date, i.clientName || "", i.nroFactura || "", i.total]) }),
+      exportData: () => {
+        const todosClientes = [...new Set(facturas.map(i => i.clientName).filter(Boolean))].sort();
+        const todosProductos = [...new Set(facturas.flatMap(i => (i.lines||[]).map(l => l.name).filter(Boolean)))].sort();
+        const clientesSel = todosClientes.filter(c => !ventasDiaDeselClientes.has(c));
+        const productosSel = todosProductos.filter(p => !ventasDiaDeselProductos.has(p));
+        if (ventasDiaView === "cliente") {
+          const map = {};
+          facturas.filter(i => clientesSel.includes(i.clientName)).forEach(i => { map[i.clientName] = (map[i.clientName]||0) + i.total; });
+          return { headers: ["Cliente", "Total facturado", "Facturas"], rows: Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([c,t]) => [c, t, facturas.filter(i=>i.clientName===c).length]) };
+        } else {
+          const map = {};
+          facturas.forEach(inv => (inv.lines||[]).forEach(l => { if (!l.name||!productosSel.includes(l.name)) return; map[l.name]=(map[l.name]||0)+l.subtotal; }));
+          return { headers: ["Producto", "Total facturado"], rows: Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([p,t]) => [p, t]) };
+        }
+      },
       render: () => {
         const todosClientes = [...new Set(facturas.map(i => i.clientName).filter(Boolean))].sort();
         const todosProductos = [...new Set(facturas.flatMap(i => (i.lines || []).map(l => l.name).filter(Boolean)))].sort();
@@ -5995,7 +6009,18 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     // TÁCTICOS
     evolucion_ventas: {
       title: "Evolución de ventas", layer: "ta", mvp: true, tag: "Ventas",
-      exportData: () => ({ headers: ["Mes", "Total", "Facturas"], rows: ventasPorMes.map(m => [m.label, m.total, m.count]) }),
+      exportData: () => {
+        if (evolView === "mes") return { headers: ["Mes", "Total", "Facturas"], rows: ventasPorMes.map(m => [m.label, m.total, m.count]) };
+        const todosClientes = [...new Set(facturas.map(i => i.clientName).filter(Boolean))].sort();
+        const todosProductos = [...new Set(facturas.flatMap(i => (i.lines||[]).map(l => l.name).filter(Boolean)))].sort();
+        if (evolView === "cliente") {
+          const sel = todosClientes.filter(c => !evolDeselClientes.has(c));
+          return { headers: ["Cliente", "Total facturado"], rows: sel.map(c => [c, facturas.filter(i=>i.clientName===c).reduce((s,i)=>s+i.total,0)]).sort((a,b)=>b[1]-a[1]) };
+        } else {
+          const sel = todosProductos.filter(p => !evolDeselProductos.has(p));
+          return { headers: ["Producto", "Total facturado"], rows: sel.map(p => [p, facturas.reduce((s,inv)=>s+(inv.lines||[]).filter(l=>l.name===p).reduce((ss,l)=>ss+l.subtotal,0),0)]).sort((a,b)=>b[1]-a[1]) };
+        }
+      },
       render: () => {
         const todosClientes = [...new Set(facturas.map(i => i.clientName).filter(Boolean))].sort();
         const todosProductos = [...new Set(facturas.flatMap(i => (i.lines||[]).map(l => l.name).filter(Boolean)))].sort();
@@ -6114,7 +6139,13 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     valorizacion: { title: "Valorización de stock", layer: "ta", tag: "Inventario", render: () => { const aCosto=products.reduce((s,p)=>s+(p.cost||0)*p.stock,0); const aVenta=products.reduce((s,p)=>s+(p.prices?.lista_a||0)*p.stock,0); return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}><div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:6}}>VALOR A COSTO</div><div style={{fontSize:24,fontWeight:800,color:T.ink}}>{fmt(aCosto)}</div></div><div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px"}}><div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:6}}>VALOR A PRECIO LISTA A</div><div style={{fontSize:24,fontWeight:800,color:T.accent}}>{fmt(aVenta)}</div></div></div>; } },
     ranking_clientes: {
       title: "Ranking de clientes", layer: "ta", mvp: true, tag: "Clientes",
-      exportData: () => ({ headers: ["#", "Cliente", "Facturado", "% del total"], rows: rankingClientes.map(([name, total], i) => [i + 1, name, total, totalVentas > 0 ? (total / totalVentas * 100).toFixed(1) + "%" : "0%"]) }),
+      exportData: () => {
+        if (rankingDrillClient) {
+          const cf = facturas.filter(i => i.clientName === rankingDrillClient);
+          return { headers: ["Nro.", "Fecha", "Vencimiento", "Estado", "Total"], rows: cf.sort((a,b)=>b.date.localeCompare(a.date)).map(i=>[i.nroFactura||i.id, i.date, i.due, i.status, i.total]) };
+        }
+        return { headers: ["#", "Cliente", "Facturado", "% del total"], rows: rankingClientes.map(([name, total], i) => [i+1, name, total, totalVentas>0?(total/totalVentas*100).toFixed(1)+"%":"0%"]) };
+      },
       render: () => {
         const durDias = filterDesde && filterHasta ? Math.round((new Date(filterHasta) - new Date(filterDesde)) / 86400000) + 1 : 30;
         const prevEnd = filterDesde ? new Date(new Date(filterDesde).getTime() - 86400000).toISOString().slice(0,10) : diasAtras(30);
