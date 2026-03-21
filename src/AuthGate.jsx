@@ -21,16 +21,19 @@ export default function AuthGate({ children }) {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
+    console.log('[AuthGate] iniciando getSession...')
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('[AuthGate] getSession resultado:', session ? 'con sesión' : 'sin sesión')
       setSession(session)
-      if (session) loadProfile(session.user.id)
+      if (session) loadProfile(session.user.id, session.user.email)
       else setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[AuthGate] onAuthStateChange:', event)
       setSession(session)
       if (session) {
-        await loadProfile(session.user.id)
+        await loadProfile(session.user.id, session.user.email)
       } else {
         setProfile(null)
         setLoading(false)
@@ -44,28 +47,30 @@ export default function AuthGate({ children }) {
   const withTimeout = (promise, ms = 8000) =>
     Promise.race([promise, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))])
 
-  const loadProfile = async (userId) => {
+  const loadProfile = async (userId, userEmail = '') => {
+    console.log('[AuthGate] loadProfile iniciado, userId:', userId)
     setLoading(true)
     try {
-      const sessResult = await supabase.auth.getSession()
-      const userEmail = sessResult?.data?.session?.user?.email || ''
-
+      console.log('[AuthGate] consultando profiles...')
       const profResult = await withTimeout(
         supabase.from('profiles').select('*').eq('id', userId).single()
       )
+      console.log('[AuthGate] profiles resultado:', profResult)
       const prof = profResult?.data
 
       if (prof?.company_id) {
+        console.log('[AuthGate] consultando companies...')
         const coResult = await withTimeout(
           supabase.from('companies').select('name').eq('id', prof.company_id).single()
         )
+        console.log('[AuthGate] companies resultado:', coResult)
         setProfile({ ...prof, email: userEmail, company_name: coResult?.data?.name || 'Mi Empresa' })
       } else {
         setProfile({ ...(prof || { id: userId }), email: userEmail })
         setMode('setup')
       }
     } catch (e) {
-      console.error('loadProfile error:', e)
+      console.error('[AuthGate] loadProfile error:', e)
       setError('Error al cargar perfil: ' + e.message + '. Recargá la página.')
     }
     setLoading(false)
