@@ -21,9 +21,7 @@ export default function AuthGate({ children }) {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    console.log('[AuthGate] iniciando getSession...')
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('[AuthGate] getSession resultado:', session ? 'con sesión' : 'sin sesión')
       setSession(session)
       if (session) loadProfile(session.user.id, session.user.email)
       else setLoading(false)
@@ -31,13 +29,14 @@ export default function AuthGate({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('[AuthGate] onAuthStateChange:', event)
-      setSession(session)
-      if (session) {
-        await loadProfile(session.user.id, session.user.email)
-      } else {
+      if (event === 'SIGNED_OUT') {
+        setSession(null)
         setProfile(null)
         setLoading(false)
         setMode('login')
+      } else if (session) {
+        setSession(session)
+        await loadProfile(session.user.id, session.user.email)
       }
     })
 
@@ -48,23 +47,18 @@ export default function AuthGate({ children }) {
     Promise.race([promise, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))])
 
   const loadProfile = async (userId, userEmail = '') => {
-    console.log('[AuthGate] loadProfile iniciado, userId:', userId)
     setLoading(true)
     setError('')
     try {
-      console.log('[AuthGate] consultando profiles...')
       const profResult = await withTimeout(
         supabase.from('profiles').select('*').eq('id', userId).single()
       )
-      console.log('[AuthGate] profiles resultado:', profResult)
       const prof = profResult?.data
 
       if (prof?.company_id) {
-        console.log('[AuthGate] consultando companies...')
         const coResult = await withTimeout(
           supabase.from('companies').select('name').eq('id', prof.company_id).single()
         )
-        console.log('[AuthGate] companies resultado:', coResult)
         setProfile({ ...prof, email: userEmail, company_name: coResult?.data?.name || 'Mi Empresa' })
       } else {
         setProfile({ ...(prof || { id: userId }), email: userEmail })
