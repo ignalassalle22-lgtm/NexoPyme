@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import * as XLSX from 'xlsx-js-style';
 import { Workbook as ExcelWorkbook } from 'exceljs';
+import { supabase } from './lib/supabase.js';
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
 const T = {
@@ -120,6 +121,90 @@ const initPurchaseInvoices = [
 ];
 
 const initVendedores = [];
+
+// ─── DB MAPPERS (DB → App) ─────────────────────────────────────────────────
+const mapProduct = r => ({
+  id: r.id, name: r.name, sku: r.sku, stock: r.stock ?? 0,
+  minStock: r.min_stock ?? 0, unit: r.unit || '', category: r.category || '',
+  cost: r.cost ?? 0, iva: r.iva ?? 21, tracksStock: r.tracks_stock !== false,
+  prices: r.prices || {}, pricesUsd: r.prices_usd || {}, clientOverrides: r.client_overrides || [],
+});
+const mapClient = r => ({
+  id: r.id, codigo: r.codigo || '', name: r.name, cuit: r.cuit || '',
+  direccion: r.direccion || '', email: r.email || '', phone: r.phone || '',
+  priceList: r.price_list || 'lista_a', lastPurchase: r.last_purchase || '—',
+  status: r.status || 'activo', nextFollowUp: r.next_follow_up || '—',
+});
+const mapSupplier = r => ({
+  id: r.id, name: r.name, cuit: r.cuit || '', contact: r.contact || '',
+  email: r.email || '', phone: r.phone || '', paymentDays: r.payment_days ?? 30,
+  cbu: r.cbu || '', bank: r.bank || '', productCodes: r.product_codes || [],
+});
+const mapSaleInvoice = r => ({
+  id: r.id, ref: r.ref, nroFactura: r.nro_factura, type: r.type,
+  clientId: r.client_id, clientName: r.client_name, date: r.date,
+  due: r.due, total: r.total ?? 0, totalNeto: r.total_neto,
+  totalIva: r.total_iva, status: r.status, lines: r.lines || [],
+  originPresupuestoId: r.origin_presupuesto_id, originRemitoIds: r.origin_remito_ids,
+  modificaStock: r.modifica_stock, observaciones: r.observaciones,
+  moneda: r.moneda || 'ARS', vendedor: r.vendedor || '',
+});
+const mapPurchaseInvoice = r => ({
+  id: r.id, ref: r.ref, nroFactura: r.nro_factura, supplierId: r.supplier_id,
+  supplierName: r.supplier_name, date: r.date, dueDate: r.due_date,
+  total: r.total ?? 0, totalNeto: r.total_neto, totalIva: r.total_iva,
+  status: r.status, lines: r.lines || [],
+});
+const mapEmployee = r => ({
+  id: r.id, legajo: r.legajo || '', nombre: r.nombre, apellido: r.apellido,
+  cuil: r.cuil || '', puesto: r.puesto || '', sector: r.sector || '',
+  fechaIngreso: r.fecha_ingreso || '', sueldoBasico: r.sueldo_basico ?? 0,
+  cbu: r.cbu || '', banco: r.banco || '', obraSocial: r.obra_social || '',
+  email: r.email || '', estado: r.estado || 'activo',
+});
+const mapPriceList = r => ({ id: r.id, label: r.label });
+
+// ─── DB WRITERS (App → DB) ─────────────────────────────────────────────────
+const productToDb = (p, cid) => ({
+  id: p.id, company_id: cid, name: p.name, sku: p.sku, stock: p.stock,
+  min_stock: p.minStock, unit: p.unit, category: p.category, cost: p.cost,
+  iva: p.iva, tracks_stock: p.tracksStock !== false,
+  prices: p.prices, prices_usd: p.pricesUsd || {}, client_overrides: p.clientOverrides,
+});
+const clientToDb = (c, cid) => ({
+  id: c.id, company_id: cid, codigo: c.codigo, name: c.name, cuit: c.cuit,
+  direccion: c.direccion, email: c.email, phone: c.phone, price_list: c.priceList,
+  last_purchase: c.lastPurchase, status: c.status, next_follow_up: c.nextFollowUp,
+});
+const supplierToDb = (s, cid) => ({
+  id: s.id, company_id: cid, name: s.name, cuit: s.cuit, contact: s.contact,
+  email: s.email, phone: s.phone, payment_days: s.paymentDays, cbu: s.cbu,
+  bank: s.bank, product_codes: s.productCodes,
+});
+const saleInvoiceToDb = (i, cid) => ({
+  id: i.id, company_id: cid, ref: i.ref || null, nro_factura: i.nroFactura, type: i.type,
+  client_id: i.clientId, client_name: i.clientName, date: i.date, due: i.due,
+  total: i.total, total_neto: i.totalNeto, total_iva: i.totalIva, status: i.status,
+  lines: i.lines, origin_presupuesto_id: i.originPresupuestoId || null,
+  origin_remito_ids: i.originRemitoIds || null, modifica_stock: i.modificaStock,
+  observaciones: i.observaciones, moneda: i.moneda, vendedor: i.vendedor,
+});
+const purchaseInvoiceToDb = (i, cid) => ({
+  id: i.id, company_id: cid, ref: i.ref || null, nro_factura: i.nroFactura,
+  supplier_id: i.supplierId, supplier_name: i.supplierName, date: i.date,
+  due_date: i.dueDate, total: i.total, total_neto: i.totalNeto, total_iva: i.totalIva,
+  status: i.status, lines: i.lines,
+});
+const employeeToDb = (e, cid) => ({
+  id: e.id, company_id: cid, legajo: e.legajo, nombre: e.nombre,
+  apellido: e.apellido, cuil: e.cuil, puesto: e.puesto, sector: e.sector,
+  fecha_ingreso: e.fechaIngreso, sueldo_basico: e.sueldoBasico, cbu: e.cbu,
+  banco: e.banco, obra_social: e.obraSocial, email: e.email, estado: e.estado,
+});
+const priceListToDb = (l, cid) => ({ id: l.id, company_id: cid, label: l.label });
+
+// Helper: human-readable display ref for sale/purchase invoices
+const docRef = inv => inv?.ref || inv?.id || '';
 
 const initEmpleados = [
   { id: "emp1", legajo: "0001", nombre: "Juan", apellido: "García", cuil: "20-25678901-3", puesto: "Vendedor", sector: "Ventas", fechaIngreso: "2020-03-01", sueldoBasico: 350000, cbu: "0720123400000012345678", banco: "Santander", obraSocial: "OSDE", email: "juan@empresa.com", estado: "activo" },
@@ -1702,7 +1787,7 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
               const venceProx = inv.due && inv.due <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
               return (
                 <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: venceProx ? `${T.yellow}08` : "transparent" }}>
-                  <td style={{ padding: "11px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{inv.id}</td>
+                  <td style={{ padding: "11px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{docRef(inv)}</td>
                   <td style={{ padding: "11px 14px", fontSize: 13, fontWeight: 600 }}>{inv.clientName}</td>
                   <td style={{ padding: "11px 14px", fontSize: 12, color: T.muted, fontFamily: "monospace" }}>{cli?.cuit || "—"}</td>
                   <td style={{ padding: "11px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
@@ -1761,7 +1846,7 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
               const venceProx = inv.dueDate && inv.dueDate <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
               return (
                 <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: venceProx ? `${T.orange}08` : "transparent" }}>
-                  <td style={{ padding: "11px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{inv.id}</td>
+                  <td style={{ padding: "11px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{docRef(inv)}</td>
                   <td style={{ padding: "11px 14px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{inv.nroFactura || "—"}</td>
                   <td style={{ padding: "11px 14px", fontSize: 13, fontWeight: 600 }}>{inv.supplierName}</td>
                   <td style={{ padding: "11px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
@@ -2025,7 +2110,7 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
 }
 
 // ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
-function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
+function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
   const [tab, setTab] = useState("docs");
   const [filterType, setFilterType] = useState("all");
   const [searchDocNum, setSearchDocNum] = useState("");
@@ -2183,7 +2268,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
 
   const filtered = saleInvoices.filter(i => {
     if (filterType !== "all" && i.type !== filterType) return false;
-    if (searchDocNum && !i.id?.toLowerCase().includes(searchDocNum.toLowerCase())) return false;
+    if (searchDocNum && !i.id?.toLowerCase().includes(searchDocNum.toLowerCase()) && !i.ref?.toLowerCase().includes(searchDocNum.toLowerCase())) return false;
     if (searchDocClient && !i.clientName?.toLowerCase().includes(searchDocClient.toLowerCase())) return false;
     if (searchDocDateFrom && i.date < searchDocDateFrom) return false;
     if (searchDocDateTo && i.date > searchDocDateTo) return false;
@@ -2196,8 +2281,8 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     return true;
   });
 
-  const markCobrada = (id) => setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "cobrada" } : i));
-  const unmarkCobrada = (id) => setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i));
+  const markCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "cobrada" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'cobrada' }).eq('id', id).catch(console.error); };
+  const unmarkCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'pendiente' }).eq('id', id).catch(console.error); };
 
   // ── Cobranzas ────────────────────────────────────────────────────────────
   const [selectedReclamos, setSelectedReclamos] = useState([]); // ids de facturas tildadas
@@ -2312,7 +2397,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
 
   const descargarHTMLFactura = (inv) => {
     const client = clients.find(c => c.id === inv.clientId);
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Factura ${inv.id}</title>
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Factura ${docRef(inv)}</title>
     <style>body{font-family:Arial,sans-serif;padding:32px;color:#222;max-width:800px;margin:0 auto}
     h1{font-size:22px;margin-bottom:4px}table{width:100%;border-collapse:collapse;margin:16px 0}
     th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:12px}
@@ -2321,7 +2406,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     .badge{display:inline-block;background:#fff3cd;color:#856404;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700}
     @media print{body{padding:0}}</style></head>
     <body>
-    <h1>FACTURA — ${inv.id}</h1>
+    <h1>FACTURA — ${docRef(inv)}</h1>
     <p style="color:#666;margin:0">Fecha: ${inv.date} · Vence: ${inv.due} · <span class="badge">PENDIENTE DE PAGO</span></p>
     <hr style="margin:16px 0;border:none;border-top:2px solid #eee"/>
     <p><strong>Cliente:</strong> ${client?.name || inv.clientName}${client?.cuit ? " · CUIT: " + client.cuit : ""}</p>
@@ -2334,7 +2419,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "Factura_" + inv.id + ".html";
+    a.download = "Factura_" + docRef(inv) + ".html";
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -2343,7 +2428,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     const client = clients.find(c => c.id === inv.clientId);
     const win = window.open("", "_blank");
     if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Factura ${inv.id}</title>
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Factura ${docRef(inv)}</title>
     <style>body{font-family:Arial,sans-serif;padding:32px;color:#222;max-width:800px;margin:0 auto}
     h1{font-size:22px;margin-bottom:4px}table{width:100%;border-collapse:collapse;margin:16px 0}
     th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:12px}
@@ -2351,7 +2436,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     .total{font-size:18px;font-weight:700;text-align:right;padding:12px 0}
     .badge{display:inline-block;background:#fff3cd;color:#856404;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700}</style></head>
     <body>
-    <h1>FACTURA — ${inv.id}</h1>
+    <h1>FACTURA — ${docRef(inv)}</h1>
     <p style="color:#666;margin:0">Fecha: ${inv.date} · Vence: ${inv.due} · <span class="badge">PENDIENTE DE PAGO</span></p>
     <hr style="margin:16px 0;border:none;border-top:2px solid #eee"/>
     <p><strong>Cliente:</strong> ${client?.name || inv.clientName}${client?.cuit ? " · CUIT: " + client.cuit : ""}</p>
@@ -2617,7 +2702,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
               <thead><tr style={{ background: T.surface }}>{["Número", "Tipo", "Cliente", "Fecha", "Vence", "Total", "Estado", ""].map(h => <th key={h} style={{ padding: "11px 15px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}</tr></thead>
               <tbody>{filtered.map(inv => (
                 <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                  <td style={{ padding: "12px 15px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{inv.id}</td>
+                  <td style={{ padding: "12px 15px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{docRef(inv)}</td>
                   <td style={{ padding: "12px 15px" }}><Badge status={inv.type} /></td>
                   <td style={{ padding: "12px 15px", fontSize: 13, fontWeight: 600 }}>{inv.clientName}</td>
                   <td style={{ padding: "12px 15px", fontSize: 12, color: T.muted }}>{inv.date}</td>
@@ -2690,7 +2775,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <Btn v="ghost" sm onClick={() => setNewClient(false)}>Cancelar</Btn>
-                <Btn sm disabled={!ncForm.codigo || !ncForm.name} onClick={() => { setClients([...clients, { ...ncForm, id: `c${Date.now()}`, priceList: "lista_a", lastPurchase: "—", status: "activo", nextFollowUp: "—" }]); setNewClient(false); setNcForm({ codigo: "", name: "", cuit: "", direccion: "", email: "", phone: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" }); }}>Guardar cliente</Btn>
+                <Btn sm disabled={!ncForm.codigo || !ncForm.name} onClick={() => { const nc = { ...ncForm, id: crypto.randomUUID(), priceList: "lista_a", lastPurchase: "—", status: "activo", nextFollowUp: "—" }; setClients([...clients, nc]); if (companyId) supabase.from('clients').insert(clientToDb(nc, companyId)).catch(console.error); setNewClient(false); setNcForm({ codigo: "", name: "", cuit: "", direccion: "", email: "", phone: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" }); }}>Guardar cliente</Btn>
               </div>
             </div>
           )}
@@ -2828,7 +2913,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                                 {isSelected && <span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>✓</span>}
                               </div>
                             </td>
-                            <td style={{ padding: "12px 12px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.red }}>{inv.id}</td>
+                            <td style={{ padding: "12px 12px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.red }}>{docRef(inv)}</td>
                             <td style={{ padding: "12px 12px", fontSize: 12, color: T.muted }}>{inv.date}</td>
                             <td style={{ padding: "12px 12px", fontSize: 12, fontWeight: 700, color: T.red }}>{inv.due}</td>
                             <td style={{ padding: "12px 12px" }}>
@@ -2849,7 +2934,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                                   🖨 PDF
                                 </button>
                                 {mailUrl && (
-                                  <button onClick={() => { descargarHTMLFactura(inv); window.open(mailUrl, "_blank"); setReclamoSent(p => ({ ...p, [inv.id]: true })); setReclaimMsg("PDF de " + inv.id + " descargado · Adjuntalo manualmente al correo antes de enviarlo."); }}
+                                  <button onClick={() => { descargarHTMLFactura(inv); window.open(mailUrl, "_blank"); setReclamoSent(p => ({ ...p, [inv.id]: true })); setReclaimMsg("PDF de " + docRef(inv) + " descargado · Adjuntalo manualmente al correo antes de enviarlo."); }}
                                     style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.red}40`, background: T.redLight, color: T.red, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                                     ✉ Reclamar
                                   </button>
@@ -3372,7 +3457,7 @@ function ComercialModule({ clients, saleInvoices }) {
 }
 
 // ─── PRICE LISTS TAB ──────────────────────────────────────────────────────────
-function PriceListsTab({ products, setProducts, priceLists, setPriceLists }) {
+function PriceListsTab({ products, setProducts, priceLists, setPriceLists, companyId }) {
   const [selectedList, setSelectedList] = useState(priceLists[0]?.id || "");
   const [showNewList, setShowNewList] = useState(false);
   const [newListLabel, setNewListLabel] = useState("");
@@ -3404,7 +3489,9 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists }) {
     if (!newListLabel.trim()) return;
     const id = "lista_" + newListLabel.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
     if (priceLists.find(l => l.id === id)) return;
-    setPriceLists(prev => [...prev, { id, label: newListLabel.trim() }]);
+    const nl = { id, label: newListLabel.trim() };
+    setPriceLists(prev => [...prev, nl]);
+    if (companyId) supabase.from('price_lists').insert(priceListToDb(nl, companyId)).catch(console.error);
     setSelectedList(id);
     setNewListLabel(""); setShowNewList(false);
   };
@@ -3412,6 +3499,7 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists }) {
   const renameList = () => {
     if (!editingListLabel.trim() || !editingListId) return;
     setPriceLists(prev => prev.map(l => l.id === editingListId ? { ...l, label: editingListLabel.trim() } : l));
+    if (companyId) supabase.from('price_lists').update({ label: editingListLabel.trim() }).eq('id', editingListId).eq('company_id', companyId).catch(console.error);
     setEditingListId(null);
     setEditingListLabel("");
   };
@@ -3419,12 +3507,19 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists }) {
   const savePrice = (productId, ars, usd) => {
     const arsVal = parseFloat(ars) || 0;
     const usdVal = parseFloat(usd) || 0;
-    setProducts(prev => prev.map(p => p.id !== productId ? p : {
-      ...p,
-      prices: { ...p.prices, [selectedList]: arsVal },
-      pricesUsd: { ...(p.pricesUsd || {}), [selectedList]: usdVal },
-      priceUpdatedAt: { ...(p.priceUpdatedAt || {}), [selectedList]: today }
-    }));
+    setProducts(prev => {
+      const next = prev.map(p => p.id !== productId ? p : {
+        ...p,
+        prices: { ...p.prices, [selectedList]: arsVal },
+        pricesUsd: { ...(p.pricesUsd || {}), [selectedList]: usdVal },
+        priceUpdatedAt: { ...(p.priceUpdatedAt || {}), [selectedList]: today }
+      });
+      if (companyId) {
+        const updated = next.find(p => p.id === productId);
+        if (updated) supabase.from('products').update({ prices: updated.prices, prices_usd: updated.pricesUsd }).eq('id', productId).catch(console.error);
+      }
+      return next;
+    });
     setEditingPrice(null);
   };
 
@@ -3699,7 +3794,7 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists }) {
 }
 
 // ─── MODULE: COMPRAS ──────────────────────────────────────────────────────────
-function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, onNewPurchase }) {
+function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase }) {
   const [tab, setTab] = useState("invoices");
   const [showSupForm, setShowSupForm] = useState(false);
   const [supForm, setSupForm] = useState({ name: "", cuit: "", contact: "", email: "", phone: "", paymentDays: 30, bank: "", cbu: "", direccion: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" });
@@ -3772,8 +3867,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
   const confirmarImportacion = () => {
     if (!iaPdfResult) return;
     const r = iaPdfResult;
-    const internalId = "OC-" + String(Date.now()).slice(-6);
-    const lines = (r.items || []).map((it, i) => ({
+    const lines = (r.items || []).map((it) => ({
       productId: null, supplierCode: it.codigo, name: it.descripcion,
       sku: it.codigo, qty: it.cantidad, unitPrice: it.precioUnitario,
       neto: it.importe, ivaImporte: 0, subtotal: it.importe, iva: 0
@@ -3782,16 +3876,19 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     let supplierId = existingSup?.id || null;
     let supplierName = r.proveedor;
     if (!existingSup && r.proveedor) {
-      const newSup = { id: "s" + Date.now(), name: r.proveedor, cuit: r.cuitProveedor || "", contact: "", email: "", phone: "", paymentDays: 0, bank: "", cbu: "", productCodes: [] };
+      const newSup = { id: crypto.randomUUID(), name: r.proveedor, cuit: r.cuitProveedor || "", contact: "", email: "", phone: "", paymentDays: 0, bank: "", cbu: "", productCodes: [] };
       setSuppliers(prev => [...prev, newSup]);
+      if (companyId) supabase.from('suppliers').insert(supplierToDb(newSup, companyId)).catch(console.error);
       supplierId = newSup.id;
     }
-    setPurchaseInvoices(prev => [{
-      id: internalId, nroFactura: r.nroFactura, supplierId, supplierName,
+    const newPI = {
+      id: crypto.randomUUID(), ref: "OC-" + String(Date.now()).slice(-6), nroFactura: r.nroFactura, supplierId, supplierName,
       date: r.fecha || today, dueDate: r.vencimiento || today,
       total: r.total, totalNeto: r.subtotal, totalIva: r.iva21,
       status: "pendiente", lines, condicionPago: r.condicionPago, vendedor: r.vendedor
-    }, ...prev]);
+    };
+    setPurchaseInvoices(prev => [newPI, ...prev]);
+    if (companyId) supabase.from('purchase_invoices').insert(purchaseInvoiceToDb(newPI, companyId)).catch(console.error);
     setShowIAImport(false); setIaPdfFile(null); setIaPdfResult(null);
   };
 
@@ -3811,8 +3908,8 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     return true;
   });
 
-  const markPagada = (id) => setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pagada" } : i));
-  const unmarkPagada = (id) => setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i));
+  const markPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pagada" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada' }).eq('id', id).catch(console.error); };
+  const unmarkPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pendiente' }).eq('id', id).catch(console.error); };
 
   return (
     <div>
@@ -3876,7 +3973,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
               <tbody>{filteredInvoices.map(inv => (
                 <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "12px 15px" }}>
-                    <div style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{inv.id}</div>
+                    <div style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{docRef(inv)}</div>
                     {inv.nroFactura && <div style={{ fontFamily: "monospace", fontSize: 11, color: T.muted, marginTop: 2 }}>{inv.nroFactura}</div>}
                   </td>
                   <td style={{ padding: "12px 15px", fontSize: 13, fontWeight: 600 }}>{inv.supplierName}</td>
@@ -3921,7 +4018,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <Btn v="ghost" sm onClick={() => setShowSupForm(false)}>Cancelar</Btn>
-                <Btn sm onClick={() => { setSuppliers([...suppliers, { ...supForm, id: `s${Date.now()}`, productCodes: [] }]); setShowSupForm(false); setSupForm({ name: "", cuit: "", contact: "", email: "", phone: "", paymentDays: 30, bank: "", cbu: "", direccion: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" }); }}>Guardar</Btn>
+                <Btn sm onClick={() => { const ns = { ...supForm, id: crypto.randomUUID(), productCodes: [] }; setSuppliers([...suppliers, ns]); if (companyId) supabase.from('suppliers').insert(supplierToDb(ns, companyId)).catch(console.error); setShowSupForm(false); setSupForm({ name: "", cuit: "", contact: "", email: "", phone: "", paymentDays: 30, bank: "", cbu: "", direccion: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" }); }}>Guardar</Btn>
               </div>
             </div>
           )}
@@ -3942,7 +4039,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
       )}
 
       {tab === "prices" && (
-        <PriceListsTab products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} />
+        <PriceListsTab products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} />
       )}
 
       {/* Modal IA PDF Import */}
@@ -4056,7 +4153,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
 // ─── MODULE: INVENTARIO ───────────────────────────────────────────────────────
 const EMPTY_FORM = { name: "", sku: "", category: "", unit: "unidad", minStock: 10, cost: 0, iva: 21, tracksStock: true, prices: { lista_a: 0, lista_b: 0, lista_c: 0 }, clientCodes: [] };
 
-function InventarioModule({ products, setProducts, clients, suppliers, priceLists }) {
+function InventarioModule({ products, setProducts, clients, suppliers, priceLists, companyId }) {
   const [showForm, setShowForm] = useState(false);
   const [adjustProd, setAdjustProd] = useState(null);
   const [adjustQty, setAdjustQty] = useState(0);
@@ -4078,9 +4175,9 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
 
   const doAdjust = () => {
     const qty = parseInt(adjustQty) || 0;
-    setProducts(products.map(p => p.id === adjustProd.id
-      ? { ...p, stock: Math.max(0, adjustType === "add" ? p.stock + qty : p.stock - qty) }
-      : p));
+    const newStock = Math.max(0, adjustType === "add" ? adjustProd.stock + qty : adjustProd.stock - qty);
+    setProducts(products.map(p => p.id === adjustProd.id ? { ...p, stock: newStock } : p));
+    if (companyId) supabase.from('products').update({ stock: newStock }).eq('id', adjustProd.id).catch(console.error);
     setAdjustProd(null); setAdjustQty(0); setAdjustNote("");
   };
 
@@ -4096,7 +4193,9 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
   const addProduct = () => {
     // clientCodes → stored as clientOverrides for compatibility with existing getClientPrice/getClientCode helpers
     const overrides = form.clientCodes.map(r => ({ clientId: r.clientId, customCode: r.customCode, skuRef: form.sku }));
-    setProducts([...products, { ...form, id: `p${Date.now()}`, stock: 0, clientOverrides: overrides }]);
+    const np = { ...form, id: crypto.randomUUID(), stock: 0, clientOverrides: overrides };
+    setProducts([...products, np]);
+    if (companyId) supabase.from('products').insert(productToDb(np, companyId)).catch(console.error);
     setShowForm(false);
     setForm(EMPTY_FORM);
     setCcClient(""); setCcCode("");
@@ -4140,7 +4239,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
           updated++;
         } else {
           next.push({
-            id: "p" + Date.now() + "_" + next.length,
+            id: crypto.randomUUID(),
             sku, name, category, unit, iva, tracksStock,
             stock: stockInit, minStock, cost,
             prices: { lista_a: priceArs, lista_b: 0, lista_c: 0 },
@@ -4166,6 +4265,8 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
         if (ovIdx >= 0) overrides[ovIdx] = newOv; else overrides.push(newOv);
         next[prodIdx] = { ...next[prodIdx], clientOverrides: overrides };
       });
+      // Sync to DB
+      if (companyId) next.forEach(p => supabase.from('products').upsert(productToDb(p, companyId)).catch(console.error));
       return next;
     });
     const parts = [];
@@ -4329,6 +4430,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
             <Btn v="ghost" onClick={() => setEditingProduct(null)}>Cancelar</Btn>
             <Btn disabled={!editingProduct.name || !editingProduct.sku} onClick={() => {
               setProducts(prev => prev.map(p => p.id === editingProduct.id ? editingProduct : p));
+              if (companyId) supabase.from('products').upsert(productToDb(editingProduct, companyId)).catch(console.error);
               setEditingProduct(null);
             }}>Guardar cambios</Btn>
           </div>
@@ -4770,8 +4872,8 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
   };
 
   const pdfOperativos = () => {
-    const cobroRows = filteredCobros.map(inv => { const cli = clients.find(c => c.id === inv.clientId); return `<tr><td>${inv.id}</td><td>${inv.clientName}</td><td>${cli?.cuit || "—"}</td><td>${inv.date}</td><td>${inv.due || "—"}</td><td>${fmt(inv.total)}</td></tr>`; }).join("");
-    const pagoRows = filteredPagos.map(inv => `<tr><td>${inv.id}</td><td>${inv.nroFactura || "—"}</td><td>${inv.supplierName}</td><td>${inv.date}</td><td>${inv.dueDate || "—"}</td><td>${fmt(inv.total)}</td></tr>`).join("");
+    const cobroRows = filteredCobros.map(inv => { const cli = clients.find(c => c.id === inv.clientId); return `<tr><td>${docRef(inv)}</td><td>${inv.clientName}</td><td>${cli?.cuit || "—"}</td><td>${inv.date}</td><td>${inv.due || "—"}</td><td>${fmt(inv.total)}</td></tr>`; }).join("");
+    const pagoRows = filteredPagos.map(inv => `<tr><td>${docRef(inv)}</td><td>${inv.nroFactura || "—"}</td><td>${inv.supplierName}</td><td>${inv.date}</td><td>${inv.dueDate || "—"}</td><td>${fmt(inv.total)}</td></tr>`).join("");
     const stockRows = stockCritico.map(p => `<tr><td>${p.sku}</td><td>${p.name}</td><td>${p.category}</td><td>${p.stock}</td><td>${p.minStock}</td><td style="color:red;font-weight:700">−${p.minStock - p.stock}</td></tr>`).join("");
     openPDF("Reportes Operativos", `
       <h2>Cobros Pendientes</h2><table><thead><tr><th>Factura</th><th>Cliente</th><th>CUIT</th><th>Fecha</th><th>Vence</th><th>Total</th></tr></thead><tbody>${cobroRows || "<tr><td colspan='6'>Sin datos</td></tr>"}</tbody><tfoot><tr class="tot"><td colspan="5">Total</td><td>${fmt(filteredCobros.reduce((s,i)=>s+i.total,0))}</td></tr></tfoot></table>
@@ -4811,11 +4913,11 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Cobros pendientes", period,
       ["Factura","Cliente","CUIT","Fecha","Vence","Total"],
-      filteredCobros.map(inv => { const cli = clients.find(c => c.id === inv.clientId); return [inv.id, inv.clientName, cli?.cuit||"", inv.date, inv.due||"", inv.total]; })
+      filteredCobros.map(inv => { const cli = clients.find(c => c.id === inv.clientId); return [docRef(inv), inv.clientName, cli?.cuit||"", inv.date, inv.due||"", inv.total]; })
     ), "Cobros pendientes");
     XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Pagos pendientes", period,
       ["OC","N° Fact. Prov.","Proveedor","Fecha","Vence","Total"],
-      filteredPagos.map(inv => [inv.id, inv.nroFactura||"", inv.supplierName, inv.date, inv.dueDate||"", inv.total])
+      filteredPagos.map(inv => [docRef(inv), inv.nroFactura||"", inv.supplierName, inv.date, inv.dueDate||"", inv.total])
     ), "Pagos pendientes");
     XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Stock crítico", period,
       ["SKU","Producto","Categoría","Stock actual","Stock mínimo","Faltante"],
@@ -4829,7 +4931,7 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Ventas del período", period,
       ["N° Factura","Cliente","Fecha","Total c/IVA"],
-      salesInRange.map(i => [i.id, i.clientName, i.date, i.total])
+      salesInRange.map(i => [docRef(i), i.clientName, i.date, i.total])
     ), "Ventas");
     XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Ranking de clientes", period,
       ["#","Cliente","Total vendido"],
@@ -4841,7 +4943,7 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
     ), "Ranking productos");
     XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Compras del período", period,
       ["N° OC","N° Fact. Prov.","Proveedor","Fecha","Total"],
-      purchasesInRange.map(i => [i.id, i.nroFactura||"", i.supplierName, i.date, i.total])
+      purchasesInRange.map(i => [docRef(i), i.nroFactura||"", i.supplierName, i.date, i.total])
     ), "Compras");
     XLSX.writeFile(wb, `NexoPyME_tacticos_${from}_${to}.xlsx`);
   };
@@ -4955,7 +5057,7 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
                 {filteredCobros.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: T.muted }}>Sin cobros pendientes.</td></tr>}
                 {filteredCobros.map(inv => { const cli = clients.find(c => c.id === inv.clientId); const prox = inv.due && inv.due <= nearDate; return (
                   <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: prox ? `${T.yellow}08` : "transparent" }}>
-                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{inv.id}</td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{docRef(inv)}</td>
                     <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.clientName}</td>
                     <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted, fontFamily: "monospace" }}>{cli?.cuit || "—"}</td>
                     <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
@@ -4991,7 +5093,7 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
                 {filteredPagos.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: T.muted }}>Sin pagos pendientes.</td></tr>}
                 {filteredPagos.map(inv => { const prox = inv.dueDate && inv.dueDate <= nearDate; return (
                   <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}`, background: prox ? `${T.orange}08` : "transparent" }}>
-                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{inv.id}</td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{docRef(inv)}</td>
                     <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{inv.nroFactura || "—"}</td>
                     <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.supplierName}</td>
                     <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
@@ -5104,7 +5206,7 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
                 {salesInRange.length === 0 && <tr><td colSpan={4} style={{ padding: 24, textAlign: "center", color: T.muted }}>Sin facturas en el período.</td></tr>}
                 {salesInRange.map(inv => (
                   <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{inv.id}</td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.blue }}>{docRef(inv)}</td>
                     <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.clientName}</td>
                     <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
                     <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: T.accent }}>{fmt(inv.total)}</td>
@@ -5133,7 +5235,7 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
                 {purchasesInRange.length === 0 && <tr><td colSpan={5} style={{ padding: 24, textAlign: "center", color: T.muted }}>Sin compras en el período.</td></tr>}
                 {purchasesInRange.map(inv => (
                   <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{inv.id}</td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{docRef(inv)}</td>
                     <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, color: T.muted }}>{inv.nroFactura || "—"}</td>
                     <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{inv.supplierName}</td>
                     <td style={{ padding: "10px 14px", fontSize: 12, color: T.muted }}>{inv.date}</td>
@@ -6761,7 +6863,7 @@ function calcSueldo(emp) {
   return { bruto, adicionalAntiguedad, jubilacion, inssjp, obraSocial, totalRetenciones, neto };
 }
 
-function RRHHModule({ empleados, setEmpleados }) {
+function RRHHModule({ empleados, setEmpleados, companyId }) {
   const [tab, setTab] = useState("empleados");
   const [showEmpForm, setShowEmpForm] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
@@ -6783,11 +6885,17 @@ function RRHHModule({ empleados, setEmpleados }) {
   const openEditEmp = (emp) => { setEmpForm({ ...emp, sueldoBasico: String(emp.sueldoBasico) }); setEditingEmp(emp.id); setShowEmpForm(true); };
   const saveEmp = () => {
     const data = { ...empForm, sueldoBasico: Number(empForm.sueldoBasico) || 0 };
-    if (editingEmp) { setEmpleados(prev => prev.map(e => e.id === editingEmp ? { ...e, ...data } : e)); }
-    else { setEmpleados(prev => [...prev, { ...data, id: "emp" + Date.now() }]); }
+    if (editingEmp) {
+      setEmpleados(prev => prev.map(e => e.id === editingEmp ? { ...e, ...data } : e));
+      if (companyId) { const upd = { ...empleados.find(e => e.id === editingEmp), ...data }; supabase.from('employees').upsert(employeeToDb(upd, companyId)).catch(console.error); }
+    } else {
+      const ne = { ...data, id: crypto.randomUUID() };
+      setEmpleados(prev => [...prev, ne]);
+      if (companyId) supabase.from('employees').insert(employeeToDb(ne, companyId)).catch(console.error);
+    }
     setShowEmpForm(false);
   };
-  const deleteEmp = (id) => { if (window.confirm("¿Eliminar empleado?")) setEmpleados(prev => prev.filter(e => e.id !== id)); };
+  const deleteEmp = (id) => { if (window.confirm("¿Eliminar empleado?")) { setEmpleados(prev => prev.filter(e => e.id !== id)); if (companyId) supabase.from('employees').delete().eq('id', id).catch(console.error); } };
 
   const toggleAsist = (empId, dia, codigo) => {
     const key = `${empId}-${asistMes}-${String(dia).padStart(2, "0")}`;
@@ -7175,17 +7283,17 @@ const NAV = [
   { id: "rrhh",       label: "RRHH",       icon: "👥" },
 ];
 
-export default function App() {
+export default function App({ session, profile, onLogout }) {
   const [module, setModule] = useState("hub");
-  const [products, setProducts] = useState(initProducts);
-  const [clients, setClients] = useState(initClients);
-  const [suppliers, setSuppliers] = useState(initSuppliers);
+  const [products, setProducts] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [priceLists, setPriceLists] = useState(initPriceLists);
   const [vendedores, setVendedores] = useState(initVendedores);
-  const [empleados, setEmpleados] = useState(initEmpleados);
+  const [empleados, setEmpleados] = useState([]);
   const [tipoCambio, setTipoCambio] = useState(1200); // ARS por USD
-  const [saleInvoices, setSaleInvoices] = useState(initSaleInvoices);
-  const [purchaseInvoices, setPurchaseInvoices] = useState(initPurchaseInvoices);
+  const [saleInvoices, setSaleInvoices] = useState([]);
+  const [purchaseInvoices, setPurchaseInvoices] = useState([]);
   const [showDocBuilder, setShowDocBuilder] = useState(false);
   const [docBuilderType, setDocBuilderType] = useState("factura");
   const [preloadDoc, setPreloadDoc] = useState(null);
@@ -7193,8 +7301,55 @@ export default function App() {
   const openDoc = (type, preload) => { setDocBuilderType(type); setPreloadDoc(preload || null); setShowDocBuilder(true); };
   const [showPurchaseBuilder, setShowPurchaseBuilder] = useState(false);
   const [idCounter, setIdCounter] = useState(5);
+  const [dbLoading, setDbLoading] = useState(true);
+
+  const companyId = profile?.company_id;
+  const companyDisplayName = profile?.company_name || 'Mi Empresa';
 
   const nextId = (prefix) => { const n = idCounter + 1; setIdCounter(n); return `${prefix}-${String(n).padStart(4, "0")}`; };
+
+  // ── Cargar datos desde Supabase al login ────────────────────────────────
+  useEffect(() => {
+    if (!companyId) { setDbLoading(false); return; }
+    const load = async () => {
+      setDbLoading(true);
+      try {
+        const [
+          { data: prods }, { data: cls }, { data: sups },
+          { data: sinvs }, { data: pinvs }, { data: emps }, { data: pls }
+        ] = await Promise.all([
+          supabase.from('products').select('*').eq('company_id', companyId).order('name'),
+          supabase.from('clients').select('*').eq('company_id', companyId).order('name'),
+          supabase.from('suppliers').select('*').eq('company_id', companyId).order('name'),
+          supabase.from('sale_invoices').select('*').eq('company_id', companyId).order('date', { ascending: false }),
+          supabase.from('purchase_invoices').select('*').eq('company_id', companyId).order('date', { ascending: false }),
+          supabase.from('employees').select('*').eq('company_id', companyId).order('apellido'),
+          supabase.from('price_lists').select('*').eq('company_id', companyId).order('label'),
+        ]);
+        if (prods) setProducts(prods.map(mapProduct));
+        if (cls) setClients(cls.map(mapClient));
+        if (sups) setSuppliers(sups.map(mapSupplier));
+        if (sinvs) setSaleInvoices(sinvs.map(mapSaleInvoice));
+        if (pinvs) setPurchaseInvoices(pinvs.map(mapPurchaseInvoice));
+        if (emps) setEmpleados(emps.map(mapEmployee));
+        if (pls?.length) {
+          setPriceLists(pls.map(mapPriceList));
+        } else {
+          // Initialize default price lists for new company
+          await Promise.all(initPriceLists.map(pl =>
+            supabase.from('price_lists').insert(priceListToDb(pl, companyId)).catch(() => {})
+          ));
+          setPriceLists(initPriceLists);
+        }
+        // Set idCounter to max existing ref number to avoid collisions
+        const allRefs = [...(sinvs || []), ...(pinvs || [])].map(r => parseInt((r.ref || '').split('-')[1] || '0') || 0);
+        const maxRef = allRefs.length ? Math.max(...allRefs) : 0;
+        if (maxRef > 0) setIdCounter(maxRef);
+      } catch (e) { console.error('Error cargando datos:', e); }
+      setDbLoading(false);
+    };
+    load();
+  }, [companyId]);
 
   const handleQuickAction = (action) => {
     if (action === "new_pago") { setModule("compras"); return; }
@@ -7209,48 +7364,84 @@ export default function App() {
     if (editingId) {
       // Editing existing doc: revert old stock, apply new stock
       if (debeDescontarStock && oldLines) {
-        setProducts(prev => prev.map(p => {
-          const oldL = oldLines.find(l => l.productId === p.id);
-          const newL = lines.find(l => l.productId === p.id);
-          let stock = p.stock;
-          if (oldL) stock += oldL.qty; // revert old
-          if (newL) stock -= newL.qty; // apply new
-          return oldL || newL ? { ...p, stock } : p;
-        }));
+        setProducts(prev => {
+          const next = prev.map(p => {
+            const oldL = oldLines.find(l => l.productId === p.id);
+            const newL = lines.find(l => l.productId === p.id);
+            let stock = p.stock;
+            if (oldL) stock += oldL.qty;
+            if (newL) stock -= newL.qty;
+            return oldL || newL ? { ...p, stock } : p;
+          });
+          if (companyId) next.filter(p => oldLines.find(l=>l.productId===p.id)||lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).catch(console.error));
+          return next;
+        });
       }
-      setSaleInvoices(prev => prev.map(i => i.id === editingId ? { ...i, clientId, clientName, total, totalNeto, totalIva, lines, observaciones, moneda, modificaStock, vendedor } : i));
+      setSaleInvoices(prev => {
+        const updated = { clientId, clientName, total, totalNeto, totalIva, lines, observaciones, moneda, modificaStock, vendedor };
+        if (companyId) {
+          const inv = prev.find(i => i.id === editingId);
+          if (inv) supabase.from('sale_invoices').update(Object.fromEntries(Object.entries(saleInvoiceToDb({ ...inv, ...updated }, companyId)).filter(([k]) => k !== 'id' && k !== 'company_id'))).eq('id', editingId).catch(console.error);
+        }
+        return prev.map(i => i.id === editingId ? { ...i, ...updated } : i);
+      });
       setShowDocBuilder(false);
       return;
     }
 
     // New doc
     const prefix = { factura: "FAC", presupuesto: "PRE", remito: "REM" }[docType];
-    const id = nextId(prefix);
+    const ref = nextId(prefix);
+    const id = crypto.randomUUID();
     if (debeDescontarStock) {
-      setProducts(prev => prev.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock - l.qty } : p; }));
+      setProducts(prev => {
+        const next = prev.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock - l.qty } : p; });
+        if (companyId) next.filter(p => lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).catch(console.error));
+        return next;
+      });
     }
     if (originPresupuestoId) {
       setSaleInvoices(prev => prev.map(i => i.id === originPresupuestoId ? { ...i, status: "convertido" } : i));
+      if (companyId) supabase.from('sale_invoices').update({ status: 'convertido' }).eq('id', originPresupuestoId).catch(console.error);
     }
     if (originRemitoIds?.length > 0) {
       setSaleInvoices(prev => prev.map(i => originRemitoIds.includes(i.id) ? { ...i, status: "facturado" } : i));
+      if (companyId) supabase.from('sale_invoices').update({ status: 'facturado' }).in('id', originRemitoIds).catch(console.error);
     }
     const due = new Date(today); due.setDate(due.getDate() + 15);
-    setSaleInvoices(prev => [{ id, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock, observaciones, moneda, vendedor }, ...prev]);
+    const newInv = { id, ref, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock, observaciones, moneda, vendedor };
+    setSaleInvoices(prev => [newInv, ...prev]);
+    if (companyId) supabase.from('sale_invoices').insert(saleInvoiceToDb(newInv, companyId)).catch(console.error);
     setShowDocBuilder(false);
     if (imprimirPDF && generarPDF) generarPDF(id);
   };
 
   const handleSavePurchase = ({ lines, total, totalNeto, totalIva, supplierId, supplierName, payStatus, nroFactura }) => {
-    setProducts(products.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock + l.qty } : p; }));
+    setProducts(prev => {
+      const next = prev.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock + l.qty } : p; });
+      if (companyId) next.filter(p => lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).catch(console.error));
+      return next;
+    });
     const due = new Date(today); const sup = suppliers.find(s => s.id === supplierId); due.setDate(due.getDate() + (sup?.paymentDays || 0));
-    const internalId = nextId("OC");
-    setPurchaseInvoices([{ id: internalId, nroFactura: nroFactura || null, supplierId, supplierName, date: today, dueDate: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: payStatus, lines }, ...purchaseInvoices]);
+    const ref = nextId("OC");
+    const id = crypto.randomUUID();
+    const newPI = { id, ref, nroFactura: nroFactura || null, supplierId, supplierName, date: today, dueDate: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: payStatus, lines };
+    setPurchaseInvoices(prev => [newPI, ...prev]);
+    if (companyId) supabase.from('purchase_invoices').insert(purchaseInvoiceToDb(newPI, companyId)).catch(console.error);
     setShowPurchaseBuilder(false);
   };
 
   const criticalCount = products.filter(p => p.stock < p.minStock).length;
   const pendienteCobrar = saleInvoices.filter(i => i.status === "pendiente" && i.type === "factura").reduce((s, i) => s + i.total, 0);
+
+  if (dbLoading && companyId) return (
+    <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: T.bg, color: T.ink, fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 12 }}><span style={{ color: T.accent }}>Nexo</span>PyME</div>
+        <div style={{ color: T.muted, fontSize: 14 }}>Cargando datos de tu empresa…</div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ display: "flex", height: "100vh", background: T.bg, fontFamily: "'DM Sans', 'Segoe UI', sans-serif", color: T.ink }}>
@@ -7281,21 +7472,26 @@ export default function App() {
         </nav>
         <div style={{ padding: "12px", background: T.surface, borderRadius: 10, border: `1px solid ${T.border}` }}>
           <div style={{ fontSize: 10, color: T.muted, marginBottom: 3 }}>EMPRESA</div>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>Distribuidora SA</div>
-          <div style={{ fontSize: 11, color: T.accent }}>Plan Pro</div>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{companyDisplayName}</div>
+          <div style={{ fontSize: 11, color: T.muted, marginBottom: 10 }}>{profile?.email || ''}</div>
+          <button onClick={onLogout} style={{ width: "100%", background: "transparent", border: `1px solid ${T.border}`, borderRadius: 6, padding: "6px 10px", color: T.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s" }}
+            onMouseEnter={e => { e.target.style.borderColor = T.red; e.target.style.color = T.red; }}
+            onMouseLeave={e => { e.target.style.borderColor = T.border; e.target.style.color = T.muted; }}>
+            Cerrar sesión
+          </button>
         </div>
       </div>
 
       {/* Main */}
       <div style={{ flex: 1, overflowY: "auto", padding: "32px 36px" }}>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
-        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor })} />}
+        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor })} />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
-        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} onNewPurchase={() => setShowPurchaseBuilder(true)} />}
-        {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} />}
+        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} />}
+        {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} />}
-        {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} />}
+        {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
       </div>
 
       {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} priceLists={priceLists} vendedores={vendedores} />}
