@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 
 const T = {
@@ -19,6 +19,7 @@ export default function AuthGate({ children }) {
   const [companyName, setCompanyName] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const profileLoaded = useRef(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -29,15 +30,16 @@ export default function AuthGate({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
+        profileLoaded.current = false
         setSession(null)
         setProfile(null)
         setLoading(false)
         setMode('login')
-      } else if (event === 'SIGNED_IN' && session) {
+      } else if (session && !profileLoaded.current) {
+        // Solo cargar perfil si aún no fue cargado (evita recargas al cambiar de ventana)
         setSession(session)
         await loadProfile(session.user.id, session.user.email)
       } else if (session) {
-        // TOKEN_REFRESHED u otros eventos: solo actualizar sesión sin recargar perfil
         setSession(session)
       }
     })
@@ -61,8 +63,10 @@ export default function AuthGate({ children }) {
         const coResult = await withTimeout(
           supabase.from('companies').select('name').eq('id', prof.company_id).single()
         )
+        profileLoaded.current = true
         setProfile({ ...prof, email: userEmail, company_name: coResult?.data?.name || 'Mi Empresa' })
       } else {
+        profileLoaded.current = true
         setProfile({ ...(prof || { id: userId }), email: userEmail })
         setMode('setup')
       }
