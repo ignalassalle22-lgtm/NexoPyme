@@ -2110,7 +2110,7 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
 }
 
 // ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
-function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
+function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
   const [tab, setTab] = useState("docs");
   const [filterType, setFilterType] = useState("all");
   const [searchDocNum, setSearchDocNum] = useState("");
@@ -2353,7 +2353,8 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
       "Le solicitamos que regularice la situación a la brevedad posible o se comunique con nosotros para coordinar una forma de pago.\n\n" +
       "Adjuntamos los comprobantes en formato PDF para su referencia.\n\n" +
       "Quedamos a disposición para cualquier consulta.\n\n" +
-      "Saludos cordiales."
+      "Saludos cordiales.\n" +
+      (profile?.company_name || '') + (profile?.email ? "\n" + profile.email : "")
     );
 
     if (emailProvider === "gmail") {
@@ -7513,7 +7514,7 @@ export default function App({ session, profile, onLogout }) {
       {/* Main */}
       <div style={{ flex: 1, overflowY: "auto", padding: "32px 36px" }}>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
-        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor })} />}
+        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor })} />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
         {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} />}
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} />}
