@@ -2714,6 +2714,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {inv.type === "factura" && inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => markCobrada(inv.id)}>Marcar cobrada</Btn>}
                       {inv.type === "factura" && inv.status === "cobrada" && <Btn sm v="ghost" onClick={() => unmarkCobrada(inv.id)}>↩ Revertir</Btn>}
+                      <Btn sm v="ghost" onClick={() => generarPDFFactura(inv)}>📄 PDF</Btn>
                       <Btn sm v="ghost" onClick={() => onEditDoc(inv)}>✏ Editar</Btn>
                     </div>
                   </td>
@@ -7310,6 +7311,16 @@ export default function App({ session, profile, onLogout }) {
   const nextId = (prefix) => { const n = idCounter + 1; setIdCounter(n); return `${prefix}-${String(n).padStart(4, "0")}`; };
 
   const [dbError, setDbError] = useState(null);
+
+  // ── Inactividad: cerrar sesión después de 15 minutos ────────────────────
+  useEffect(() => {
+    const TIMEOUT = 15 * 60 * 1000;
+    let timer = setTimeout(onLogout, TIMEOUT);
+    const reset = () => { clearTimeout(timer); timer = setTimeout(onLogout, TIMEOUT); };
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach(e => window.addEventListener(e, reset, { passive: true }));
+    return () => { clearTimeout(timer); events.forEach(e => window.removeEventListener(e, reset)); };
+  }, []);
 
   // ── Cargar datos desde Supabase al login ────────────────────────────────
   useEffect(() => {
