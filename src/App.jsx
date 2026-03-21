@@ -2281,8 +2281,8 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     return true;
   });
 
-  const markCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "cobrada" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'cobrada' }).eq('id', id).catch(console.error); };
-  const unmarkCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'pendiente' }).eq('id', id).catch(console.error); };
+  const markCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "cobrada" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'cobrada' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
+  const unmarkCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'pendiente' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
 
   // ── Cobranzas ────────────────────────────────────────────────────────────
   const [selectedReclamos, setSelectedReclamos] = useState([]); // ids de facturas tildadas
@@ -2776,7 +2776,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <Btn v="ghost" sm onClick={() => setNewClient(false)}>Cancelar</Btn>
-                <Btn sm disabled={!ncForm.codigo || !ncForm.name} onClick={() => { const nc = { ...ncForm, id: crypto.randomUUID(), priceList: "lista_a", lastPurchase: "—", status: "activo", nextFollowUp: "—" }; setClients([...clients, nc]); if (companyId) supabase.from('clients').insert(clientToDb(nc, companyId)).catch(console.error); setNewClient(false); setNcForm({ codigo: "", name: "", cuit: "", direccion: "", email: "", phone: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" }); }}>Guardar cliente</Btn>
+                <Btn sm disabled={!ncForm.codigo || !ncForm.name} onClick={() => { const nc = { ...ncForm, id: crypto.randomUUID(), priceList: "lista_a", lastPurchase: "—", status: "activo", nextFollowUp: "—" }; setClients([...clients, nc]); if (companyId) supabase.from('clients').insert(clientToDb(nc, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); setNewClient(false); setNcForm({ codigo: "", name: "", cuit: "", direccion: "", email: "", phone: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" }); }}>Guardar cliente</Btn>
               </div>
             </div>
           )}
@@ -3492,7 +3492,7 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
     if (priceLists.find(l => l.id === id)) return;
     const nl = { id, label: newListLabel.trim() };
     setPriceLists(prev => [...prev, nl]);
-    if (companyId) supabase.from('price_lists').insert(priceListToDb(nl, companyId)).catch(console.error);
+    if (companyId) supabase.from('price_lists').insert(priceListToDb(nl, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     setSelectedList(id);
     setNewListLabel(""); setShowNewList(false);
   };
@@ -3500,7 +3500,7 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
   const renameList = () => {
     if (!editingListLabel.trim() || !editingListId) return;
     setPriceLists(prev => prev.map(l => l.id === editingListId ? { ...l, label: editingListLabel.trim() } : l));
-    if (companyId) supabase.from('price_lists').update({ label: editingListLabel.trim() }).eq('id', editingListId).eq('company_id', companyId).catch(console.error);
+    if (companyId) supabase.from('price_lists').update({ label: editingListLabel.trim() }).eq('id', editingListId).eq('company_id', companyId).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     setEditingListId(null);
     setEditingListLabel("");
   };
@@ -3517,7 +3517,7 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
       });
       if (companyId) {
         const updated = next.find(p => p.id === productId);
-        if (updated) supabase.from('products').update({ prices: updated.prices, prices_usd: updated.pricesUsd }).eq('id', productId).catch(console.error);
+        if (updated) supabase.from('products').update({ prices: updated.prices, prices_usd: updated.pricesUsd }).eq('id', productId).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
       }
       return next;
     });
@@ -3879,7 +3879,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     if (!existingSup && r.proveedor) {
       const newSup = { id: crypto.randomUUID(), name: r.proveedor, cuit: r.cuitProveedor || "", contact: "", email: "", phone: "", paymentDays: 0, bank: "", cbu: "", productCodes: [] };
       setSuppliers(prev => [...prev, newSup]);
-      if (companyId) supabase.from('suppliers').insert(supplierToDb(newSup, companyId)).catch(console.error);
+      if (companyId) supabase.from('suppliers').insert(supplierToDb(newSup, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
       supplierId = newSup.id;
     }
     const newPI = {
@@ -3889,7 +3889,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
       status: "pendiente", lines, condicionPago: r.condicionPago, vendedor: r.vendedor
     };
     setPurchaseInvoices(prev => [newPI, ...prev]);
-    if (companyId) supabase.from('purchase_invoices').insert(purchaseInvoiceToDb(newPI, companyId)).catch(console.error);
+    if (companyId) supabase.from('purchase_invoices').insert(purchaseInvoiceToDb(newPI, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     setShowIAImport(false); setIaPdfFile(null); setIaPdfResult(null);
   };
 
@@ -3909,8 +3909,8 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     return true;
   });
 
-  const markPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pagada" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada' }).eq('id', id).catch(console.error); };
-  const unmarkPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pendiente' }).eq('id', id).catch(console.error); };
+  const markPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pagada" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
+  const unmarkPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pendiente' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
 
   return (
     <div>
@@ -4019,7 +4019,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <Btn v="ghost" sm onClick={() => setShowSupForm(false)}>Cancelar</Btn>
-                <Btn sm onClick={() => { const ns = { ...supForm, id: crypto.randomUUID(), productCodes: [] }; setSuppliers([...suppliers, ns]); if (companyId) supabase.from('suppliers').insert(supplierToDb(ns, companyId)).catch(console.error); setShowSupForm(false); setSupForm({ name: "", cuit: "", contact: "", email: "", phone: "", paymentDays: 30, bank: "", cbu: "", direccion: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" }); }}>Guardar</Btn>
+                <Btn sm onClick={() => { const ns = { ...supForm, id: crypto.randomUUID(), productCodes: [] }; setSuppliers([...suppliers, ns]); if (companyId) supabase.from('suppliers').insert(supplierToDb(ns, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); setShowSupForm(false); setSupForm({ name: "", cuit: "", contact: "", email: "", phone: "", paymentDays: 30, bank: "", cbu: "", direccion: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" }); }}>Guardar</Btn>
               </div>
             </div>
           )}
@@ -4178,7 +4178,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
     const qty = parseInt(adjustQty) || 0;
     const newStock = Math.max(0, adjustType === "add" ? adjustProd.stock + qty : adjustProd.stock - qty);
     setProducts(products.map(p => p.id === adjustProd.id ? { ...p, stock: newStock } : p));
-    if (companyId) supabase.from('products').update({ stock: newStock }).eq('id', adjustProd.id).catch(console.error);
+    if (companyId) supabase.from('products').update({ stock: newStock }).eq('id', adjustProd.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     setAdjustProd(null); setAdjustQty(0); setAdjustNote("");
   };
 
@@ -4196,7 +4196,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
     const overrides = form.clientCodes.map(r => ({ clientId: r.clientId, customCode: r.customCode, skuRef: form.sku }));
     const np = { ...form, id: crypto.randomUUID(), stock: 0, clientOverrides: overrides };
     setProducts([...products, np]);
-    if (companyId) supabase.from('products').insert(productToDb(np, companyId)).catch(console.error);
+    if (companyId) supabase.from('products').insert(productToDb(np, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     setShowForm(false);
     setForm(EMPTY_FORM);
     setCcClient(""); setCcCode("");
@@ -4267,7 +4267,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
         next[prodIdx] = { ...next[prodIdx], clientOverrides: overrides };
       });
       // Sync to DB
-      if (companyId) next.forEach(p => supabase.from('products').upsert(productToDb(p, companyId)).catch(console.error));
+      if (companyId) next.forEach(p => supabase.from('products').upsert(productToDb(p, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }));
       return next;
     });
     const parts = [];
@@ -4431,7 +4431,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
             <Btn v="ghost" onClick={() => setEditingProduct(null)}>Cancelar</Btn>
             <Btn disabled={!editingProduct.name || !editingProduct.sku} onClick={() => {
               setProducts(prev => prev.map(p => p.id === editingProduct.id ? editingProduct : p));
-              if (companyId) supabase.from('products').upsert(productToDb(editingProduct, companyId)).catch(console.error);
+              if (companyId) supabase.from('products').upsert(productToDb(editingProduct, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
               setEditingProduct(null);
             }}>Guardar cambios</Btn>
           </div>
@@ -6888,15 +6888,15 @@ function RRHHModule({ empleados, setEmpleados, companyId }) {
     const data = { ...empForm, sueldoBasico: Number(empForm.sueldoBasico) || 0 };
     if (editingEmp) {
       setEmpleados(prev => prev.map(e => e.id === editingEmp ? { ...e, ...data } : e));
-      if (companyId) { const upd = { ...empleados.find(e => e.id === editingEmp), ...data }; supabase.from('employees').upsert(employeeToDb(upd, companyId)).catch(console.error); }
+      if (companyId) { const upd = { ...empleados.find(e => e.id === editingEmp), ...data }; supabase.from('employees').upsert(employeeToDb(upd, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); }
     } else {
       const ne = { ...data, id: crypto.randomUUID() };
       setEmpleados(prev => [...prev, ne]);
-      if (companyId) supabase.from('employees').insert(employeeToDb(ne, companyId)).catch(console.error);
+      if (companyId) supabase.from('employees').insert(employeeToDb(ne, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
     setShowEmpForm(false);
   };
-  const deleteEmp = (id) => { if (window.confirm("¿Eliminar empleado?")) { setEmpleados(prev => prev.filter(e => e.id !== id)); if (companyId) supabase.from('employees').delete().eq('id', id).catch(console.error); } };
+  const deleteEmp = (id) => { if (window.confirm("¿Eliminar empleado?")) { setEmpleados(prev => prev.filter(e => e.id !== id)); if (companyId) supabase.from('employees').delete().eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); } };
 
   const toggleAsist = (empId, dia, codigo) => {
     const key = `${empId}-${asistMes}-${String(dia).padStart(2, "0")}`;
@@ -7393,7 +7393,7 @@ export default function App({ session, profile, onLogout }) {
             if (newL) stock -= newL.qty;
             return oldL || newL ? { ...p, stock } : p;
           });
-          if (companyId) next.filter(p => oldLines.find(l=>l.productId===p.id)||lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).catch(console.error));
+          if (companyId) next.filter(p => oldLines.find(l=>l.productId===p.id)||lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }));
           return next;
         });
       }
@@ -7401,7 +7401,7 @@ export default function App({ session, profile, onLogout }) {
         const updated = { clientId, clientName, total, totalNeto, totalIva, lines, observaciones, moneda, modificaStock, vendedor };
         if (companyId) {
           const inv = prev.find(i => i.id === editingId);
-          if (inv) supabase.from('sale_invoices').update(Object.fromEntries(Object.entries(saleInvoiceToDb({ ...inv, ...updated }, companyId)).filter(([k]) => k !== 'id' && k !== 'company_id'))).eq('id', editingId).catch(console.error);
+          if (inv) supabase.from('sale_invoices').update(Object.fromEntries(Object.entries(saleInvoiceToDb({ ...inv, ...updated }, companyId)).filter(([k]) => k !== 'id' && k !== 'company_id'))).eq('id', editingId).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
         }
         return prev.map(i => i.id === editingId ? { ...i, ...updated } : i);
       });
@@ -7416,22 +7416,22 @@ export default function App({ session, profile, onLogout }) {
     if (debeDescontarStock) {
       setProducts(prev => {
         const next = prev.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock - l.qty } : p; });
-        if (companyId) next.filter(p => lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).catch(console.error));
+        if (companyId) next.filter(p => lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }));
         return next;
       });
     }
     if (originPresupuestoId) {
       setSaleInvoices(prev => prev.map(i => i.id === originPresupuestoId ? { ...i, status: "convertido" } : i));
-      if (companyId) supabase.from('sale_invoices').update({ status: 'convertido' }).eq('id', originPresupuestoId).catch(console.error);
+      if (companyId) supabase.from('sale_invoices').update({ status: 'convertido' }).eq('id', originPresupuestoId).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
     if (originRemitoIds?.length > 0) {
       setSaleInvoices(prev => prev.map(i => originRemitoIds.includes(i.id) ? { ...i, status: "facturado" } : i));
-      if (companyId) supabase.from('sale_invoices').update({ status: 'facturado' }).in('id', originRemitoIds).catch(console.error);
+      if (companyId) supabase.from('sale_invoices').update({ status: 'facturado' }).in('id', originRemitoIds).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
     const due = new Date(today); due.setDate(due.getDate() + 15);
     const newInv = { id, ref, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock, observaciones, moneda, vendedor };
     setSaleInvoices(prev => [newInv, ...prev]);
-    if (companyId) supabase.from('sale_invoices').insert(saleInvoiceToDb(newInv, companyId)).catch(console.error);
+    if (companyId) supabase.from('sale_invoices').insert(saleInvoiceToDb(newInv, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     setShowDocBuilder(false);
     if (imprimirPDF && generarPDF) generarPDF(id);
   };
@@ -7439,7 +7439,7 @@ export default function App({ session, profile, onLogout }) {
   const handleSavePurchase = ({ lines, total, totalNeto, totalIva, supplierId, supplierName, payStatus, nroFactura }) => {
     setProducts(prev => {
       const next = prev.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock + l.qty } : p; });
-      if (companyId) next.filter(p => lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).catch(console.error));
+      if (companyId) next.filter(p => lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }));
       return next;
     });
     const due = new Date(today); const sup = suppliers.find(s => s.id === supplierId); due.setDate(due.getDate() + (sup?.paymentDays || 0));
@@ -7447,7 +7447,7 @@ export default function App({ session, profile, onLogout }) {
     const id = crypto.randomUUID();
     const newPI = { id, ref, nroFactura: nroFactura || null, supplierId, supplierName, date: today, dueDate: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: payStatus, lines };
     setPurchaseInvoices(prev => [newPI, ...prev]);
-    if (companyId) supabase.from('purchase_invoices').insert(purchaseInvoiceToDb(newPI, companyId)).catch(console.error);
+    if (companyId) supabase.from('purchase_invoices').insert(purchaseInvoiceToDb(newPI, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     setShowPurchaseBuilder(false);
   };
 
