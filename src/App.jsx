@@ -1685,9 +1685,9 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
     setTcLoading(true);
     setTcFetchError(false);
     try {
-      const res = await fetch("https://api.bluelytics.com.ar/v2/latest");
+      const res = await fetch("https://dolarapi.com/v1/dolares/oficial");
       const data = await res.json();
-      const venta = data.oficial?.value_sell;
+      const venta = data.venta;
       if (venta && venta > 0) {
         setTipoCambio(venta);
         setTcInput(String(venta));
@@ -1879,7 +1879,7 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1 }}>TIPO DE CAMBIO DEL DÍA</div>
             <div style={{ fontSize: 11, color: T.faint }}>
-              {tcFetchError ? "Error al obtener cotización · valor manual" : "Dólar oficial BNA vendedor · Bluelytics"}
+              {tcFetchError ? "Error al obtener cotización · valor manual" : "Dólar divisa BNA vendedor · dolarapi.com"}
             </div>
           </div>
         </div>
