@@ -1358,57 +1358,76 @@ function SearchBar({ value, onChange, placeholder }) {
 }
 
 // ─── SHARED: CHART → PNG ──────────────────────────────────────────────────────
-function chartToPng(type, labels, values, { width = 620, height = 240, color = '#1C6EF2', title = '' } = {}) {
+function chartToPng(type, labels, values, { width = 660, height = 260, color = '#2ea043', title = '' } = {}) {
   try {
+    const fmtV = (v) => v >= 1e6 ? '$' + (v/1e6).toFixed(1).replace('.',',') + 'M' : v >= 1e3 ? '$' + Math.round(v/1000).toLocaleString('es-AR') + 'K' : '$' + Math.round(v).toLocaleString('es-AR');
     const canvas = document.createElement('canvas');
-    canvas.width = width; canvas.height = height;
+    canvas.width = width * 2; canvas.height = height * 2; // 2x for sharpness
+    canvas.style.width = width + 'px'; canvas.style.height = height + 'px';
     const ctx = canvas.getContext('2d');
+    ctx.scale(2, 2);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
     const nums = values.map(v => typeof v === 'number' ? v : 0);
     const maxVal = Math.max(...nums, 1);
-    const padL = 64, padR = 20, padT = title ? 30 : 12, padB = 38;
+    const padL = 20, padR = 20, padT = title ? 36 : 24, padB = 32;
     const cW = width - padL - padR, cH = height - padT - padB;
     if (title) {
-      ctx.fillStyle = '#333'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
-      ctx.fillText(title, width / 2, 20);
+      ctx.fillStyle = '#444'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'left';
+      ctx.fillText(title.toUpperCase(), padL, 18);
+      ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(padL, 24); ctx.lineTo(width - padR, 24); ctx.stroke();
     }
-    for (let g = 0; g <= 4; g++) {
+    // Light horizontal gridlines
+    for (let g = 1; g <= 3; g++) {
       const y = padT + (g / 4) * cH;
-      ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
+      ctx.strokeStyle = '#f0f0f0'; ctx.lineWidth = 0.5;
       ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + cW, y); ctx.stroke();
-      const v = maxVal * (1 - g / 4);
-      const lbl = v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : v.toFixed(0);
-      ctx.fillStyle = '#999'; ctx.font = '9px Arial'; ctx.textAlign = 'right';
-      ctx.fillText(lbl, padL - 4, y + 3);
     }
-    ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + cH); ctx.stroke();
+    // Baseline
+    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, padT + cH); ctx.lineTo(padL + cW, padT + cH); ctx.stroke();
+
     if (type === 'bar') {
       const gap = cW / (labels.length || 1);
-      const bW = Math.max(gap * 0.68, 4);
+      const bW = Math.max(gap * 0.72, 6);
       nums.forEach((v, i) => {
-        const bH = (v / maxVal) * cH;
+        const bH = Math.max((v / maxVal) * cH, v > 0 ? 3 : 0);
         const x = padL + i * gap + (gap - bW) / 2;
-        ctx.fillStyle = color; ctx.fillRect(x, padT + cH - bH, bW, bH);
-        const s = String(labels[i]).length > 7 ? String(labels[i]).slice(0, 6) + '…' : String(labels[i]);
-        ctx.fillStyle = '#666'; ctx.font = '9px Arial'; ctx.textAlign = 'center';
-        ctx.fillText(s, x + bW / 2, height - padB + 13);
+        const y = padT + cH - bH;
+        // Bar with slight rounding on top
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(x, y, bW, bH, [3, 3, 0, 0]) : ctx.rect(x, y, bW, bH);
+        ctx.fill();
+        // Value label above bar
+        if (v > 0) {
+          ctx.fillStyle = '#333'; ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center';
+          ctx.fillText(fmtV(v), x + bW / 2, y - 5);
+        }
+        // X label
+        const s = String(labels[i]).slice(0, 8);
+        ctx.fillStyle = '#888'; ctx.font = '9px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(s, x + bW / 2, height - padB + 14);
       });
     } else if (type === 'line' && nums.length >= 2) {
-      const pts = nums.map((v, i) => ({ x: padL + (i / (nums.length - 1)) * cW, y: padT + cH - (v / maxVal) * cH }));
+      const pts = nums.map((v, i) => ({ x: padL + (i / (nums.length - 1)) * cW, y: padT + cH - (v / maxVal) * cH, v }));
+      // Fill under line
       ctx.beginPath(); ctx.moveTo(pts[0].x, padT + cH);
       pts.forEach(p => ctx.lineTo(p.x, p.y));
       ctx.lineTo(pts[pts.length-1].x, padT + cH); ctx.closePath();
-      ctx.fillStyle = color + '22'; ctx.fill();
+      ctx.fillStyle = color + '18'; ctx.fill();
+      // Line
       ctx.beginPath(); pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
-      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
-      pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fillStyle = color; ctx.fill(); });
-      const step = Math.max(1, Math.floor(labels.length / 8));
-      labels.forEach((lbl, i) => {
-        if (i % step === 0 || i === labels.length - 1) {
-          ctx.fillStyle = '#666'; ctx.font = '9px Arial'; ctx.textAlign = 'center';
-          const s = String(lbl).length > 7 ? String(lbl).slice(5) : String(lbl);
-          ctx.fillText(s, pts[i].x, height - padB + 13);
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+      // Dots
+      pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI*2); ctx.fillStyle = color; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); });
+      // X labels (sparse)
+      const step = Math.max(1, Math.floor(labels.length / 7));
+      pts.forEach((p, i) => {
+        if (i % step === 0 || i === pts.length - 1) {
+          const s = String(labels[i]).length > 7 ? String(labels[i]).slice(5) : String(labels[i]);
+          ctx.fillStyle = '#888'; ctx.font = '9px Arial'; ctx.textAlign = 'center';
+          ctx.fillText(s, p.x, height - padB + 14);
         }
       });
     }
@@ -1453,7 +1472,7 @@ async function addFormattedSheet(wb, sheetDef, period) {
     if (png) {
       const imgRow = 6 + rows.length + 2;
       const imgId = wb.addImage({ base64: png, extension: 'png' });
-      ws.addImage(imgId, { tl: { col: 0, row: imgRow - 1 }, ext: { width: 620, height: 240 } });
+      ws.addImage(imgId, { tl: { col: 0, row: imgRow - 1 }, ext: { width: 660, height: 260 } });
       for (let r = imgRow; r < imgRow + 17; r++) ws.getRow(r).height = 15;
     }
   }
