@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
 const T = {
@@ -1354,6 +1354,76 @@ function SearchBar({ value, onChange, placeholder }) {
       {value && <button onClick={() => onChange("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</button>}
     </div>
   );
+}
+
+// ─── SHARED: EXCEL FORMATTER ──────────────────────────────────────────────────
+function buildFormattedSheet(title, period, headers, rows) {
+  const numericCols = new Set(headers.map((_, i) => typeof rows[0]?.[i] === "number" ? i : -1).filter(i => i >= 0));
+  const aoa = [[title], [period], [`Generado el ${new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })}`], [], headers, ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const nc = headers.length;
+
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: nc - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: nc - 1 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: nc - 1 } },
+  ];
+
+  ws['!cols'] = headers.map((h, ci) => ({
+    wch: Math.min(Math.max(String(h).length + 4, ...rows.map(r => String(r[ci] ?? "").length + 2), 12), 42)
+  }));
+
+  ws['!rows'] = [{ hpt: 30 }, { hpt: 20 }, { hpt: 14 }, { hpt: 6 }, { hpt: 22 }];
+
+  const sc = (addr, s) => { if (!ws[addr]) ws[addr] = { v: "", t: "s" }; ws[addr].s = s; };
+
+  // Title
+  for (let c = 0; c < nc; c++) sc(XLSX.utils.encode_cell({ r: 0, c }), {
+    font: { bold: true, sz: 14, color: { rgb: "FFFFFF" } },
+    fill: { patternType: "solid", fgColor: { rgb: "185FA5" } },
+    alignment: { horizontal: "center", vertical: "center" },
+  });
+  // Period
+  for (let c = 0; c < nc; c++) sc(XLSX.utils.encode_cell({ r: 1, c }), {
+    font: { italic: true, sz: 11, color: { rgb: "333333" } },
+    fill: { patternType: "solid", fgColor: { rgb: "E6F1FB" } },
+    alignment: { horizontal: "center" },
+  });
+  // Generated
+  for (let c = 0; c < nc; c++) sc(XLSX.utils.encode_cell({ r: 2, c }), {
+    font: { sz: 9, color: { rgb: "888888" } },
+    fill: { patternType: "solid", fgColor: { rgb: "F5F5F5" } },
+    alignment: { horizontal: "center" },
+  });
+  // Headers (row 4)
+  for (let c = 0; c < nc; c++) {
+    const addr = XLSX.utils.encode_cell({ r: 4, c });
+    if (!ws[addr]) ws[addr] = { v: headers[c], t: "s" };
+    ws[addr].s = {
+      font: { bold: true, sz: 11, color: { rgb: "FFFFFF" } },
+      fill: { patternType: "solid", fgColor: { rgb: "1C6EF2" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: { bottom: { style: "medium", color: { rgb: "1550CC" } }, left: { style: "thin", color: { rgb: "1550CC" } }, right: { style: "thin", color: { rgb: "1550CC" } } },
+    };
+  }
+  // Data rows (from row 5)
+  rows.forEach((row, ri) => {
+    const bg = ri % 2 === 0 ? "FFFFFF" : "EEF4FF";
+    row.forEach((val, ci) => {
+      const addr = XLSX.utils.encode_cell({ r: 5 + ri, c: ci });
+      if (!ws[addr]) ws[addr] = { v: val ?? "", t: typeof val === "number" ? "n" : "s" };
+      const isNum = numericCols.has(ci);
+      ws[addr].s = {
+        font: { sz: 11, color: { rgb: "1A1A1A" } },
+        fill: { patternType: "solid", fgColor: { rgb: bg } },
+        alignment: { horizontal: isNum ? "right" : "left", vertical: "center" },
+        border: { bottom: { style: "thin", color: { rgb: "DDDDDD" } }, left: { style: "thin", color: { rgb: "DDDDDD" } }, right: { style: "thin", color: { rgb: "DDDDDD" } } },
+      };
+      if (isNum && typeof val === "number") ws[addr].z = '#,##0.00';
+    });
+  });
+
+  return ws;
 }
 
 // ─── SHARED: QUICK DATE FILTER ────────────────────────────────────────────────
@@ -4614,59 +4684,59 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
 
   // ── Excel generators ──────────────────────────────────────────────────────
   const excelOperativos = () => {
+    const hoyStr = new Date().toISOString().slice(0,10);
+    const period = `Período: ${hoyStr}`;
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Cobros pendientes", period,
       ["Factura","Cliente","CUIT","Fecha","Vence","Total"],
-      ...filteredCobros.map(inv => { const cli = clients.find(c => c.id === inv.clientId); return [inv.id, inv.clientName, cli?.cuit||"", inv.date, inv.due||"", inv.total]; }),
-      ["","","","","TOTAL", filteredCobros.reduce((s,i)=>s+i.total,0)],
-    ]), "Cobros pendientes");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      filteredCobros.map(inv => { const cli = clients.find(c => c.id === inv.clientId); return [inv.id, inv.clientName, cli?.cuit||"", inv.date, inv.due||"", inv.total]; })
+    ), "Cobros pendientes");
+    XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Pagos pendientes", period,
       ["OC","N° Fact. Prov.","Proveedor","Fecha","Vence","Total"],
-      ...filteredPagos.map(inv => [inv.id, inv.nroFactura||"", inv.supplierName, inv.date, inv.dueDate||"", inv.total]),
-      ["","","","","TOTAL", filteredPagos.reduce((s,i)=>s+i.total,0)],
-    ]), "Pagos pendientes");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      filteredPagos.map(inv => [inv.id, inv.nroFactura||"", inv.supplierName, inv.date, inv.dueDate||"", inv.total])
+    ), "Pagos pendientes");
+    XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Stock crítico", period,
       ["SKU","Producto","Categoría","Stock actual","Stock mínimo","Faltante"],
-      ...stockCritico.map(p => [p.sku, p.name, p.category, p.stock, p.minStock, p.minStock - p.stock]),
-    ]), "Stock crítico");
-    XLSX.writeFile(wb, `nexopyme_operativos_${new Date().toISOString().slice(0,10)}.xlsx`);
+      stockCritico.map(p => [p.sku, p.name, p.category||"", p.stock, p.minStock, p.minStock - p.stock])
+    ), "Stock crítico");
+    XLSX.writeFile(wb, `NexoPyME_operativos_${hoyStr}.xlsx`);
   };
 
   const excelTacticos = () => {
+    const period = `Período: ${from}  →  ${to}`;
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Ventas del período", period,
       ["N° Factura","Cliente","Fecha","Total c/IVA"],
-      ...salesInRange.map(i => [i.id, i.clientName, i.date, i.total]),
-      ["","","TOTAL", salesInRange.reduce((s,i)=>s+i.total,0)],
-    ]), "Ventas");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      salesInRange.map(i => [i.id, i.clientName, i.date, i.total])
+    ), "Ventas");
+    XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Ranking de clientes", period,
       ["#","Cliente","Total vendido"],
-      ...clientRanking.map(([name, total], i) => [i+1, name, total]),
-    ]), "Ranking clientes");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      clientRanking.map(([name, total], i) => [i+1, name, total])
+    ), "Ranking clientes");
+    XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Ranking de productos", period,
       ["#","Producto","Cantidad","Ingresos","Ganancia"],
-      ...productRanking.map(([name, d], i) => { const lp = getLastPurchasePrice(d.productId); return [i+1, name, d.qty, d.revenue, d.revenue - lp * d.qty]; }),
-    ]), "Ranking productos");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      productRanking.map(([name, d], i) => { const lp = getLastPurchasePrice(d.productId); return [i+1, name, d.qty, d.revenue, d.revenue - lp * d.qty]; })
+    ), "Ranking productos");
+    XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Compras del período", period,
       ["N° OC","N° Fact. Prov.","Proveedor","Fecha","Total"],
-      ...purchasesInRange.map(i => [i.id, i.nroFactura||"", i.supplierName, i.date, i.total]),
-      ["","","","TOTAL", purchasesInRange.reduce((s,i)=>s+i.total,0)],
-    ]), "Compras");
-    XLSX.writeFile(wb, `nexopyme_tacticos_${from}_${to}.xlsx`);
+      purchasesInRange.map(i => [i.id, i.nroFactura||"", i.supplierName, i.date, i.total])
+    ), "Compras");
+    XLSX.writeFile(wb, `NexoPyME_tacticos_${from}_${to}.xlsx`);
   };
 
   const excelEstrategicos = () => {
+    const period = `Período: ${from}  →  ${to}`;
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Rentabilidad mensual", period,
       ["Mes","Ventas brutas","Costo compras","Costo ventas","Ganancia bruta","Margen %"],
-      ...monthlyData.map(d => [d.label, d.ventasBrutas, d.costoCompras, d.costoVentas, d.gananciaBruta, d.ventasBrutas > 0 ? +(d.gananciaBruta/d.ventasBrutas*100).toFixed(1) : 0]),
-      ["TOTAL", totVentas, totCompras, totCostoV, totGanancia, +margin],
-    ]), "Rentabilidad mensual");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      [...monthlyData.map(d => [d.label, d.ventasBrutas, d.costoCompras, d.costoVentas, d.gananciaBruta, d.ventasBrutas > 0 ? +(d.gananciaBruta/d.ventasBrutas*100).toFixed(1) : 0]),
+       ["TOTAL", totVentas, totCompras, totCostoV, totGanancia, +margin]]
+    ), "Rentabilidad mensual");
+    XLSX.utils.book_append_sheet(wb, buildFormattedSheet("Análisis ABC de productos", period,
       ["Producto","Ingresos","% del total","% acumulado","Categoría ABC"],
-      ...abcData.map(d => [d.name, d.revenue, +d.pct.toFixed(1), +d.acumPct.toFixed(1), d.cat]),
-    ]), "Análisis ABC");
-    XLSX.writeFile(wb, `nexopyme_estrategicos_${from}_${to}.xlsx`);
+      abcData.map(d => [d.name, d.revenue, +d.pct.toFixed(1), +d.acumPct.toFixed(1), d.cat])
+    ), "Análisis ABC");
+    XLSX.writeFile(wb, `NexoPyME_estrategicos_${from}_${to}.xlsx`);
   };
 
   // ── HOME ──────────────────────────────────────────────────────────────────
@@ -6295,10 +6365,11 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     const r = reports[reportId];
     if (!r?.exportData) { printReport(); return; }
     const { headers, rows } = r.exportData();
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const period = filterDesde && filterHasta ? `Período: ${filterDesde}  →  ${filterHasta}` : filterDesde ? `Desde: ${filterDesde}` : filterHasta ? `Hasta: ${filterHasta}` : "Período: todos";
+    const ws = buildFormattedSheet(r.title, period, headers, rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, r.title.slice(0, 31));
-    XLSX.writeFile(wb, `${reportId}_${hoy}.xlsx`);
+    XLSX.writeFile(wb, `NexoPyME_${reportId}_${hoy}.xlsx`);
   };
 
   // ── FULL PAGE REPORT ──────────────────────────────────────────────────────
