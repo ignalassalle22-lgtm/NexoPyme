@@ -41,17 +41,32 @@ export default function AuthGate({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
+  const withTimeout = (promise, ms = 8000) =>
+    Promise.race([promise, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))])
+
   const loadProfile = async (userId) => {
     setLoading(true)
-    const { data: sess } = await supabase.auth.getSession()
-    const userEmail = sess?.session?.user?.email || ''
-    const { data: prof } = await supabase.from('profiles').select('*').eq('id', userId).single()
-    if (prof?.company_id) {
-      const { data: co } = await supabase.from('companies').select('name').eq('id', prof.company_id).single()
-      setProfile({ ...prof, email: userEmail, company_name: co?.name || 'Mi Empresa' })
-    } else {
-      setProfile({ ...(prof || { id: userId }), email: userEmail })
-      setMode('setup')
+    try {
+      const sessResult = await supabase.auth.getSession()
+      const userEmail = sessResult?.data?.session?.user?.email || ''
+
+      const profResult = await withTimeout(
+        supabase.from('profiles').select('*').eq('id', userId).single()
+      )
+      const prof = profResult?.data
+
+      if (prof?.company_id) {
+        const coResult = await withTimeout(
+          supabase.from('companies').select('name').eq('id', prof.company_id).single()
+        )
+        setProfile({ ...prof, email: userEmail, company_name: coResult?.data?.name || 'Mi Empresa' })
+      } else {
+        setProfile({ ...(prof || { id: userId }), email: userEmail })
+        setMode('setup')
+      }
+    } catch (e) {
+      console.error('loadProfile error:', e)
+      setError('Error al cargar perfil: ' + e.message + '. Recargá la página.')
     }
     setLoading(false)
   }
@@ -116,14 +131,21 @@ export default function AuthGate({ children }) {
     opacity: disabled ? 0.6 : 1, fontFamily: "'DM Sans', 'Segoe UI', sans-serif", transition: 'opacity 0.15s',
   })
 
-  if (loading) {
+  if (loading || (error && !profile?.company_id)) {
     return (
       <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: T.bg, color: T.ink, fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
-        <div style={{ textAlign: 'center' }}>
+        <div style={{ textAlign: 'center', maxWidth: 380, padding: 24 }}>
           <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 12 }}>
             <span style={{ color: T.accent }}>Nexo</span>PyME
           </div>
-          <div style={{ color: T.muted, fontSize: 14 }}>Cargando…</div>
+          {error ? (
+            <>
+              <div style={{ background: T.redLight, color: T.red, borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{error}</div>
+              <button onClick={() => window.location.reload()} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>Recargar</button>
+            </>
+          ) : (
+            <div style={{ color: T.muted, fontSize: 14 }}>Cargando…</div>
+          )}
         </div>
       </div>
     )
