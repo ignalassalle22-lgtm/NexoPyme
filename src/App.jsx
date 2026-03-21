@@ -5710,14 +5710,29 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
         const todosProductos = [...new Set(facturas.flatMap(i => (i.lines||[]).map(l => l.name).filter(Boolean)))].sort();
         const clientesSel = todosClientes.filter(c => !ventasDiaDeselClientes.has(c));
         const productosSel = todosProductos.filter(p => !ventasDiaDeselProductos.has(p));
+        const totalSel = ventasDiaView === "cliente"
+          ? facturas.filter(i => clientesSel.includes(i.clientName)).reduce((s,i)=>s+i.total,0)
+          : facturas.reduce((s,inv)=>s+(inv.lines||[]).filter(l=>productosSel.includes(l.name)).reduce((ss,l)=>ss+l.subtotal,0),0);
         if (ventasDiaView === "cliente") {
           const map = {};
           facturas.filter(i => clientesSel.includes(i.clientName)).forEach(i => { map[i.clientName] = (map[i.clientName]||0) + i.total; });
-          return { headers: ["Cliente", "Total facturado", "Facturas"], rows: Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([c,t]) => [c, t, facturas.filter(i=>i.clientName===c).length]) };
+          const resumen = Object.entries(map).sort((a,b)=>b[1]-a[1]);
+          return { sheets: [
+            { title: "Resumen por cliente", headers: ["Cliente", "Total facturado", "Facturas", "Ticket promedio", "% del total"],
+              rows: resumen.map(([c,t]) => { const n=facturas.filter(i=>i.clientName===c).length; return [c, t, n, n>0?+(t/n).toFixed(2):0, totalSel>0?+(t/totalSel*100).toFixed(1):0]; }) },
+            { title: "Facturas", headers: ["Nro.", "Fecha", "Cliente", "Estado", "Total"],
+              rows: facturas.filter(i=>clientesSel.includes(i.clientName)).sort((a,b)=>b.date.localeCompare(a.date)).map(i=>[i.nroFactura||i.id, i.date, i.clientName, i.status, i.total]) },
+          ]};
         } else {
           const map = {};
           facturas.forEach(inv => (inv.lines||[]).forEach(l => { if (!l.name||!productosSel.includes(l.name)) return; map[l.name]=(map[l.name]||0)+l.subtotal; }));
-          return { headers: ["Producto", "Total facturado"], rows: Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([p,t]) => [p, t]) };
+          const resumen = Object.entries(map).sort((a,b)=>b[1]-a[1]);
+          return { sheets: [
+            { title: "Resumen por producto", headers: ["Producto", "Total facturado", "% del total"],
+              rows: resumen.map(([p,t]) => [p, t, totalSel>0?+(t/totalSel*100).toFixed(1):0]) },
+            { title: "Líneas de factura", headers: ["Nro. Factura", "Fecha", "Cliente", "Producto", "Cant.", "Precio unit.", "Subtotal"],
+              rows: facturas.flatMap(inv => (inv.lines||[]).filter(l=>productosSel.includes(l.name)).map(l=>[inv.nroFactura||inv.id, inv.date, inv.clientName, l.name, l.qty, l.price, l.subtotal])).sort((a,b)=>b[1].localeCompare(a[1])) },
+          ]};
         }
       },
       render: () => {
@@ -5877,6 +5892,16 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     },
     cobranzas_dia: {
       title: "Cobranzas del día", layer: "op", mvp: true, tag: "Ventas",
+      exportData: () => ({
+        sheets: [
+          { title: "Resumen", headers: ["Indicador", "Monto", "Facturas"],
+            rows: [["Total cobrado", totalCobrado, cobradas.length], ["Pendiente de cobro", totalPendiente, pendientes.length]] },
+          { title: "Cobradas", headers: ["Nro.", "Cliente", "Fecha emisión", "Vencimiento", "Total"],
+            rows: cobradas.sort((a,b)=>b.date.localeCompare(a.date)).map(i=>[i.nroFactura||i.id, i.clientName||"", i.date, i.due, i.total]) },
+          { title: "Pendientes de cobro", headers: ["Nro.", "Cliente", "Fecha emisión", "Vencimiento", "Días vencida", "Total"],
+            rows: pendientes.sort((a,b)=>b.date.localeCompare(a.date)).map(i=>{ const d=Math.round((new Date(hoy)-new Date(i.due))/86400000); return [i.nroFactura||i.id, i.clientName||"", i.date, i.due, d>0?d:0, i.total]; }) },
+        ]
+      }),
       render: () => {
         const cobradasPorCliente = {};
         cobradas.forEach(i => { if (!cobradasPorCliente[i.clientName]) cobradasPorCliente[i.clientName] = []; cobradasPorCliente[i.clientName].push(i); });
@@ -5931,7 +5956,24 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     },
     aging: {
       title: "Facturas pendientes", layer: "op", mvp: true, tag: "Ventas",
-      exportData: () => ({ headers: ["Cliente", "Nro.", "Fecha emisión", "Vencimiento", "Total", "Días vencida"], rows: pendientes.map(i => { const d = Math.round((new Date(hoy) - new Date(i.due)) / 86400000); return [i.clientName || "", i.nroFactura || i.id, i.date || "", i.due || "", i.total, d > 0 ? d : 0]; }) }),
+      exportData: () => {
+        const buckets = [["0-30 días","0-30"],["31-60 días","31-60"],["61-90 días","61-90"],["+90 días","+90"]];
+        return { sheets: [
+          { title: "Resumen aging", headers: ["Rango", "Monto pendiente", "Facturas"],
+            rows: buckets.map(([lbl,k]) => { const items=aging(k); return [lbl, items.reduce((s,i)=>s+i.total,0), items.length]; }) },
+          { title: "Detalle por factura", headers: ["Cliente", "Nro.", "Fecha emisión", "Vencimiento", "Rango", "Días vencida", "Total"],
+            rows: pendientes.sort((a,b)=>b.due.localeCompare(a.due)).map(i => {
+              const d=Math.round((new Date(hoy)-new Date(i.due))/86400000);
+              const rng=d>90?"+90 días":d>60?"61-90 días":d>30?"31-60 días":d>0?"0-30 días":"Vigente";
+              return [i.clientName||"", i.nroFactura||i.id, i.date||"", i.due||"", rng, d>0?d:0, i.total];
+            }) },
+          { title: "Por cliente", headers: ["Cliente", "0-30 días", "31-60 días", "61-90 días", "+90 días", "Total"],
+            rows: [...new Set(pendientes.map(i=>i.clientName))].map(c => {
+              const cp=pendientes.filter(i=>i.clientName===c);
+              return [c, aging("0-30").filter(i=>i.clientName===c).reduce((s,i)=>s+i.total,0), aging("31-60").filter(i=>i.clientName===c).reduce((s,i)=>s+i.total,0), aging("61-90").filter(i=>i.clientName===c).reduce((s,i)=>s+i.total,0), aging("+90").filter(i=>i.clientName===c).reduce((s,i)=>s+i.total,0), cp.reduce((s,i)=>s+i.total,0)];
+            }).sort((a,b)=>b[5]-a[5]) },
+        ]};
+      },
       render: () => {
         const pendientesPorCliente = {};
         pendientes.forEach(i => { if (!pendientesPorCliente[i.clientName]) pendientesPorCliente[i.clientName] = []; pendientesPorCliente[i.clientName].push(i); });
@@ -6010,15 +6052,40 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     evolucion_ventas: {
       title: "Evolución de ventas", layer: "ta", mvp: true, tag: "Ventas",
       exportData: () => {
-        if (evolView === "mes") return { headers: ["Mes", "Total", "Facturas"], rows: ventasPorMes.map(m => [m.label, m.total, m.count]) };
         const todosClientes = [...new Set(facturas.map(i => i.clientName).filter(Boolean))].sort();
         const todosProductos = [...new Set(facturas.flatMap(i => (i.lines||[]).map(l => l.name).filter(Boolean)))].sort();
-        if (evolView === "cliente") {
-          const sel = todosClientes.filter(c => !evolDeselClientes.has(c));
-          return { headers: ["Cliente", "Total facturado"], rows: sel.map(c => [c, facturas.filter(i=>i.clientName===c).reduce((s,i)=>s+i.total,0)]).sort((a,b)=>b[1]-a[1]) };
+        const clientesSel = todosClientes.filter(c => !evolDeselClientes.has(c));
+        const productosSel = todosProductos.filter(p => !evolDeselProductos.has(p));
+        const allDates = [...new Set(facturas.map(i => i.date))].sort();
+        const dailyRows = allDates.map(date => {
+          const df = facturas.filter(i => i.date === date);
+          const tot = evolView === "cliente"
+            ? df.filter(i=>clientesSel.includes(i.clientName)).reduce((s,i)=>s+i.total,0)
+            : evolView === "producto"
+            ? df.reduce((s,inv)=>s+(inv.lines||[]).filter(l=>productosSel.includes(l.name)).reduce((ss,l)=>ss+l.subtotal,0),0)
+            : df.reduce((s,i)=>s+i.total,0);
+          return [date, tot];
+        });
+        const monthRows = ventasPorMes.map(m => [m.label, m.total, m.count]);
+        if (evolView === "mes") {
+          return { sheets: [
+            { title: "Ventas por mes", headers: ["Mes", "Total", "Facturas"], rows: monthRows },
+            { title: "Evolución diaria", headers: ["Fecha", "Total del día"], rows: dailyRows },
+          ]};
+        } else if (evolView === "cliente") {
+          const resumen = clientesSel.map(c => [c, facturas.filter(i=>i.clientName===c).reduce((s,i)=>s+i.total,0)]).sort((a,b)=>b[1]-a[1]);
+          return { sheets: [
+            { title: "Por cliente", headers: ["Cliente", "Total facturado"], rows: resumen },
+            { title: "Evolución diaria", headers: ["Fecha", "Total (clientes seleccionados)"], rows: dailyRows },
+            { title: "Ventas por mes (ref.)", headers: ["Mes", "Total", "Facturas"], rows: monthRows },
+          ]};
         } else {
-          const sel = todosProductos.filter(p => !evolDeselProductos.has(p));
-          return { headers: ["Producto", "Total facturado"], rows: sel.map(p => [p, facturas.reduce((s,inv)=>s+(inv.lines||[]).filter(l=>l.name===p).reduce((ss,l)=>ss+l.subtotal,0),0)]).sort((a,b)=>b[1]-a[1]) };
+          const resumen = productosSel.map(p => [p, facturas.reduce((s,inv)=>s+(inv.lines||[]).filter(l=>l.name===p).reduce((ss,l)=>ss+l.subtotal,0),0)]).sort((a,b)=>b[1]-a[1]);
+          return { sheets: [
+            { title: "Por producto", headers: ["Producto", "Total facturado"], rows: resumen },
+            { title: "Evolución diaria", headers: ["Fecha", "Total (productos seleccionados)"], rows: dailyRows },
+            { title: "Ventas por mes (ref.)", headers: ["Mes", "Total", "Facturas"], rows: monthRows },
+          ]};
         }
       },
       render: () => {
@@ -6142,9 +6209,27 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
       exportData: () => {
         if (rankingDrillClient) {
           const cf = facturas.filter(i => i.clientName === rankingDrillClient);
-          return { headers: ["Nro.", "Fecha", "Vencimiento", "Estado", "Total"], rows: cf.sort((a,b)=>b.date.localeCompare(a.date)).map(i=>[i.nroFactura||i.id, i.date, i.due, i.status, i.total]) };
+          const clientTotal = cf.reduce((s,i)=>s+i.total,0);
+          const porMes = last6Months.map(m => [m, cf.filter(i=>ym(i.date)===m).reduce((s,i)=>s+i.total,0), cf.filter(i=>ym(i.date)===m).length]);
+          const allDates = [...new Set(cf.map(i=>i.date))].sort();
+          const porDia = allDates.map(d => [d, cf.filter(i=>i.date===d).reduce((s,i)=>s+i.total,0)]);
+          const prodMap = {}; cf.forEach(inv=>(inv.lines||[]).forEach(l=>{ if(!l.name)return; prodMap[l.name]=(prodMap[l.name]||0)+l.subtotal; }));
+          const prodList = Object.entries(prodMap).sort((a,b)=>b[1]-a[1]);
+          return { sheets: [
+            { title: "Resumen", headers: ["Indicador", "Valor"],
+              rows: [["Cliente", rankingDrillClient], ["Total facturado", clientTotal], ["Nro. de facturas", cf.length], ["Ticket promedio", cf.length>0?+(clientTotal/cf.length).toFixed(2):0], ["% del total general", totalVentas>0?+(clientTotal/totalVentas*100).toFixed(1):0]] },
+            { title: "Ventas por mes", headers: ["Mes", "Total", "Facturas"], rows: porMes },
+            { title: "Evolución diaria", headers: ["Fecha", "Total del día"], rows: porDia },
+            { title: "Facturas", headers: ["Nro.", "Fecha", "Vencimiento", "Estado", "Total"],
+              rows: cf.sort((a,b)=>b.date.localeCompare(a.date)).map(i=>[i.nroFactura||i.id, i.date, i.due, i.status, i.total]) },
+            { title: "Detalle de productos", headers: ["Producto", "Total facturado", "% del cliente"],
+              rows: prodList.map(([p,t])=>[p, t, clientTotal>0?+(t/clientTotal*100).toFixed(1):0]) },
+          ]};
         }
-        return { headers: ["#", "Cliente", "Facturado", "% del total"], rows: rankingClientes.map(([name, total], i) => [i+1, name, total, totalVentas>0?(total/totalVentas*100).toFixed(1)+"%":"0%"]) };
+        return { sheets: [
+          { title: "Ranking de clientes", headers: ["#", "Cliente", "Facturado", "% del total"],
+            rows: rankingClientes.map(([name, total], i) => [i+1, name, total, totalVentas>0?+(total/totalVentas*100).toFixed(1):0]) },
+        ]};
       },
       render: () => {
         const durDias = filterDesde && filterHasta ? Math.round((new Date(filterHasta) - new Date(filterDesde)) / 86400000) + 1 : 30;
@@ -6395,11 +6480,11 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
   const exportExcel = (reportId) => {
     const r = reports[reportId];
     if (!r?.exportData) { printReport(); return; }
-    const { headers, rows } = r.exportData();
     const period = filterDesde && filterHasta ? `Período: ${filterDesde}  →  ${filterHasta}` : filterDesde ? `Desde: ${filterDesde}` : filterHasta ? `Hasta: ${filterHasta}` : "Período: todos";
-    const ws = buildFormattedSheet(r.title, period, headers, rows);
+    const data = r.exportData();
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, r.title.slice(0, 31));
+    const sheets = data.sheets || [{ title: r.title, headers: data.headers, rows: data.rows }];
+    sheets.forEach(s => XLSX.utils.book_append_sheet(wb, buildFormattedSheet(s.title, period, s.headers, s.rows), s.title.slice(0, 31)));
     XLSX.writeFile(wb, `NexoPyME_${reportId}_${hoy}.xlsx`);
   };
 
