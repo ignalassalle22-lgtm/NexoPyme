@@ -43,13 +43,15 @@ export default function AuthGate({ children }) {
 
   const loadProfile = async (userId) => {
     setLoading(true)
+    const { data: sess } = await supabase.auth.getSession()
+    const userEmail = sess?.session?.user?.email || ''
     const { data: prof } = await supabase.from('profiles').select('*').eq('id', userId).single()
     if (prof?.company_id) {
       const { data: co } = await supabase.from('companies').select('name').eq('id', prof.company_id).single()
-      setProfile({ ...prof, company_name: co?.name || 'Mi Empresa' })
+      setProfile({ ...prof, email: userEmail, company_name: co?.name || 'Mi Empresa' })
     } else {
-      setProfile(prof)
-      if (!prof?.company_id) setMode('setup')
+      setProfile({ ...(prof || { id: userId }), email: userEmail })
+      setMode('setup')
     }
     setLoading(false)
   }
