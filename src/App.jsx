@@ -7308,44 +7308,63 @@ export default function App({ session, profile, onLogout }) {
 
   const nextId = (prefix) => { const n = idCounter + 1; setIdCounter(n); return `${prefix}-${String(n).padStart(4, "0")}`; };
 
+  const [dbError, setDbError] = useState(null);
+
   // ── Cargar datos desde Supabase al login ────────────────────────────────
   useEffect(() => {
     if (!companyId) { setDbLoading(false); return; }
     const load = async () => {
       setDbLoading(true);
+      setDbError(null);
       try {
-        const [
-          { data: prods }, { data: cls }, { data: sups },
-          { data: sinvs }, { data: pinvs }, { data: emps }, { data: pls }
-        ] = await Promise.all([
-          supabase.from('products').select('*').eq('company_id', companyId).order('name'),
-          supabase.from('clients').select('*').eq('company_id', companyId).order('name'),
-          supabase.from('suppliers').select('*').eq('company_id', companyId).order('name'),
-          supabase.from('sale_invoices').select('*').eq('company_id', companyId).order('date', { ascending: false }),
-          supabase.from('purchase_invoices').select('*').eq('company_id', companyId).order('date', { ascending: false }),
-          supabase.from('employees').select('*').eq('company_id', companyId).order('apellido'),
-          supabase.from('price_lists').select('*').eq('company_id', companyId).order('label'),
+        const fetchWithTimeout = (promise, label) =>
+          Promise.race([
+            promise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout: ${label}`)), 10000))
+          ]);
+
+        const [r1, r2, r3, r4, r5, r6, r7] = await Promise.all([
+          fetchWithTimeout(supabase.from('products').select('*').eq('company_id', companyId).order('name'), 'products'),
+          fetchWithTimeout(supabase.from('clients').select('*').eq('company_id', companyId).order('name'), 'clients'),
+          fetchWithTimeout(supabase.from('suppliers').select('*').eq('company_id', companyId).order('name'), 'suppliers'),
+          fetchWithTimeout(supabase.from('sale_invoices').select('*').eq('company_id', companyId).order('date', { ascending: false }), 'sale_invoices'),
+          fetchWithTimeout(supabase.from('purchase_invoices').select('*').eq('company_id', companyId).order('date', { ascending: false }), 'purchase_invoices'),
+          fetchWithTimeout(supabase.from('employees').select('*').eq('company_id', companyId).order('apellido'), 'employees'),
+          fetchWithTimeout(supabase.from('price_lists').select('*').eq('company_id', companyId).order('label'), 'price_lists'),
         ]);
-        if (prods) setProducts(prods.map(mapProduct));
-        if (cls) setClients(cls.map(mapClient));
-        if (sups) setSuppliers(sups.map(mapSupplier));
-        if (sinvs) setSaleInvoices(sinvs.map(mapSaleInvoice));
-        if (pinvs) setPurchaseInvoices(pinvs.map(mapPurchaseInvoice));
-        if (emps) setEmpleados(emps.map(mapEmployee));
-        if (pls?.length) {
-          setPriceLists(pls.map(mapPriceList));
+
+        if (r1.error) throw new Error('products: ' + r1.error.message);
+        if (r2.error) throw new Error('clients: ' + r2.error.message);
+        if (r3.error) throw new Error('suppliers: ' + r3.error.message);
+        if (r4.error) throw new Error('sale_invoices: ' + r4.error.message);
+        if (r5.error) throw new Error('purchase_invoices: ' + r5.error.message);
+        if (r6.error) throw new Error('employees: ' + r6.error.message);
+        if (r7.error) throw new Error('price_lists: ' + r7.error.message);
+
+        if (r1.data) setProducts(r1.data.map(mapProduct));
+        if (r2.data) setClients(r2.data.map(mapClient));
+        if (r3.data) setSuppliers(r3.data.map(mapSupplier));
+        if (r4.data) setSaleInvoices(r4.data.map(mapSaleInvoice));
+        if (r5.data) setPurchaseInvoices(r5.data.map(mapPurchaseInvoice));
+        if (r6.data) setEmpleados(r6.data.map(mapEmployee));
+
+        if (r7.data?.length) {
+          setPriceLists(r7.data.map(mapPriceList));
         } else {
           // Initialize default price lists for new company
-          await Promise.all(initPriceLists.map(pl =>
-            supabase.from('price_lists').insert(priceListToDb(pl, companyId)).catch(() => {})
-          ));
+          for (const pl of initPriceLists) {
+            await supabase.from('price_lists').insert(priceListToDb(pl, companyId));
+          }
           setPriceLists(initPriceLists);
         }
-        // Set idCounter to max existing ref number to avoid collisions
-        const allRefs = [...(sinvs || []), ...(pinvs || [])].map(r => parseInt((r.ref || '').split('-')[1] || '0') || 0);
+
+        const allRefs = [...(r4.data || []), ...(r5.data || [])].map(r => parseInt((r.ref || '').split('-')[1] || '0') || 0);
         const maxRef = allRefs.length ? Math.max(...allRefs) : 0;
         if (maxRef > 0) setIdCounter(maxRef);
-      } catch (e) { console.error('Error cargando datos:', e); }
+      } catch (e) {
+        console.error('Error cargando datos:', e);
+        setDbError(e.message);
+      }
       setDbLoading(false);
     };
     load();
@@ -7434,11 +7453,20 @@ export default function App({ session, profile, onLogout }) {
   const criticalCount = products.filter(p => p.stock < p.minStock).length;
   const pendienteCobrar = saleInvoices.filter(i => i.status === "pendiente" && i.type === "factura").reduce((s, i) => s + i.total, 0);
 
-  if (dbLoading && companyId) return (
+  if ((dbLoading || dbError) && companyId) return (
     <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: T.bg, color: T.ink, fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
-      <div style={{ textAlign: "center" }}>
+      <div style={{ textAlign: "center", maxWidth: 420, padding: 24 }}>
         <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 12 }}><span style={{ color: T.accent }}>Nexo</span>PyME</div>
-        <div style={{ color: T.muted, fontSize: 14 }}>Cargando datos de tu empresa…</div>
+        {dbError ? (
+          <>
+            <div style={{ color: T.red, fontSize: 13, background: T.redLight, borderRadius: 8, padding: "10px 16px", marginBottom: 16 }}>
+              Error al cargar datos:<br /><code style={{ fontSize: 11 }}>{dbError}</code>
+            </div>
+            <button onClick={() => { setDbError(null); setDbLoading(true); }} style={{ background: T.accent, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>Reintentar</button>
+          </>
+        ) : (
+          <div style={{ color: T.muted, fontSize: 14 }}>Cargando datos de tu empresa…</div>
+        )}
       </div>
     </div>
   );
