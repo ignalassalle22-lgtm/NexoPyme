@@ -28,15 +28,17 @@ export default function AuthGate({ children }) {
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[AuthGate] onAuthStateChange:', event)
       if (event === 'SIGNED_OUT') {
         setSession(null)
         setProfile(null)
         setLoading(false)
         setMode('login')
-      } else if (session) {
+      } else if (event === 'SIGNED_IN' && session) {
         setSession(session)
         await loadProfile(session.user.id, session.user.email)
+      } else if (session) {
+        // TOKEN_REFRESHED u otros eventos: solo actualizar sesión sin recargar perfil
+        setSession(session)
       }
     })
 
