@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import * as XLSX from 'xlsx-js-style';
+import { Workbook as ExcelWorkbook } from 'exceljs';
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
 const T = {
@@ -1354,6 +1355,108 @@ function SearchBar({ value, onChange, placeholder }) {
       {value && <button onClick={() => onChange("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</button>}
     </div>
   );
+}
+
+// ─── SHARED: CHART → PNG ──────────────────────────────────────────────────────
+function chartToPng(type, labels, values, { width = 620, height = 240, color = '#1C6EF2', title = '' } = {}) {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
+    const nums = values.map(v => typeof v === 'number' ? v : 0);
+    const maxVal = Math.max(...nums, 1);
+    const padL = 64, padR = 20, padT = title ? 30 : 12, padB = 38;
+    const cW = width - padL - padR, cH = height - padT - padB;
+    if (title) {
+      ctx.fillStyle = '#333'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
+      ctx.fillText(title, width / 2, 20);
+    }
+    for (let g = 0; g <= 4; g++) {
+      const y = padT + (g / 4) * cH;
+      ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + cW, y); ctx.stroke();
+      const v = maxVal * (1 - g / 4);
+      const lbl = v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : v.toFixed(0);
+      ctx.fillStyle = '#999'; ctx.font = '9px Arial'; ctx.textAlign = 'right';
+      ctx.fillText(lbl, padL - 4, y + 3);
+    }
+    ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + cH); ctx.stroke();
+    if (type === 'bar') {
+      const gap = cW / (labels.length || 1);
+      const bW = Math.max(gap * 0.68, 4);
+      nums.forEach((v, i) => {
+        const bH = (v / maxVal) * cH;
+        const x = padL + i * gap + (gap - bW) / 2;
+        ctx.fillStyle = color; ctx.fillRect(x, padT + cH - bH, bW, bH);
+        const s = String(labels[i]).length > 7 ? String(labels[i]).slice(0, 6) + '…' : String(labels[i]);
+        ctx.fillStyle = '#666'; ctx.font = '9px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(s, x + bW / 2, height - padB + 13);
+      });
+    } else if (type === 'line' && nums.length >= 2) {
+      const pts = nums.map((v, i) => ({ x: padL + (i / (nums.length - 1)) * cW, y: padT + cH - (v / maxVal) * cH }));
+      ctx.beginPath(); ctx.moveTo(pts[0].x, padT + cH);
+      pts.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.lineTo(pts[pts.length-1].x, padT + cH); ctx.closePath();
+      ctx.fillStyle = color + '22'; ctx.fill();
+      ctx.beginPath(); pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+      pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fillStyle = color; ctx.fill(); });
+      const step = Math.max(1, Math.floor(labels.length / 8));
+      labels.forEach((lbl, i) => {
+        if (i % step === 0 || i === labels.length - 1) {
+          ctx.fillStyle = '#666'; ctx.font = '9px Arial'; ctx.textAlign = 'center';
+          const s = String(lbl).length > 7 ? String(lbl).slice(5) : String(lbl);
+          ctx.fillText(s, pts[i].x, height - padB + 13);
+        }
+      });
+    }
+    return canvas.toDataURL('image/png').split(',')[1];
+  } catch { return null; }
+}
+
+// ─── SHARED: EXCELJS SHEET BUILDER ────────────────────────────────────────────
+async function addFormattedSheet(wb, sheetDef, period) {
+  const { title, headers, rows, chart } = sheetDef;
+  const ws = wb.addWorksheet(title.slice(0, 31));
+  const nc = headers.length;
+  ws.columns = headers.map((h, ci) => ({
+    width: Math.min(Math.max(String(h).length + 4, ...rows.map(r => String(r[ci] ?? '').length + 2), 12), 42)
+  }));
+  const merge = (r, style) => { try { ws.mergeCells(r, 1, r, nc); } catch{} ws.getCell(r, 1).value = style.v; ws.getCell(r, 1).style = style.s; };
+  merge(1, { v: title, s: { font: { bold: true, size: 14, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF185FA5' } }, alignment: { horizontal: 'center', vertical: 'middle' } } });
+  ws.getRow(1).height = 30;
+  merge(2, { v: period, s: { font: { italic: true, size: 11, color: { argb: 'FF333333' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F1FB' } }, alignment: { horizontal: 'center' } } });
+  ws.getRow(2).height = 20;
+  merge(3, { v: `Generado el ${new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' })}`, s: { font: { size: 9, color: { argb: 'FF888888' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } }, alignment: { horizontal: 'center' } } });
+  ws.getRow(3).height = 14; ws.getRow(4).height = 6;
+  const numCols = new Set(headers.map((_, i) => typeof rows[0]?.[i] === 'number' ? i : -1).filter(i => i >= 0));
+  headers.forEach((h, ci) => {
+    const c = ws.getRow(5).getCell(ci + 1); c.value = h;
+    c.style = { font: { bold: true, size: 11, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1C6EF2' } }, alignment: { horizontal: 'center', vertical: 'middle' }, border: { bottom: { style: 'medium', color: { argb: 'FF1550CC' } }, left: { style: 'thin', color: { argb: 'FF1550CC' } }, right: { style: 'thin', color: { argb: 'FF1550CC' } } } };
+  });
+  ws.getRow(5).height = 22;
+  rows.forEach((row, ri) => {
+    const exRow = ws.getRow(6 + ri);
+    const bg = ri % 2 === 0 ? 'FFFFFFFF' : 'FFEFF4FF';
+    row.forEach((val, ci) => {
+      const c = exRow.getCell(ci + 1); c.value = val ?? '';
+      const isN = numCols.has(ci);
+      c.style = { font: { size: 11, color: { argb: 'FF1A1A1A' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }, alignment: { horizontal: isN ? 'right' : 'left', vertical: 'middle' }, border: { bottom: { style: 'thin', color: { argb: 'FFDDDDDD' } }, left: { style: 'thin', color: { argb: 'FFDDDDDD' } }, right: { style: 'thin', color: { argb: 'FFDDDDDD' } } } };
+      if (isN && typeof val === 'number') c.numFmt = '#,##0.00';
+    });
+    exRow.height = 18;
+  });
+  if (chart) {
+    const png = chartToPng(chart.type, chart.labels, chart.values, { title: chart.title, color: chart.color });
+    if (png) {
+      const imgRow = 6 + rows.length + 2;
+      const imgId = wb.addImage({ base64: png, extension: 'png' });
+      ws.addImage(imgId, { tl: { col: 0, row: imgRow - 1 }, ext: { width: 620, height: 240 } });
+      for (let r = imgRow; r < imgRow + 17; r++) ws.getRow(r).height = 15;
+    }
+  }
 }
 
 // ─── SHARED: EXCEL FORMATTER ──────────────────────────────────────────────────
@@ -5719,7 +5822,8 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
           const resumen = Object.entries(map).sort((a,b)=>b[1]-a[1]);
           return { sheets: [
             { title: "Resumen por cliente", headers: ["Cliente", "Total facturado", "Facturas", "Ticket promedio", "% del total"],
-              rows: resumen.map(([c,t]) => { const n=facturas.filter(i=>i.clientName===c).length; return [c, t, n, n>0?+(t/n).toFixed(2):0, totalSel>0?+(t/totalSel*100).toFixed(1):0]; }) },
+              rows: resumen.map(([c,t]) => { const n=facturas.filter(i=>i.clientName===c).length; return [c, t, n, n>0?+(t/n).toFixed(2):0, totalSel>0?+(t/totalSel*100).toFixed(1):0]; }),
+              chart: { type: 'bar', labels: resumen.map(([c])=>c), values: resumen.map(([,t])=>t), title: 'Total facturado por cliente' } },
             { title: "Facturas", headers: ["Nro.", "Fecha", "Cliente", "Estado", "Total"],
               rows: facturas.filter(i=>clientesSel.includes(i.clientName)).sort((a,b)=>b.date.localeCompare(a.date)).map(i=>[i.nroFactura||i.id, i.date, i.clientName, i.status, i.total]) },
           ]};
@@ -5729,7 +5833,8 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
           const resumen = Object.entries(map).sort((a,b)=>b[1]-a[1]);
           return { sheets: [
             { title: "Resumen por producto", headers: ["Producto", "Total facturado", "% del total"],
-              rows: resumen.map(([p,t]) => [p, t, totalSel>0?+(t/totalSel*100).toFixed(1):0]) },
+              rows: resumen.map(([p,t]) => [p, t, totalSel>0?+(t/totalSel*100).toFixed(1):0]),
+              chart: { type: 'bar', labels: resumen.map(([p])=>p), values: resumen.map(([,t])=>t), title: 'Total facturado por producto' } },
             { title: "Líneas de factura", headers: ["Nro. Factura", "Fecha", "Cliente", "Producto", "Cant.", "Precio unit.", "Subtotal"],
               rows: facturas.flatMap(inv => (inv.lines||[]).filter(l=>productosSel.includes(l.name)).map(l=>[inv.nroFactura||inv.id, inv.date, inv.clientName, l.name, l.qty, l.price, l.subtotal])).sort((a,b)=>b[1].localeCompare(a[1])) },
           ]};
@@ -5958,9 +6063,11 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
       title: "Facturas pendientes", layer: "op", mvp: true, tag: "Ventas",
       exportData: () => {
         const buckets = [["0-30 días","0-30"],["31-60 días","31-60"],["61-90 días","61-90"],["+90 días","+90"]];
+        const agingRows = buckets.map(([lbl,k]) => { const items=aging(k); return [lbl, items.reduce((s,i)=>s+i.total,0), items.length]; });
         return { sheets: [
           { title: "Resumen aging", headers: ["Rango", "Monto pendiente", "Facturas"],
-            rows: buckets.map(([lbl,k]) => { const items=aging(k); return [lbl, items.reduce((s,i)=>s+i.total,0), items.length]; }) },
+            rows: agingRows,
+            chart: { type: 'bar', labels: agingRows.map(r=>r[0]), values: agingRows.map(r=>r[1]), title: 'Deuda por antigüedad', color: '#E06C2A' } },
           { title: "Detalle por factura", headers: ["Cliente", "Nro.", "Fecha emisión", "Vencimiento", "Rango", "Días vencida", "Total"],
             rows: pendientes.sort((a,b)=>b.due.localeCompare(a.due)).map(i => {
               const d=Math.round((new Date(hoy)-new Date(i.due))/86400000);
@@ -6069,22 +6176,30 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
         const monthRows = ventasPorMes.map(m => [m.label, m.total, m.count]);
         if (evolView === "mes") {
           return { sheets: [
-            { title: "Ventas por mes", headers: ["Mes", "Total", "Facturas"], rows: monthRows },
-            { title: "Evolución diaria", headers: ["Fecha", "Total del día"], rows: dailyRows },
+            { title: "Ventas por mes", headers: ["Mes", "Total", "Facturas"], rows: monthRows,
+              chart: { type: 'bar', labels: monthRows.map(r=>r[0]), values: monthRows.map(r=>r[1]), title: 'Ventas por mes' } },
+            { title: "Evolución diaria", headers: ["Fecha", "Total del día"], rows: dailyRows,
+              chart: { type: 'line', labels: dailyRows.map(r=>r[0]), values: dailyRows.map(r=>r[1]), title: 'Evolución diaria' } },
           ]};
         } else if (evolView === "cliente") {
           const resumen = clientesSel.map(c => [c, facturas.filter(i=>i.clientName===c).reduce((s,i)=>s+i.total,0)]).sort((a,b)=>b[1]-a[1]);
           return { sheets: [
-            { title: "Por cliente", headers: ["Cliente", "Total facturado"], rows: resumen },
-            { title: "Evolución diaria", headers: ["Fecha", "Total (clientes seleccionados)"], rows: dailyRows },
-            { title: "Ventas por mes (ref.)", headers: ["Mes", "Total", "Facturas"], rows: monthRows },
+            { title: "Por cliente", headers: ["Cliente", "Total facturado"], rows: resumen,
+              chart: { type: 'bar', labels: resumen.map(r=>r[0]), values: resumen.map(r=>r[1]), title: 'Total por cliente' } },
+            { title: "Evolución diaria", headers: ["Fecha", "Total (clientes seleccionados)"], rows: dailyRows,
+              chart: { type: 'line', labels: dailyRows.map(r=>r[0]), values: dailyRows.map(r=>r[1]), title: 'Evolución diaria' } },
+            { title: "Ventas por mes (ref.)", headers: ["Mes", "Total", "Facturas"], rows: monthRows,
+              chart: { type: 'bar', labels: monthRows.map(r=>r[0]), values: monthRows.map(r=>r[1]), title: 'Ventas por mes' } },
           ]};
         } else {
           const resumen = productosSel.map(p => [p, facturas.reduce((s,inv)=>s+(inv.lines||[]).filter(l=>l.name===p).reduce((ss,l)=>ss+l.subtotal,0),0)]).sort((a,b)=>b[1]-a[1]);
           return { sheets: [
-            { title: "Por producto", headers: ["Producto", "Total facturado"], rows: resumen },
-            { title: "Evolución diaria", headers: ["Fecha", "Total (productos seleccionados)"], rows: dailyRows },
-            { title: "Ventas por mes (ref.)", headers: ["Mes", "Total", "Facturas"], rows: monthRows },
+            { title: "Por producto", headers: ["Producto", "Total facturado"], rows: resumen,
+              chart: { type: 'bar', labels: resumen.map(r=>r[0]), values: resumen.map(r=>r[1]), title: 'Total por producto' } },
+            { title: "Evolución diaria", headers: ["Fecha", "Total (productos seleccionados)"], rows: dailyRows,
+              chart: { type: 'line', labels: dailyRows.map(r=>r[0]), values: dailyRows.map(r=>r[1]), title: 'Evolución diaria' } },
+            { title: "Ventas por mes (ref.)", headers: ["Mes", "Total", "Facturas"], rows: monthRows,
+              chart: { type: 'bar', labels: monthRows.map(r=>r[0]), values: monthRows.map(r=>r[1]), title: 'Ventas por mes' } },
           ]};
         }
       },
@@ -6218,12 +6333,15 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
           return { sheets: [
             { title: "Resumen", headers: ["Indicador", "Valor"],
               rows: [["Cliente", rankingDrillClient], ["Total facturado", clientTotal], ["Nro. de facturas", cf.length], ["Ticket promedio", cf.length>0?+(clientTotal/cf.length).toFixed(2):0], ["% del total general", totalVentas>0?+(clientTotal/totalVentas*100).toFixed(1):0]] },
-            { title: "Ventas por mes", headers: ["Mes", "Total", "Facturas"], rows: porMes },
-            { title: "Evolución diaria", headers: ["Fecha", "Total del día"], rows: porDia },
+            { title: "Ventas por mes", headers: ["Mes", "Total", "Facturas"], rows: porMes,
+              chart: { type: 'bar', labels: porMes.map(r=>r[0]), values: porMes.map(r=>r[1]), title: `${rankingDrillClient} — ventas por mes` } },
+            { title: "Evolución diaria", headers: ["Fecha", "Total del día"], rows: porDia,
+              chart: { type: 'line', labels: porDia.map(r=>r[0]), values: porDia.map(r=>r[1]), title: `${rankingDrillClient} — evolución diaria` } },
             { title: "Facturas", headers: ["Nro.", "Fecha", "Vencimiento", "Estado", "Total"],
               rows: cf.sort((a,b)=>b.date.localeCompare(a.date)).map(i=>[i.nroFactura||i.id, i.date, i.due, i.status, i.total]) },
             { title: "Detalle de productos", headers: ["Producto", "Total facturado", "% del cliente"],
-              rows: prodList.map(([p,t])=>[p, t, clientTotal>0?+(t/clientTotal*100).toFixed(1):0]) },
+              rows: prodList.map(([p,t])=>[p, t, clientTotal>0?+(t/clientTotal*100).toFixed(1):0]),
+              chart: { type: 'bar', labels: prodList.map(([p])=>p), values: prodList.map(([,t])=>t), title: 'Facturado por producto' } },
           ]};
         }
         return { sheets: [
@@ -6477,15 +6595,20 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     }, { once: true });
   };
 
-  const exportExcel = (reportId) => {
+  const exportExcel = async (reportId) => {
     const r = reports[reportId];
     if (!r?.exportData) { printReport(); return; }
     const period = filterDesde && filterHasta ? `Período: ${filterDesde}  →  ${filterHasta}` : filterDesde ? `Desde: ${filterDesde}` : filterHasta ? `Hasta: ${filterHasta}` : "Período: todos";
     const data = r.exportData();
-    const wb = XLSX.utils.book_new();
     const sheets = data.sheets || [{ title: r.title, headers: data.headers, rows: data.rows }];
-    sheets.forEach(s => XLSX.utils.book_append_sheet(wb, buildFormattedSheet(s.title, period, s.headers, s.rows), s.title.slice(0, 31)));
-    XLSX.writeFile(wb, `NexoPyME_${reportId}_${hoy}.xlsx`);
+    const wb = new ExcelWorkbook(); wb.creator = 'NexoPyME'; wb.created = new Date();
+    for (const s of sheets) await addFormattedSheet(wb, s, period);
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `NexoPyME_${reportId}_${hoy}.xlsx`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // ── FULL PAGE REPORT ──────────────────────────────────────────────────────
