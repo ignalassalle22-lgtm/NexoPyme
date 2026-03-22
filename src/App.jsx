@@ -7352,7 +7352,7 @@ td,th{padding:6px 10px;border:1px solid #ddd}th{background:#f5f5f5;font-weight:7
 
 // ─── MODULE: CAJA ─────────────────────────────────────────────────────────────
 function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, saleInvoices, empleados, defaultMontoInicial, setDefaultMontoInicial }) {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = today; // usa la misma constante que los documentos
   const [selectedCajaId, setSelectedCajaId] = useState(null);
   const [showAbrirModal, setShowAbrirModal] = useState(false);
   const [showMovModal, setShowMovModal] = useState(false);
