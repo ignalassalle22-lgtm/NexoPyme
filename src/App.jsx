@@ -2301,6 +2301,14 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
   const markCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "cobrada" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'cobrada' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
   const unmarkCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'pendiente' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
 
+  const eliminarPresupuesto = (id) => {
+    const tieneDocLinkeado = saleInvoices.some(i => i.originPresupuestoId === id);
+    if (tieneDocLinkeado) return;
+    if (!window.confirm("¿Eliminar este presupuesto? Esta acción no se puede deshacer.")) return;
+    setSaleInvoices(prev => prev.filter(i => i.id !== id));
+    if (companyId) supabase.from('sale_invoices').delete().eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+  };
+
   // ── Cobranzas ────────────────────────────────────────────────────────────
   const [selectedReclamos, setSelectedReclamos] = useState([]); // ids de facturas tildadas
   const [reclamoSent, setReclamoSent] = useState({}); // { invoiceId: true }
@@ -2733,6 +2741,12 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                       {inv.type === "factura" && inv.status === "cobrada" && <Btn sm v="ghost" onClick={() => unmarkCobrada(inv.id)}>↩ Revertir</Btn>}
                       <Btn sm v="ghost" onClick={() => generarPDFFactura(inv)}>📄 PDF</Btn>
                       <Btn sm v="ghost" onClick={() => onEditDoc(inv)}>✏ Editar</Btn>
+                      {inv.type === "presupuesto" && (() => {
+                        const linkedDoc = saleInvoices.find(i => i.originPresupuestoId === inv.id);
+                        return linkedDoc
+                          ? <span style={{ fontSize: 10, color: T.muted, padding: "3px 8px", border: `1px solid ${T.border}`, borderRadius: 6 }} title={`Tiene ${linkedDoc.type} ${docRef(linkedDoc)}`}>🔒 Vinculado</span>
+                          : <Btn sm v="danger" onClick={() => eliminarPresupuesto(inv.id)}>🗑 Eliminar</Btn>;
+                      })()}
                     </div>
                   </td>
                 </tr>
