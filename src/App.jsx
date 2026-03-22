@@ -147,7 +147,7 @@ const mapSaleInvoice = r => ({
   totalIva: r.total_iva, status: r.status, lines: r.lines || [],
   originPresupuestoId: r.origin_presupuesto_id, originRemitoIds: r.origin_remito_ids,
   modificaStock: r.modifica_stock, observaciones: r.observaciones,
-  moneda: r.moneda || 'ARS', vendedor: r.vendedor || '',
+  moneda: r.moneda || 'ARS', vendedor: r.vendedor || '', metodoPago: r.metodo_pago || '',
 });
 const mapPurchaseInvoice = r => ({
   id: r.id, ref: r.ref, nroFactura: r.nro_factura, supplierId: r.supplier_id,
@@ -188,6 +188,7 @@ const saleInvoiceToDb = (i, cid) => ({
   lines: i.lines, origin_presupuesto_id: i.originPresupuestoId || null,
   origin_remito_ids: i.originRemitoIds || null, modifica_stock: i.modificaStock,
   observaciones: i.observaciones, moneda: i.moneda, vendedor: i.vendedor,
+  metodo_pago: i.metodoPago || null,
 });
 const purchaseInvoiceToDb = (i, cid) => ({
   id: i.id, company_id: cid, ref: i.ref || null, nro_factura: i.nroFactura,
@@ -462,6 +463,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   const [imprimirPDF, setImprimirPDF] = useState(true);
   const [observaciones, setObservaciones] = useState(preload?.observaciones || "");
   const [vendedor, setVendedor] = useState(preload?.vendedor || "");
+  const [metodoPago, setMetodoPago] = useState(preload?.metodoPago || "");
   const [stockAlert, setStockAlert] = useState(null);
 
   const currSymbol = moneda === "USD" ? "US$" : "$";
@@ -560,7 +562,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   };
 
   const doSave = () => {
-    onSave({ lines, total, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor, editingId: preload?.editingId || null, oldLines: preload?.lines || null });
+    onSave({ lines, total, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor, metodoPago, editingId: preload?.editingId || null, oldLines: preload?.lines || null });
     setDone(true);
   };
 
@@ -1124,6 +1126,21 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
                 No hay vendedores cargados. Agregá vendedores en <strong>Ventas → Vendedores</strong>.
               </div>
             )}
+          </div>
+
+          {/* Método de pago */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>
+              MÉTODO DE PAGO <span style={{ fontWeight: 400, color: T.faint }}>(opcional · usado por el módulo Caja)</span>
+            </label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {[["", "Sin especificar"], ["efectivo", "Efectivo"], ["transferencia", "Transferencia"], ["cuenta_corriente", "Cuenta corriente"], ["cheque", "Cheque"], ["tarjeta", "Tarjeta"]].map(([val, label]) => (
+                <button key={val} onClick={() => setMetodoPago(val)}
+                  style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${metodoPago === val ? T.accent : T.border}`, background: metodoPago === val ? T.accentLight : T.surface, color: metodoPago === val ? T.accent : T.muted, fontWeight: metodoPago === val ? 700 : 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Observaciones */}
@@ -5852,7 +5869,7 @@ Devolveme el orden óptimo como JSON array de índices.`
 }
 
 // ─── MODULE: REPORTES ────────────────────────────────────────────────────────
-function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, suppliers }) {
+function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, suppliers, cajas, cajaMovimientos }) {
   const [selectedLayer, setSelectedLayer] = useState(null);
   const [activeReport, setActiveReport] = useState(null);
   const [filterDesde, setFilterDesde] = useState("");
@@ -6660,6 +6677,65 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     rentabilidad_cliente: { title: "Rentabilidad por cliente", layer: "es", tag: "Clientes", render: () => <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{background:T.surface}}>{["Cliente","Facturado","% del total"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,color:T.muted,fontWeight:700}}>{h}</th>)}</tr></thead><tbody>{rankingClientes.map(([n,t])=><tr key={n} style={{borderTop:`1px solid ${T.border}`}}><td style={{padding:"8px 12px"}}>{n}</td><td style={{padding:"8px 12px",fontWeight:700}}>{fmt(t)}</td><td style={{padding:"8px 12px",color:T.muted}}>{totalVentas>0?(t/totalVentas*100).toFixed(1):0}%</td></tr>)}</tbody></table> },
     concentracion: { title: "Concentración de ingresos", layer: "es", tag: "Clientes", render: () => { const top5=rankingClientes.slice(0,5).reduce((s,[,t])=>s+t,0); const pct=totalVentas>0?(top5/totalVentas*100).toFixed(1):0; return <div style={{textAlign:"center",padding:20}}><div style={{fontSize:48,fontWeight:800,color:pct>80?T.red:T.accent}}>{pct}%</div><div style={{fontSize:13,color:T.muted,marginTop:8}}>de los ingresos concentrados en los top 5 clientes</div></div>; } },
     mix_productos: { title: "Mix óptimo de productos", layer: "es", tag: "Ventas", render: () => <div style={{color:T.muted,fontSize:13,padding:20,textAlign:"center"}}>Análisis de matriz volumen × margen. Próximamente.</div> },
+    caja_movimientos: {
+      title: "Gastos e ingresos de caja", layer: "cx", mvp: true, tag: "Caja",
+      exportData: () => {
+        const allMovs = (cajas || []).flatMap(caja => {
+          const autoMovs = (saleInvoices || [])
+            .filter(inv => inv.metodoPago === "efectivo" && inv.date === caja.date && (inv.type === "factura" || (inv.type === "presupuesto" && inv.modificaStock)))
+            .map(inv => ({ cajaId: caja.id, cajaDate: caja.date, tipo: "ingreso", monto: inv.total, fecha: inv.date, hora: "—", motivo: (inv.type === "factura" ? "Factura" : "Presupuesto") + " · " + (inv.ref || inv.id), origenId: inv.ref || inv.id, observaciones: "Cliente: " + inv.clientName, isAuto: true }));
+          const manualMovs = (cajaMovimientos || []).filter(m => m.cajaId === caja.id).map(m => ({ ...m, cajaDate: caja.date, isAuto: false }));
+          return [...autoMovs, ...manualMovs].map((m, i) => ({ ...m, numero: i + 1, cajaId: caja.id }));
+        }).filter(m => {
+          if (filterDesde && m.fecha < filterDesde) return false;
+          if (filterHasta && m.fecha > filterHasta) return false;
+          return true;
+        });
+        return { sheets: [{ title: "Movimientos de caja", headers: ["N°", "Caja", "Fecha", "Tipo", "Motivo", "Monto", "Origen", "Observaciones"], rows: allMovs.map(m => [m.numero, m.cajaId, m.fecha, m.tipo === "ingreso" ? "INGRESO" : "GASTO", m.motivo, m.tipo === "ingreso" ? m.monto : -m.monto, m.origenId || "Manual", m.observaciones || ""]) }] };
+      },
+      render: () => {
+        const allMovs = (cajas || []).flatMap(caja => {
+          const autoMovs = (saleInvoices || [])
+            .filter(inv => inv.metodoPago === "efectivo" && inv.date === caja.date && (inv.type === "factura" || (inv.type === "presupuesto" && inv.modificaStock)))
+            .map(inv => ({ cajaId: caja.id, cajaDate: caja.date, turno: caja.turno, tipo: "ingreso", monto: inv.total, fecha: inv.date, hora: "—", motivo: (inv.type === "factura" ? "Factura" : "Presupuesto") + " · " + (inv.ref || inv.id), origenId: inv.ref || inv.id, observaciones: "Cliente: " + inv.clientName, isAuto: true }));
+          const manualMovs = (cajaMovimientos || []).filter(m => m.cajaId === caja.id).map(m => ({ ...m, cajaDate: caja.date, turno: caja.turno, isAuto: false }));
+          return [...autoMovs, ...manualMovs].map((m, i) => ({ ...m, numero: i + 1 }));
+        }).filter(m => {
+          if (filterDesde && m.fecha < filterDesde) return false;
+          if (filterHasta && m.fecha > filterHasta) return false;
+          return true;
+        });
+        const totalIngresos = allMovs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + m.monto, 0);
+        const totalGastos = allMovs.filter(m => m.tipo === "gasto").reduce((s, m) => s + m.monto, 0);
+        if (allMovs.length === 0) return <div style={{ textAlign: "center", padding: 40, color: T.muted, fontSize: 13 }}>Sin movimientos para el período seleccionado. Registrá movimientos en el módulo Caja.</div>;
+        return (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 20 }}>
+              {[["Total ingresos", totalIngresos, T.accent], ["Total gastos", totalGastos, T.red], ["Balance neto", totalIngresos - totalGastos, totalIngresos >= totalGastos ? T.blue : T.red]].map(([l, v, c]) => (
+                <div key={l} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px" }}>
+                  <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 6 }}>{l.toUpperCase()}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: c }}>{fmt(v)}</div>
+                </div>
+              ))}
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>{["N°", "Caja / Turno", "Fecha", "Tipo", "Motivo", "Monto", "Origen"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+              <tbody>{allMovs.map(m => (
+                <tr key={m.numero + m.cajaId} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "10px 12px", fontFamily: "monospace", color: T.muted, fontSize: 12 }}>#{m.numero}</td>
+                  <td style={{ padding: "10px 12px", fontSize: 12 }}><span style={{ fontFamily: "monospace", color: T.accent }}>{m.cajaId}</span>{m.turno && <span style={{ marginLeft: 6, fontSize: 10, color: T.muted }}>Turno {m.turno}</span>}</td>
+                  <td style={{ padding: "10px 12px", fontSize: 12, color: T.muted }}>{m.fecha}</td>
+                  <td style={{ padding: "10px 12px" }}><span style={{ background: m.tipo === "ingreso" ? T.accentLight : T.redLight, color: m.tipo === "ingreso" ? T.accent : T.red, padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>{m.tipo === "ingreso" ? "▲ INGRESO" : "▼ GASTO"}</span></td>
+                  <td style={{ padding: "10px 12px", fontSize: 13 }}>{m.motivo}</td>
+                  <td style={{ padding: "10px 12px", fontSize: 14, fontWeight: 800, color: m.tipo === "ingreso" ? T.accent : T.red }}>{m.tipo === "ingreso" ? "+" : "-"}{fmt(m.monto)}</td>
+                  <td style={{ padding: "10px 12px", fontSize: 12, color: m.origenId ? T.blue : T.muted, fontFamily: "monospace" }}>{m.origenId || "Manual"}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        );
+      }
+    },
     scorecard: {
       title: "Scorecard PyME", layer: "es", mvp: true, tag: "Cross",
       render: () => {
@@ -6682,9 +6758,10 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     { id: "op", label: "Operativos", freq: "Diario", desc: "Control diario de ventas, cobranzas y stock", color: "#0F6E56", colorLight: "#E1F5EE", reports: ["ventas_dia","cobranzas_dia","aging","stock_alertas","mov_dia","entregas_dia","pipeline"] },
     { id: "ta", label: "Tácticos", freq: "Semanal / Mensual", desc: "Tendencias, rankings y performance del período", color: "#185FA5", colorLight: "#E6F1FB", reports: ["evolucion_ventas","ranking_productos","margenes","abc_ventas","pago_medio","rotacion","valorizacion","ranking_clientes","antiguedad_saldos","clientes_nuevos","eficiencia_log","ciclos"] },
     { id: "es", label: "Estratégicos", freq: "Trimestral / Anual", desc: "P&L, cashflow y visión financiera del negocio", color: "#534AB7", colorLight: "#EEEDFE", reports: ["pyl","equilibrio","cashflow","estacionalidad","rentabilidad_cliente","concentracion","mix_productos","scorecard"] },
+    { id: "cx", label: "Caja", freq: "Diario / Período", desc: "Gastos e ingresos de efectivo por período", color: "#92400E", colorLight: "#FEF3C7", reports: ["caja_movimientos"] },
   ];
 
-  const tagColors = { Ventas: { bg: T.blueLight, c: T.blue }, Clientes: { bg: "#EEEDFE", c: "#534AB7" }, Inventario: { bg: T.accentLight, c: T.accent }, Logística: { bg: T.yellowLight || "#FFF8E1", c: T.yellow || "#B45309" }, Cross: { bg: T.surface2, c: T.muted } };
+  const tagColors = { Ventas: { bg: T.blueLight, c: T.blue }, Clientes: { bg: "#EEEDFE", c: "#534AB7" }, Inventario: { bg: T.accentLight, c: T.accent }, Logística: { bg: T.yellowLight || "#FFF8E1", c: T.yellow || "#B45309" }, Cross: { bg: T.surface2, c: T.muted }, Caja: { bg: "#FEF3C7", c: "#92400E" } };
 
   const inputStyle = { padding: "7px 10px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none" };
   const ghostBtn = { padding: "7px 14px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
@@ -6818,9 +6895,9 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
     <div>
       <div style={{ marginBottom: 28 }}>
         <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Reportes</div>
-        <div style={{ fontSize: 13, color: T.muted }}>32 reportes · 3 capas de análisis · Datos en tiempo real</div>
+        <div style={{ fontSize: 13, color: T.muted }}>33 reportes · 4 capas de análisis · Datos en tiempo real</div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 16 }}>
         {layers.map(layer => (
           <div key={layer.id} onClick={() => setSelectedLayer(layer.id)}
             style={{ background: layer.color, borderRadius: 18, padding: "32px 28px", cursor: "pointer", color: layer.colorLight, minHeight: 190, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
@@ -7273,12 +7350,315 @@ td,th{padding:6px 10px;border:1px solid #ddd}th{background:#f5f5f5;font-weight:7
   );
 }
 
+// ─── MODULE: CAJA ─────────────────────────────────────────────────────────────
+function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, saleInvoices, empleados, defaultMontoInicial, setDefaultMontoInicial }) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [selectedCajaId, setSelectedCajaId] = useState(null);
+  const [showAbrirModal, setShowAbrirModal] = useState(false);
+  const [showMovModal, setShowMovModal] = useState(false);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+
+  // Abrir caja form
+  const [formFecha, setFormFecha] = useState(hoy);
+  const [formTurno, setFormTurno] = useState("");
+  const [formMonto, setFormMonto] = useState(String(defaultMontoInicial));
+
+  // Movimiento manual form
+  const [movTipo, setMovTipo] = useState("ingreso");
+  const [movMonto, setMovMonto] = useState("");
+  const [movMotivo, setMovMotivo] = useState("");
+  const [movFecha, setMovFecha] = useState(hoy);
+  const [movHora, setMovHora] = useState(new Date().toTimeString().slice(0, 5));
+  const [movEmpleado, setMovEmpleado] = useState("");
+  const [movObs, setMovObs] = useState("");
+
+  const selectedCaja = cajas.find(c => c.id === selectedCajaId);
+  const fmt$ = (n) => `$${Number(n || 0).toLocaleString("es-AR")}`;
+
+  const getAutoMovimientos = (caja) =>
+    saleInvoices
+      .filter(inv => inv.metodoPago === "efectivo" && inv.date === caja.date && (inv.type === "factura" || (inv.type === "presupuesto" && inv.modificaStock)))
+      .map(inv => ({
+        id: "auto-" + inv.id, tipo: "ingreso", monto: inv.total, fecha: inv.date, hora: "—",
+        motivo: (inv.type === "factura" ? "Factura" : "Presupuesto") + " · " + (inv.ref || inv.id),
+        empleadoId: null, observaciones: "Cliente: " + inv.clientName,
+        origen: inv.type, origenId: inv.ref || inv.id, isAuto: true,
+      }));
+
+  const getAllMovimientos = (caja) => {
+    const auto = getAutoMovimientos(caja);
+    const manual = cajaMovimientos.filter(m => m.cajaId === caja.id);
+    return [...auto, ...manual].map((m, i) => ({ ...m, numero: i + 1 }));
+  };
+
+  const abrirCaja = () => {
+    const newCaja = { id: `CAJA-${String(Date.now()).slice(-6)}`, date: formFecha, turno: formTurno || null, montoInicial: parseFloat(formMonto) || 0, estado: "abierta" };
+    setCajas(prev => [newCaja, ...prev]);
+    const monto = parseFloat(formMonto) || 0;
+    if (monto !== defaultMontoInicial) setDefaultMontoInicial(monto);
+    setSelectedCajaId(newCaja.id);
+    setShowAbrirModal(false);
+  };
+
+  const guardarMovimiento = (cajaId) => {
+    const mov = { id: crypto.randomUUID(), cajaId, tipo: movTipo, monto: parseFloat(movMonto) || 0, fecha: movFecha, hora: movHora, motivo: movMotivo, empleadoId: movEmpleado || null, observaciones: movObs, origen: "manual", origenId: null };
+    setCajaMovimientos(prev => [...prev, mov]);
+    setShowMovModal(false);
+    setMovTipo("ingreso"); setMovMonto(""); setMovMotivo(""); setMovObs(""); setMovEmpleado("");
+    setMovHora(new Date().toTimeString().slice(0, 5));
+  };
+
+  const exportarExcel = (caja) => {
+    const movs = getAllMovimientos(caja);
+    const totalIngresos = movs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + m.monto, 0);
+    const totalGastos = movs.filter(m => m.tipo === "gasto").reduce((s, m) => s + m.monto, 0);
+    const saldo = caja.montoInicial + totalIngresos - totalGastos;
+    const rows = [
+      ["REPORTE DE CAJA - NexoPyME"], ["ID:", caja.id], ["Fecha:", caja.date],
+      ["Turno:", caja.turno || "Sin turno"], ["Monto inicial:", caja.montoInicial], ["Estado:", caja.estado], [],
+      ["N°", "Tipo", "Motivo", "Monto", "Fecha", "Hora", "Empleado", "Origen", "Observaciones"],
+      ...movs.map(m => {
+        const emp = m.empleadoId ? empleados.find(e => e.id === m.empleadoId) : null;
+        return [m.numero, m.tipo === "ingreso" ? "INGRESO" : "GASTO", m.motivo, m.tipo === "ingreso" ? m.monto : -m.monto, m.fecha, m.hora, emp ? emp.nombre + " " + emp.apellido : "—", m.origenId || "Manual", m.observaciones || ""];
+      }),
+      [], ["", "", "TOTAL INGRESOS", totalIngresos], ["", "", "TOTAL GASTOS", totalGastos], ["", "", "SALDO FINAL", saldo],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Caja");
+    XLSX.writeFile(wb, `Caja-${caja.id}-${caja.date}.xlsx`);
+  };
+
+  // ── VISTA DETALLE DE UNA CAJA ──
+  if (selectedCaja) {
+    const movs = getAllMovimientos(selectedCaja);
+    const totalIngresos = movs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + m.monto, 0);
+    const totalGastos = movs.filter(m => m.tipo === "gasto").reduce((s, m) => s + m.monto, 0);
+    const saldo = selectedCaja.montoInicial + totalIngresos - totalGastos;
+    const estaAbierta = selectedCaja.estado === "abierta";
+    return (
+      <div>
+        {showMovModal && (
+          <Modal title="Nuevo movimiento manual" onClose={() => setShowMovModal(false)}>
+            <div style={{ display: "grid", gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 8, letterSpacing: 1 }}>TIPO DE MOVIMIENTO</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[["ingreso", T.accent, T.accentLight, "▲ Ingreso"], ["gasto", T.red, T.redLight, "▼ Gasto"]].map(([v, col, bg, lbl]) => (
+                    <button key={v} onClick={() => setMovTipo(v)} style={{ flex: 1, padding: "10px", borderRadius: 8, border: `2px solid ${movTipo === v ? col : T.border}`, background: movTipo === v ? bg : T.surface, color: movTipo === v ? col : T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Input label="MONTO ($)" type="number" value={movMonto} onChange={setMovMonto} placeholder="0.00" />
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>EMPLEADO (opcional)</label>
+                  <select value={movEmpleado} onChange={e => setMovEmpleado(e.target.value)} style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                    <option value="">— Sin asignar —</option>
+                    {(empleados || []).filter(e => e.estado === "activo").map(e => <option key={e.id} value={e.id}>{e.nombre} {e.apellido}</option>)}
+                  </select>
+                </div>
+              </div>
+              <Input label="MOTIVO" value={movMotivo} onChange={setMovMotivo} placeholder="ej: Compra de materiales de limpieza" />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Input label="FECHA" type="date" value={movFecha} onChange={setMovFecha} />
+                <Input label="HORA" type="time" value={movHora} onChange={setMovHora} />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>OBSERVACIONES (opcional)</label>
+                <textarea value={movObs} onChange={e => setMovObs(e.target.value)} rows={2} style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
+                <Btn v="ghost" onClick={() => setShowMovModal(false)}>Cancelar</Btn>
+                <Btn onClick={() => guardarMovimiento(selectedCaja.id)} disabled={!movMonto || !movMotivo}>Agregar movimiento</Btn>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+          <div>
+            <button onClick={() => setSelectedCajaId(null)} style={{ background: "none", border: "none", color: T.muted, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 8 }}>← Cajas</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>{selectedCaja.id}</div>
+              <span style={{ background: estaAbierta ? T.accentLight : T.surface, color: estaAbierta ? T.accent : T.muted, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{estaAbierta ? "ABIERTA" : "CERRADA"}</span>
+              {selectedCaja.turno && <span style={{ background: T.blueLight, color: T.blue, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Turno {selectedCaja.turno}</span>}
+            </div>
+            <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Fecha: {selectedCaja.date} · Monto inicial: {fmt$(selectedCaja.montoInicial)}</div>
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Btn v="ghost" onClick={() => exportarExcel(selectedCaja)}>↓ Excel</Btn>
+            {estaAbierta ? (
+              <>
+                <Btn onClick={() => { setMovFecha(hoy); setMovHora(new Date().toTimeString().slice(0, 5)); setShowMovModal(true); }}>+ Movimiento</Btn>
+                <Btn v="danger" onClick={() => setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "cerrada" } : c))}>Cerrar caja</Btn>
+              </>
+            ) : (
+              <Btn v="ghost" onClick={() => setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "abierta" } : c))}>Reabrir caja</Btn>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
+          {[["Monto inicial", fmt$(selectedCaja.montoInicial), T.muted], ["Total ingresos", fmt$(totalIngresos), T.accent], ["Total gastos", fmt$(totalGastos), T.red], ["Saldo actual", fmt$(saldo), saldo >= 0 ? T.blue : T.red]].map(([lbl, val, col]) => (
+            <div key={lbl} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 6, letterSpacing: 1 }}>{lbl.toUpperCase()}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: col }}>{val}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Movimientos ({movs.length})</div>
+            <div style={{ fontSize: 11, color: T.muted }}>AUTO = desde facturas/presupuestos con pago efectivo</div>
+          </div>
+          {movs.length === 0 ? (
+            <div style={{ padding: 40, textAlign: "center", color: T.muted, fontSize: 13 }}>
+              No hay movimientos para este día.
+              {estaAbierta && <div style={{ marginTop: 12 }}><Btn v="ghost" onClick={() => setShowMovModal(true)}>+ Agregar movimiento manual</Btn></div>}
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>
+                {["N°", "Tipo", "Motivo", "Monto", "Fecha / Hora", "Origen", "Obs."].map(h => (
+                  <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {movs.map(m => {
+                  const emp = m.empleadoId ? (empleados || []).find(e => e.id === m.empleadoId) : null;
+                  const isIng = m.tipo === "ingreso";
+                  return (
+                    <tr key={m.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                      <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.muted }}>#{m.numero}</td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <span style={{ background: isIng ? T.accentLight : T.redLight, color: isIng ? T.accent : T.red, padding: "2px 10px", borderRadius: 12, fontSize: 11, fontWeight: 700 }}>{isIng ? "▲ INGRESO" : "▼ GASTO"}</span>
+                        {m.isAuto && <span style={{ marginLeft: 6, background: T.blueLight, color: T.blue, padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700 }}>AUTO</span>}
+                      </td>
+                      <td style={{ padding: "12px 16px", fontSize: 13, color: T.ink }}>
+                        {m.motivo}
+                        {emp && <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Empleado: {emp.nombre} {emp.apellido}</div>}
+                      </td>
+                      <td style={{ padding: "12px 16px", fontSize: 15, fontWeight: 800, color: isIng ? T.accent : T.red }}>{isIng ? "+" : "-"}{fmt$(m.monto)}</td>
+                      <td style={{ padding: "12px 16px", fontSize: 12, color: T.muted }}>{m.fecha}<br />{m.hora !== "—" ? m.hora : ""}</td>
+                      <td style={{ padding: "12px 16px", fontSize: 12, color: m.origenId ? T.blue : T.muted, fontFamily: "monospace" }}>{m.origenId || "Manual"}</td>
+                      <td style={{ padding: "12px 16px", fontSize: 12, color: T.muted, maxWidth: 160 }}>{m.observaciones || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── VISTA LISTA DE CAJAS ──
+  return (
+    <div>
+      {showAbrirModal && (
+        <Modal title="Abrir nueva caja" onClose={() => setShowAbrirModal(false)}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <Input label="FECHA" type="date" value={formFecha} onChange={setFormFecha} />
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>TURNO (opcional)</label>
+              <select value={formTurno} onChange={e => setFormTurno(e.target.value)} style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                <option value="">Sin turno definido</option>
+                <option value="mañana">Turno Mañana</option>
+                <option value="tarde">Turno Tarde</option>
+                <option value="noche">Turno Noche</option>
+              </select>
+            </div>
+            <Input label={`MONTO INICIAL ($) — predeterminado: $${Number(defaultMontoInicial).toLocaleString("es-AR")}`} type="number" value={formMonto} onChange={setFormMonto} placeholder="0" />
+            <div style={{ fontSize: 11, color: T.muted, background: T.surface, borderRadius: 8, padding: "10px 14px", lineHeight: 1.6 }}>
+              Las facturas y presupuestos (con "Mueve stock") del día con método de pago <strong>Efectivo</strong> se suman automáticamente como ingresos.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <Btn v="ghost" onClick={() => setShowAbrirModal(false)}>Cancelar</Btn>
+              <Btn onClick={abrirCaja}>Abrir caja</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {showConfigModal && (
+        <Modal title="Configurar monto inicial predeterminado" onClose={() => setShowConfigModal(false)}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <Input label="MONTO INICIAL PREDETERMINADO ($)" type="number" value={String(defaultMontoInicial)} onChange={v => setDefaultMontoInicial(parseFloat(v) || 0)} placeholder="0" />
+            <div style={{ fontSize: 12, color: T.muted }}>Este monto se usará como valor por defecto al abrir nuevas cajas. Podés modificarlo para cada caja individualmente.</div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Btn onClick={() => setShowConfigModal(false)}>Guardar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Caja</div>
+          <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Control de flujo de efectivo diario</div>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <Btn v="ghost" onClick={() => setShowConfigModal(true)}>Configurar monto inicial</Btn>
+          <Btn onClick={() => { setFormFecha(hoy); setFormMonto(String(defaultMontoInicial)); setFormTurno(""); setShowAbrirModal(true); }}>+ Abrir caja</Btn>
+        </div>
+      </div>
+
+      {cajas.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "80px 20px", color: T.muted }}>
+          <div style={{ fontSize: 48, marginBottom: 16, color: T.faint }}>◈</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Sin cajas registradas</div>
+          <div style={{ fontSize: 13, marginBottom: 24 }}>Abrí la primera caja del día para comenzar a registrar el flujo de efectivo.</div>
+          <Btn onClick={() => { setFormFecha(hoy); setFormMonto(String(defaultMontoInicial)); setFormTurno(""); setShowAbrirModal(true); }}>+ Abrir caja</Btn>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {cajas.map(caja => {
+            const movs = getAllMovimientos(caja);
+            const totalIngresos = movs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + m.monto, 0);
+            const totalGastos = movs.filter(m => m.tipo === "gasto").reduce((s, m) => s + m.monto, 0);
+            const saldo = caja.montoInicial + totalIngresos - totalGastos;
+            const estaAbierta = caja.estado === "abierta";
+            return (
+              <div key={caja.id} onClick={() => setSelectedCajaId(caja.id)}
+                style={{ background: T.paper, border: `1px solid ${estaAbierta ? T.accent + "50" : T.border}`, borderRadius: 12, padding: "18px 22px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", transition: "border-color 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = estaAbierta ? T.accent + "50" : T.border; }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: T.accent }}>{caja.id}</span>
+                    <span style={{ fontSize: 13, color: T.ink, fontWeight: 600 }}>{caja.date}</span>
+                    {caja.turno && <span style={{ background: T.blueLight, color: T.blue, padding: "2px 8px", borderRadius: 12, fontSize: 10, fontWeight: 700 }}>Turno {caja.turno}</span>}
+                    <span style={{ background: estaAbierta ? T.accentLight : T.surface, color: estaAbierta ? T.accent : T.muted, padding: "2px 8px", borderRadius: 12, fontSize: 10, fontWeight: 700 }}>{estaAbierta ? "ABIERTA" : "CERRADA"}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: T.muted }}>
+                    Inicial: {fmt$(caja.montoInicial)} · {movs.length} movimiento(s) · Ingresos: {fmt$(totalIngresos)} · Gastos: {fmt$(totalGastos)}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 20 }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: saldo >= 0 ? T.blue : T.red }}>{fmt$(saldo)}</div>
+                  <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Saldo actual</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 const NAV = [
   { id: "hub",        label: "Inicio",     icon: "⬡" },
   { id: "ventas",     label: "Ventas",     icon: "◈" },
   { id: "comercial",  label: "Comercial",  icon: "◇" },
   { id: "compras",    label: "Compras",    icon: "◉" },
+  { id: "caja",       label: "Caja",       icon: "◈" },
   { id: "inventario", label: "Inventario", icon: "▦" },
   { id: "logistica",  label: "Logística",  icon: "🚚" },
   { id: "reportes",   label: "Reportes",   icon: "◎" },
@@ -7296,6 +7676,9 @@ export default function App({ session, profile, onLogout }) {
   const [tipoCambio, setTipoCambio] = useState(1200); // ARS por USD
   const [saleInvoices, setSaleInvoices] = useState([]);
   const [purchaseInvoices, setPurchaseInvoices] = useState([]);
+  const [cajas, setCajas] = useState([]);
+  const [cajaMovimientos, setCajaMovimientos] = useState([]);
+  const [defaultMontoInicial, setDefaultMontoInicial] = useState(0);
   const [showDocBuilder, setShowDocBuilder] = useState(false);
   const [docBuilderType, setDocBuilderType] = useState("factura");
   const [preloadDoc, setPreloadDoc] = useState(null);
@@ -7389,7 +7772,7 @@ export default function App({ session, profile, onLogout }) {
     openDoc(typeMap[action] || "factura");
   };
 
-  const handleSaveDoc = ({ lines, total, totalNeto, totalIva, clientId, clientName, docType, originPresupuestoId, originRemitoIds, modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor = "", editingId, oldLines }) => {
+  const handleSaveDoc = ({ lines, total, totalNeto, totalIva, clientId, clientName, docType, originPresupuestoId, originRemitoIds, modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor = "", metodoPago = "", editingId, oldLines }) => {
     const debeDescontarStock = docType === "factura" || (docType === "presupuesto" && modificaStock) || docType === "remito";
 
     if (editingId) {
@@ -7409,7 +7792,7 @@ export default function App({ session, profile, onLogout }) {
         });
       }
       setSaleInvoices(prev => {
-        const updated = { clientId, clientName, total, totalNeto, totalIva, lines, observaciones, moneda, modificaStock, vendedor };
+        const updated = { clientId, clientName, total, totalNeto, totalIva, lines, observaciones, moneda, modificaStock, vendedor, metodoPago };
         if (companyId) {
           const inv = prev.find(i => i.id === editingId);
           if (inv) supabase.from('sale_invoices').update(Object.fromEntries(Object.entries(saleInvoiceToDb({ ...inv, ...updated }, companyId)).filter(([k]) => k !== 'id' && k !== 'company_id'))).eq('id', editingId).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
@@ -7440,7 +7823,7 @@ export default function App({ session, profile, onLogout }) {
       if (companyId) supabase.from('sale_invoices').update({ status: 'facturado' }).in('id', originRemitoIds).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
     const due = new Date(today); due.setDate(due.getDate() + 15);
-    const newInv = { id, ref, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock, observaciones, moneda, vendedor };
+    const newInv = { id, ref, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock, observaciones, moneda, vendedor, metodoPago };
     setSaleInvoices(prev => [newInv, ...prev]);
     if (companyId) supabase.from('sale_invoices').insert(saleInvoiceToDb(newInv, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     setShowDocBuilder(false);
@@ -7530,7 +7913,8 @@ export default function App({ session, profile, onLogout }) {
         {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} />}
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
-        {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} />}
+        {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} cajas={cajas} cajaMovimientos={cajaMovimientos} />}
+        {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
       </div>
 
