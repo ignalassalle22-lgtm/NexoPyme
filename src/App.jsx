@@ -6696,7 +6696,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
       exportData: () => {
         const allMovs = (cajas || []).flatMap(caja => {
           const autoMovs = (saleInvoices || [])
-            .filter(inv => inv.metodoPago === "efectivo" && inv.date === caja.date && (inv.type === "factura" || (inv.type === "presupuesto" && inv.modificaStock)))
+            .filter(inv => { if (inv.metodoPago !== "efectivo" || inv.date !== caja.date) return false; if (inv.type === "factura") return true; if (inv.type === "presupuesto" && inv.modificaStock) return !(saleInvoices||[]).some(d => d.originPresupuestoId === inv.id); return false; })
             .map(inv => ({ cajaId: caja.id, cajaDate: caja.date, tipo: "ingreso", monto: inv.total, fecha: inv.date, hora: "—", motivo: (inv.type === "factura" ? "Factura" : "Presupuesto") + " · " + (inv.ref || inv.id), origenId: inv.ref || inv.id, observaciones: "Cliente: " + inv.clientName, isAuto: true }));
           const manualMovs = (cajaMovimientos || []).filter(m => m.cajaId === caja.id).map(m => ({ ...m, cajaDate: caja.date, isAuto: false }));
           return [...autoMovs, ...manualMovs].map((m, i) => ({ ...m, numero: i + 1, cajaId: caja.id }));
@@ -6710,7 +6710,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
       render: () => {
         const allMovs = (cajas || []).flatMap(caja => {
           const autoMovs = (saleInvoices || [])
-            .filter(inv => inv.metodoPago === "efectivo" && inv.date === caja.date && (inv.type === "factura" || (inv.type === "presupuesto" && inv.modificaStock)))
+            .filter(inv => { if (inv.metodoPago !== "efectivo" || inv.date !== caja.date) return false; if (inv.type === "factura") return true; if (inv.type === "presupuesto" && inv.modificaStock) return !(saleInvoices||[]).some(d => d.originPresupuestoId === inv.id); return false; })
             .map(inv => ({ cajaId: caja.id, cajaDate: caja.date, turno: caja.turno, tipo: "ingreso", monto: inv.total, fecha: inv.date, hora: "—", motivo: (inv.type === "factura" ? "Factura" : "Presupuesto") + " · " + (inv.ref || inv.id), origenId: inv.ref || inv.id, observaciones: "Cliente: " + inv.clientName, isAuto: true }));
           const manualMovs = (cajaMovimientos || []).filter(m => m.cajaId === caja.id).map(m => ({ ...m, cajaDate: caja.date, turno: caja.turno, isAuto: false }));
           return [...autoMovs, ...manualMovs].map((m, i) => ({ ...m, numero: i + 1 }));
@@ -7391,7 +7391,16 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
 
   const getAutoMovimientos = (caja) =>
     saleInvoices
-      .filter(inv => inv.metodoPago === "efectivo" && inv.date === caja.date && (inv.type === "factura" || (inv.type === "presupuesto" && inv.modificaStock)))
+      .filter(inv => {
+        if (inv.metodoPago !== "efectivo") return false;
+        if (inv.date !== caja.date) return false;
+        if (inv.type === "factura") return true;
+        if (inv.type === "presupuesto" && inv.modificaStock) {
+          // excluir si ya tiene una factura o remito generado desde este presupuesto
+          return !saleInvoices.some(d => d.originPresupuestoId === inv.id);
+        }
+        return false;
+      })
       .map(inv => ({
         id: "auto-" + inv.id, tipo: "ingreso", monto: inv.total, fecha: inv.date, hora: "—",
         motivo: (inv.type === "factura" ? "Factura" : "Presupuesto") + " · " + (inv.ref || inv.id),
