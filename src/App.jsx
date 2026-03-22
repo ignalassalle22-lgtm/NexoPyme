@@ -163,6 +163,8 @@ const mapEmployee = r => ({
   email: r.email || '', estado: r.estado || 'activo',
 });
 const mapPriceList = r => ({ id: r.id, label: r.label });
+const mapCaja = r => ({ id: r.id, date: r.date, turno: r.turno || null, montoInicial: r.monto_inicial ?? 0, estado: r.estado || 'abierta' });
+const mapCajaMovimiento = r => ({ id: r.id, cajaId: r.caja_id, tipo: r.tipo, monto: r.monto ?? 0, fecha: r.fecha, hora: r.hora || '—', motivo: r.motivo || '', empleadoId: r.empleado_id || null, observaciones: r.observaciones || '', origen: r.origen || 'manual', origenId: r.origen_id || null });
 
 // ─── DB WRITERS (App → DB) ─────────────────────────────────────────────────
 const productToDb = (p, cid) => ({
@@ -203,6 +205,8 @@ const employeeToDb = (e, cid) => ({
   banco: e.banco, obra_social: e.obraSocial, email: e.email, estado: e.estado,
 });
 const priceListToDb = (l, cid) => ({ id: l.id, company_id: cid, label: l.label });
+const cajaToDb = (c, cid) => ({ id: c.id, company_id: cid, date: c.date, turno: c.turno || null, monto_inicial: c.montoInicial, estado: c.estado });
+const cajaMovimientoToDb = (m, cid) => ({ id: m.id, company_id: cid, caja_id: m.cajaId, tipo: m.tipo, monto: m.monto, fecha: m.fecha, hora: m.hora, motivo: m.motivo, empleado_id: m.empleadoId || null, observaciones: m.observaciones || null, origen: m.origen, origen_id: m.origenId || null });
 
 // Helper: human-readable display ref for sale/purchase invoices
 const docRef = inv => inv?.ref || inv?.id || '';
@@ -7365,7 +7369,7 @@ td,th{padding:6px 10px;border:1px solid #ddd}th{background:#f5f5f5;font-weight:7
 }
 
 // ─── MODULE: CAJA ─────────────────────────────────────────────────────────────
-function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, saleInvoices, empleados, defaultMontoInicial, setDefaultMontoInicial }) {
+function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, saleInvoices, empleados, defaultMontoInicial, setDefaultMontoInicial, companyId }) {
   const hoy = today; // usa la misma constante que los documentos
   const [selectedCajaId, setSelectedCajaId] = useState(null);
   const [showAbrirModal, setShowAbrirModal] = useState(false);
@@ -7417,6 +7421,7 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
   const abrirCaja = () => {
     const newCaja = { id: `CAJA-${String(Date.now()).slice(-6)}`, date: formFecha, turno: formTurno || null, montoInicial: parseFloat(formMonto) || 0, estado: "abierta" };
     setCajas(prev => [newCaja, ...prev]);
+    if (companyId) supabase.from('cajas').insert(cajaToDb(newCaja, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
     const monto = parseFloat(formMonto) || 0;
     if (monto !== defaultMontoInicial) setDefaultMontoInicial(monto);
     setSelectedCajaId(newCaja.id);
@@ -7426,6 +7431,7 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
   const guardarMovimiento = (cajaId) => {
     const mov = { id: crypto.randomUUID(), cajaId, tipo: movTipo, monto: parseFloat(movMonto) || 0, fecha: movFecha, hora: movHora, motivo: movMotivo, empleadoId: movEmpleado || null, observaciones: movObs, origen: "manual", origenId: null };
     setCajaMovimientos(prev => [...prev, mov]);
+    if (companyId) supabase.from('caja_movimientos').insert(cajaMovimientoToDb(mov, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
     setShowMovModal(false);
     setMovTipo("ingreso"); setMovMonto(""); setMovMotivo(""); setMovObs(""); setMovEmpleado("");
     setMovHora(new Date().toTimeString().slice(0, 5));
@@ -7518,10 +7524,10 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
             {estaAbierta ? (
               <>
                 <Btn onClick={() => { setMovFecha(hoy); setMovHora(new Date().toTimeString().slice(0, 5)); setShowMovModal(true); }}>+ Movimiento</Btn>
-                <Btn v="danger" onClick={() => setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "cerrada" } : c))}>Cerrar caja</Btn>
+                <Btn v="danger" onClick={() => { setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "cerrada" } : c)); if (companyId) supabase.from('cajas').update({ estado: 'cerrada' }).eq('id', selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); }}>Cerrar caja</Btn>
               </>
             ) : (
-              <Btn v="ghost" onClick={() => setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "abierta" } : c))}>Reabrir caja</Btn>
+              <Btn v="ghost" onClick={() => { setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "abierta" } : c)); if (companyId) supabase.from('cajas').update({ estado: 'abierta' }).eq('id', selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); }}>Reabrir caja</Btn>
             )}
           </div>
         </div>
@@ -7743,7 +7749,7 @@ export default function App({ session, profile, onLogout }) {
             new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout: ${label}`)), 10000))
           ]);
 
-        const [r1, r2, r3, r4, r5, r6, r7] = await Promise.all([
+        const [r1, r2, r3, r4, r5, r6, r7, r8, r9] = await Promise.all([
           fetchWithTimeout(supabase.from('products').select('*').eq('company_id', companyId).order('name'), 'products'),
           fetchWithTimeout(supabase.from('clients').select('*').eq('company_id', companyId).order('name'), 'clients'),
           fetchWithTimeout(supabase.from('suppliers').select('*').eq('company_id', companyId).order('name'), 'suppliers'),
@@ -7751,6 +7757,8 @@ export default function App({ session, profile, onLogout }) {
           fetchWithTimeout(supabase.from('purchase_invoices').select('*').eq('company_id', companyId).order('date', { ascending: false }), 'purchase_invoices'),
           fetchWithTimeout(supabase.from('employees').select('*').eq('company_id', companyId).order('apellido'), 'employees'),
           fetchWithTimeout(supabase.from('price_lists').select('*').eq('company_id', companyId).order('label'), 'price_lists'),
+          fetchWithTimeout(supabase.from('cajas').select('*').eq('company_id', companyId).order('date', { ascending: false }), 'cajas'),
+          fetchWithTimeout(supabase.from('caja_movimientos').select('*').eq('company_id', companyId).order('created_at'), 'caja_movimientos'),
         ]);
 
         if (r1.error) throw new Error('products: ' + r1.error.message);
@@ -7760,6 +7768,8 @@ export default function App({ session, profile, onLogout }) {
         if (r5.error) throw new Error('purchase_invoices: ' + r5.error.message);
         if (r6.error) throw new Error('employees: ' + r6.error.message);
         if (r7.error) throw new Error('price_lists: ' + r7.error.message);
+        if (r8.error) throw new Error('cajas: ' + r8.error.message);
+        if (r9.error) throw new Error('caja_movimientos: ' + r9.error.message);
 
         if (r1.data) setProducts(r1.data.map(mapProduct));
         if (r2.data) setClients(r2.data.map(mapClient));
@@ -7767,6 +7777,8 @@ export default function App({ session, profile, onLogout }) {
         if (r4.data) setSaleInvoices(r4.data.map(mapSaleInvoice));
         if (r5.data) setPurchaseInvoices(r5.data.map(mapPurchaseInvoice));
         if (r6.data) setEmpleados(r6.data.map(mapEmployee));
+        if (r8.data) setCajas(r8.data.map(mapCaja));
+        if (r9.data) setCajaMovimientos(r9.data.map(mapCajaMovimiento));
 
         if (r7.data?.length) {
           setPriceLists(r7.data.map(mapPriceList));
@@ -7939,7 +7951,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} cajas={cajas} cajaMovimientos={cajaMovimientos} />}
-        {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} />}
+        {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} companyId={companyId} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
       </div>
 
