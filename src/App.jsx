@@ -215,7 +215,7 @@ const initEmpleados = [
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const fmt = (n) => `$${Number(n).toLocaleString("es-AR")}`;
-const today = "2026-03-11";
+const today = new Date().toISOString().slice(0, 10);
 
 function getClientPrice(product, clientId, clients) {
   const client = clients.find(c => c.id === clientId);
@@ -7427,19 +7427,21 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
     const totalIngresos = movs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + m.monto, 0);
     const totalGastos = movs.filter(m => m.tipo === "gasto").reduce((s, m) => s + m.monto, 0);
     const saldo = caja.montoInicial + totalIngresos - totalGastos;
-    const rows = [
-      ["REPORTE DE CAJA - NexoPyME"], ["ID:", caja.id], ["Fecha:", caja.date],
-      ["Turno:", caja.turno || "Sin turno"], ["Monto inicial:", caja.montoInicial], ["Estado:", caja.estado], [],
-      ["N°", "Tipo", "Motivo", "Monto", "Fecha", "Hora", "Empleado", "Origen", "Observaciones"],
+    const headers = ["N°", "Tipo", "Motivo", "Monto ($)", "Fecha", "Hora", "Empleado", "Origen", "Observaciones"];
+    const dataRows = [
       ...movs.map(m => {
-        const emp = m.empleadoId ? empleados.find(e => e.id === m.empleadoId) : null;
-        return [m.numero, m.tipo === "ingreso" ? "INGRESO" : "GASTO", m.motivo, m.tipo === "ingreso" ? m.monto : -m.monto, m.fecha, m.hora, emp ? emp.nombre + " " + emp.apellido : "—", m.origenId || "Manual", m.observaciones || ""];
+        const emp = m.empleadoId ? (empleados || []).find(e => e.id === m.empleadoId) : null;
+        return [m.numero, m.tipo === "ingreso" ? "INGRESO" : "GASTO", m.motivo, m.tipo === "ingreso" ? m.monto : -m.monto, m.fecha, m.hora !== "—" ? m.hora : "", emp ? emp.nombre + " " + emp.apellido : "—", m.origenId || "Manual", m.observaciones || ""];
       }),
-      [], ["", "", "TOTAL INGRESOS", totalIngresos], ["", "", "TOTAL GASTOS", totalGastos], ["", "", "SALDO FINAL", saldo],
+      ["", "", "Monto inicial", caja.montoInicial, "", "", "", "", ""],
+      ["", "", "TOTAL INGRESOS", totalIngresos, "", "", "", "", ""],
+      ["", "", "TOTAL GASTOS", totalGastos, "", "", "", "", ""],
+      ["", "", "SALDO FINAL", saldo, "", "", "", "", ""],
     ];
-    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const period = `Caja ${caja.id} · Fecha: ${caja.date}${caja.turno ? " · Turno " + caja.turno : ""} · Estado: ${caja.estado}`;
+    const ws = buildFormattedSheet(`Caja ${caja.id}`, period, headers, dataRows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Caja");
+    XLSX.utils.book_append_sheet(wb, ws, "Movimientos");
     XLSX.writeFile(wb, `Caja-${caja.id}-${caja.date}.xlsx`);
   };
 
