@@ -6838,8 +6838,9 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
         const hace45Dias = diasAtras(45);
         const rows = Object.entries(ventasPorProducto).map(([pid, data]) => {
           const prod = products.find(p => p.id === pid);
-          const costo = prod?.cost || 0;
           const lastPurchase = purchaseInvoices.filter(i => (i.lines||[]).some(l => l.productId === pid)).sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
+          const lastPurchaseLine = lastPurchase?.lines?.find(l => l.productId === pid);
+          const costo = lastPurchaseLine?.unitPrice || prod?.cost || 0;
           const sinPrecio = costo === 0;
           const stale = !sinPrecio && (!lastPurchase || lastPurchase.date < hace45Dias);
           return { id: pid, name: data.name, qty: data.qty, costo, cmv: data.qty * costo, precioVenta: data.precioVenta, margen: data.precioVenta - (data.qty * costo), sinPrecio, stale, lastPurchaseDate: lastPurchase?.date || null };
@@ -6859,8 +6860,9 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
         const hace45Dias = diasAtras(45);
         const rows = Object.entries(ventasPorProducto).map(([pid, data]) => {
           const prod = products.find(p => p.id === pid);
-          const costo = prod?.cost || 0;
           const lastPurchase = purchaseInvoices.filter(i => (i.lines||[]).some(l => l.productId === pid)).sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
+          const lastPurchaseLine = lastPurchase?.lines?.find(l => l.productId === pid);
+          const costo = lastPurchaseLine?.unitPrice || prod?.cost || 0;
           const sinPrecio = costo === 0;
           const stale = !sinPrecio && (!lastPurchase || lastPurchase.date < hace45Dias);
           return { id: pid, name: data.name, qty: data.qty, costo, cmv: data.qty * costo, precioVenta: data.precioVenta, margen: data.precioVenta - (data.qty * costo), sinPrecio, stale, lastPurchaseDate: lastPurchase?.date || null };
@@ -7877,6 +7879,18 @@ function ChequesModule({ cheques, setCheques, companyId }) {
     if (companyId) supabase.from('cheques').update({ estado }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
   };
 
+  const descargarPlantilla = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Nro Cheque", "Fecha Pago", "Fecha Vencimiento", "Monto", "Emisor"],
+      ["12345678", "15/04/2026", "15/04/2026", 50000, "Juan García"],
+      ["87654321", "20/04/2026", "25/04/2026", 120000, "Distribuidora Central"],
+    ]);
+    ws['!cols'] = [{ wch: 15 }, { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 28 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Cheques");
+    XLSX.writeFile(wb, "NexoPyME_Plantilla_Cheques.xlsx");
+  };
+
   const importarExcel = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -7886,6 +7900,8 @@ function ChequesModule({ cheques, setCheques, companyId }) {
       const wb = XLSX.read(ev.target.result, { type: 'binary', cellDates: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      if (rows.length < 2) return;
+
       const toDateStr = (v) => {
         if (!v) return today;
         if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -7895,17 +7911,41 @@ function ChequesModule({ cheques, setCheques, companyId }) {
         if (parts.length === 3) { const [d, m, y] = parts; return `${y.length === 2 ? '20' + y : y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`; }
         return today;
       };
+
+      // Detectar columnas por encabezado
+      const headerRow = rows[0].map(h => String(h || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim());
+      const hasHeaders = headerRow.some(h => /[a-z]/.test(h));
+      const findCol = (...patterns) => {
+        const idx = headerRow.findIndex(h => patterns.some(p => h.includes(p)));
+        return idx >= 0 ? idx : -1;
+      };
+
+      let colNumero = 0, colFechaPago = 1, colFechaVenc = 2, colMonto = 3, colEmisor = 4;
+      if (hasHeaders) {
+        const n = findCol('nro', 'num', 'cheque', 'n°', 'numero');
+        const fp = findCol('fecha pag', 'pago', 'cobro', 'acredit', 'emisi', 'fecha');
+        const fv = findCol('vencim', 'vto', 'vence');
+        const m = findCol('monto', 'importe', 'valor', 'amount');
+        const em = findCol('emisor', 'librador', 'beneficiario', 'nombre', 'titular');
+        if (n >= 0) colNumero = n;
+        if (fp >= 0) colFechaPago = fp;
+        if (fv >= 0) colFechaVenc = fv;
+        if (m >= 0) colMonto = m;
+        if (em >= 0) colEmisor = em;
+      }
+
+      const dataRows = hasHeaders ? rows.slice(1) : rows;
       const nuevos = [];
-      rows.slice(1).filter(r => r.some(c => c !== "")).forEach(row => {
-        const numero = String(row[0] || "").trim();
-        const monto = parseFloat(String(row[3] || "0").replace(",", ".")) || 0;
+      dataRows.filter(r => r.some(c => c !== "")).forEach(row => {
+        const numero = String(row[colNumero] || "").trim();
+        const monto = parseFloat(String(row[colMonto] || "0").replace(/[^0-9,.-]/g, "").replace(",", ".")) || 0;
         if (!numero && !monto) return;
-        const c = { id: crypto.randomUUID(), tipo: tipoImport, numero, fechaPago: toDateStr(row[1]), fechaVencimiento: toDateStr(row[2]) || toDateStr(row[1]), monto, emisor: String(row[4] || "").trim(), estado: "pendiente" };
+        const c = { id: crypto.randomUUID(), tipo: tipoImport, numero, fechaPago: toDateStr(row[colFechaPago]), fechaVencimiento: toDateStr(row[colFechaVenc]) || toDateStr(row[colFechaPago]), monto, emisor: String(row[colEmisor] || "").trim(), estado: "pendiente" };
         nuevos.push(c);
       });
       setCheques(prev => [...prev, ...nuevos]);
       if (companyId) nuevos.forEach(c => supabase.from('cheques').insert(chequeToDb(c, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }));
-      setImportMsg(`${nuevos.length} cheques importados como "${tipoImport}"`);
+      setImportMsg(`${nuevos.length} cheques importados como "${tipoImport}"${hasHeaders ? " (encabezados detectados)" : ""}`);
       setTimeout(() => setImportMsg(null), 4000);
     };
     reader.readAsBinaryString(file);
@@ -7932,6 +7972,10 @@ function ChequesModule({ cheques, setCheques, companyId }) {
           <div style={{ fontSize: 13, color: T.muted }}>Cheques a cobrar, a pagar y flujo diario</div>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={descargarPlantilla}
+            style={{ padding: "9px 16px", borderRadius: 9, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            📋 Plantilla
+          </button>
           <label style={{ padding: "9px 16px", borderRadius: 9, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center" }}>
             📥 Importar Excel
             <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={importarExcel} />
