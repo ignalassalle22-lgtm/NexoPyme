@@ -128,6 +128,7 @@ const mapProduct = r => ({
   minStock: r.min_stock ?? 0, unit: r.unit || '', category: r.category || '',
   cost: r.cost ?? 0, iva: r.iva ?? 21, tracksStock: r.tracks_stock !== false,
   prices: r.prices || {}, pricesUsd: r.prices_usd || {}, clientOverrides: r.client_overrides || [],
+  esCompuesto: r.es_compuesto || false, componentes: r.componentes || [],
 });
 const mapClient = r => ({
   id: r.id, codigo: r.codigo || '', name: r.name, cuit: r.cuit || '',
@@ -172,6 +173,7 @@ const productToDb = (p, cid) => ({
   min_stock: p.minStock, unit: p.unit, category: p.category, cost: p.cost,
   iva: p.iva, tracks_stock: p.tracksStock !== false,
   prices: p.prices, prices_usd: p.pricesUsd || {}, client_overrides: p.clientOverrides,
+  es_compuesto: p.esCompuesto || false, componentes: p.componentes || [],
 });
 const clientToDb = (c, cid) => ({
   id: c.id, company_id: cid, codigo: c.codigo, name: c.name, cuit: c.cuit,
@@ -207,6 +209,8 @@ const employeeToDb = (e, cid) => ({
 const priceListToDb = (l, cid) => ({ id: l.id, company_id: cid, label: l.label });
 const cajaToDb = (c, cid) => ({ id: c.id, company_id: cid, date: c.date, turno: c.turno || null, monto_inicial: c.montoInicial, estado: c.estado });
 const cajaMovimientoToDb = (m, cid) => ({ id: m.id, company_id: cid, caja_id: m.cajaId, tipo: m.tipo, monto: m.monto, fecha: m.fecha, hora: m.hora, motivo: m.motivo, empleado_id: m.empleadoId || null, observaciones: m.observaciones || null, origen: m.origen, origen_id: m.origenId || null });
+const mapCheque = r => ({ id: r.id, tipo: r.tipo, numero: r.numero || '', fechaPago: r.fecha_pago, fechaVencimiento: r.fecha_vencimiento, monto: r.monto ?? 0, emisor: r.emisor || '', estado: r.estado || 'pendiente' });
+const chequeToDb = (c, cid) => ({ id: c.id, company_id: cid, tipo: c.tipo, numero: c.numero, fecha_pago: c.fechaPago, fecha_vencimiento: c.fechaVencimiento, monto: c.monto, emisor: c.emisor, estado: c.estado });
 
 // Helper: human-readable display ref for sale/purchase invoices
 const docRef = inv => inv?.ref || inv?.id || '';
@@ -4188,7 +4192,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
 }
 
 // ─── MODULE: INVENTARIO ───────────────────────────────────────────────────────
-const EMPTY_FORM = { name: "", sku: "", category: "", unit: "unidad", minStock: 10, cost: 0, iva: 21, tracksStock: true, prices: { lista_a: 0, lista_b: 0, lista_c: 0 }, clientCodes: [] };
+const EMPTY_FORM = { name: "", sku: "", category: "", unit: "unidad", minStock: 10, cost: 0, iva: 21, tracksStock: true, prices: { lista_a: 0, lista_b: 0, lista_c: 0 }, clientCodes: [], esCompuesto: false, componentes: [] };
 
 function InventarioModule({ products, setProducts, clients, suppliers, priceLists, companyId }) {
   const [showForm, setShowForm] = useState(false);
@@ -4564,6 +4568,71 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
             {form.tracksStock && (
               <div style={{ marginTop: 10 }}>
                 <Input label="STOCK MÍNIMO" type="number" value={form.minStock} onChange={v => setForm(f => ({ ...f, minStock: parseInt(v) || 0 }))} />
+              </div>
+            )}
+          </div>
+
+          {/* ── PRODUCTO COMPUESTO ── */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 8, letterSpacing: 1 }}>TIPO DE PRODUCTO</label>
+            <div style={{ display: "flex", gap: 10, marginBottom: form.esCompuesto ? 14 : 0 }}>
+              <button onClick={() => setForm(f => ({ ...f, esCompuesto: false, componentes: [] }))}
+                style={{ flex: 1, padding: "11px 14px", borderRadius: 10, border: `2px solid ${!form.esCompuesto ? T.accent : T.border}`, background: !form.esCompuesto ? T.accentLight : T.surface, color: !form.esCompuesto ? T.accent : T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                ◆ Producto simple
+              </button>
+              <button onClick={() => setForm(f => ({ ...f, esCompuesto: true }))}
+                style={{ flex: 1, padding: "11px 14px", borderRadius: 10, border: `2px solid ${form.esCompuesto ? T.purple : T.border}`, background: form.esCompuesto ? T.purpleLight : T.surface, color: form.esCompuesto ? T.purple : T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                ◈ Producto compuesto
+              </button>
+            </div>
+            {form.esCompuesto && (
+              <div>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 10 }}>Seleccioná los componentes. El precio Lista A se calculará automáticamente como la suma de sus partes.</div>
+                {form.componentes.length > 0 && (
+                  <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 12 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead><tr style={{ background: T.surface }}>
+                        {["Componente","Cantidad","Precio unit. (Lista A)",""].map(h => <th key={h} style={{ padding: "7px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}
+                      </tr></thead>
+                      <tbody>{form.componentes.map((comp, idx) => {
+                        const prod = products.find(p => p.id === comp.productId);
+                        return (
+                          <tr key={comp.productId} style={{ borderTop: `1px solid ${T.border}` }}>
+                            <td style={{ padding: "8px 12px", fontSize: 13 }}>{prod?.name || "?"}</td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <input type="number" min="1" value={comp.qty}
+                                onChange={e => setForm(f => ({ ...f, componentes: f.componentes.map((c, i) => i === idx ? { ...c, qty: parseInt(e.target.value)||1 } : c) }))}
+                                style={{ width: 70, padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                            </td>
+                            <td style={{ padding: "8px 12px", fontSize: 13, color: T.muted }}>{fmt((prod?.prices?.lista_a || 0) * comp.qty)}</td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <button onClick={() => setForm(f => ({ ...f, componentes: f.componentes.filter((_, i) => i !== idx) }))}
+                                style={{ background: "none", border: "none", color: T.red, cursor: "pointer", fontSize: 14 }}>✕</button>
+                            </td>
+                          </tr>
+                        );
+                      })}</tbody>
+                    </table>
+                    <div style={{ padding: "8px 12px", background: T.surface2, fontSize: 12, fontWeight: 700, color: T.purple, borderTop: `1px solid ${T.border}` }}>
+                      Total Lista A: {fmt(form.componentes.reduce((s, c) => { const p = products.find(x => x.id === c.productId); return s + (p?.prices?.lista_a || 0) * c.qty; }, 0))}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>AGREGAR COMPONENTE</label>
+                  <select onChange={e => {
+                    const pid = e.target.value;
+                    if (!pid || form.componentes.some(c => c.productId === pid)) return;
+                    setForm(f => ({ ...f, componentes: [...f.componentes, { productId: pid, qty: 1 }] }));
+                    e.target.value = "";
+                  }}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                    <option value="">Seleccionar producto para agregar...</option>
+                    {products.filter(p => !p.esCompuesto && !form.componentes.some(c => c.productId === p.id)).map(p => (
+                      <option key={p.id} value={p.id}>{p.name} — {fmt(p.prices?.lista_a || 0)}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
           </div>
@@ -6754,6 +6823,102 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
         );
       }
     },
+    cmv: {
+      title: "Reporte CMV", layer: "ta", mvp: true, tag: "Ventas",
+      exportData: () => {
+        const mesActual = hoy.slice(0, 7);
+        const facturasEsteMes = allFacturas.filter(i => i.date?.startsWith(mesActual));
+        const ventasPorProducto = {};
+        facturasEsteMes.forEach(inv => (inv.lines||[]).forEach(l => {
+          if (!l.productId) return;
+          if (!ventasPorProducto[l.productId]) ventasPorProducto[l.productId] = { name: l.name, qty: 0, precioVenta: 0 };
+          ventasPorProducto[l.productId].qty += l.qty || 0;
+          ventasPorProducto[l.productId].precioVenta += l.subtotal || 0;
+        }));
+        const hace45Dias = diasAtras(45);
+        const rows = Object.entries(ventasPorProducto).map(([pid, data]) => {
+          const prod = products.find(p => p.id === pid);
+          const costo = prod?.cost || 0;
+          const lastPurchase = purchaseInvoices.filter(i => (i.lines||[]).some(l => l.productId === pid)).sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
+          const sinPrecio = costo === 0;
+          const stale = !sinPrecio && (!lastPurchase || lastPurchase.date < hace45Dias);
+          return { id: pid, name: data.name, qty: data.qty, costo, cmv: data.qty * costo, precioVenta: data.precioVenta, margen: data.precioVenta - (data.qty * costo), sinPrecio, stale, lastPurchaseDate: lastPurchase?.date || null };
+        }).sort((a,b) => b.cmv - a.cmv);
+        return { sheets: [{ title: `CMV ${mesActual}`, headers: ["Producto", "Uds. vendidas", "Último costo", "CMV", "Venta", "Margen", "Estado precio"], rows: rows.map(r => [r.name, r.qty, r.costo, r.cmv, r.precioVenta, r.margen, r.sinPrecio ? "SIN PRECIO" : r.stale ? "DESACTUALIZADO" : "OK"]) }] };
+      },
+      render: () => {
+        const mesActual = hoy.slice(0, 7);
+        const facturasEsteMes = allFacturas.filter(i => i.date?.startsWith(mesActual));
+        const ventasPorProducto = {};
+        facturasEsteMes.forEach(inv => (inv.lines||[]).forEach(l => {
+          if (!l.productId) return;
+          if (!ventasPorProducto[l.productId]) ventasPorProducto[l.productId] = { name: l.name, qty: 0, precioVenta: 0 };
+          ventasPorProducto[l.productId].qty += l.qty || 0;
+          ventasPorProducto[l.productId].precioVenta += l.subtotal || 0;
+        }));
+        const hace45Dias = diasAtras(45);
+        const rows = Object.entries(ventasPorProducto).map(([pid, data]) => {
+          const prod = products.find(p => p.id === pid);
+          const costo = prod?.cost || 0;
+          const lastPurchase = purchaseInvoices.filter(i => (i.lines||[]).some(l => l.productId === pid)).sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
+          const sinPrecio = costo === 0;
+          const stale = !sinPrecio && (!lastPurchase || lastPurchase.date < hace45Dias);
+          return { id: pid, name: data.name, qty: data.qty, costo, cmv: data.qty * costo, precioVenta: data.precioVenta, margen: data.precioVenta - (data.qty * costo), sinPrecio, stale, lastPurchaseDate: lastPurchase?.date || null };
+        }).sort((a,b) => b.cmv - a.cmv);
+        const totalCMV = rows.reduce((s,r) => s + r.cmv, 0);
+        const totalVentaMes = rows.reduce((s,r) => s + r.precioVenta, 0);
+        const alertas = rows.filter(r => r.sinPrecio || r.stale);
+        return (
+          <div>
+            {alertas.length > 0 && (
+              <div style={{ background: T.yellowLight, border: `1px solid ${T.yellow}40`, borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.yellow, marginBottom: 8 }}>⚠ ALERTAS DE PRECIO — {alertas.length} producto{alertas.length > 1 ? "s" : ""} requieren atención</div>
+                {alertas.map(a => (
+                  <div key={a.id} style={{ fontSize: 12, color: T.ink, marginBottom: 3 }}>
+                    <span style={{ background: a.sinPrecio ? T.redLight : T.yellowLight, color: a.sinPrecio ? T.red : T.yellow, padding: "1px 7px", borderRadius: 8, fontSize: 10, fontWeight: 700, marginRight: 8 }}>{a.sinPrecio ? "SIN PRECIO" : "DESACTUALIZADO"}</span>
+                    {a.name}{!a.sinPrecio && a.lastPurchaseDate && <span style={{ color: T.muted }}> — última compra: {a.lastPurchaseDate}</span>}
+                    {!a.sinPrecio && !a.lastPurchaseDate && <span style={{ color: T.muted }}> — sin compras registradas</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 20 }}>
+              {[["CMV del mes", totalCMV, T.orange], ["Ventas del mes", totalVentaMes, T.accent], ["Margen bruto", totalVentaMes - totalCMV, totalVentaMes >= totalCMV ? T.blue : T.red]].map(([l,v,c]) => (
+                <div key={l} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px" }}>
+                  <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 4 }}>{l.toUpperCase()}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: c }}>{fmt(v)}</div>
+                  {l === "Margen bruto" && totalVentaMes > 0 && <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{((totalVentaMes - totalCMV) / totalVentaMes * 100).toFixed(1)}% margen</div>}
+                </div>
+              ))}
+            </div>
+            {rows.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 40, color: T.muted, fontSize: 13 }}>Sin ventas registradas este mes.</div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr style={{ background: T.surface }}>
+                  {["Producto","Uds.","Último costo","CMV","Venta","Margen","Estado"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}
+                </tr></thead>
+                <tbody>{rows.map(r => (
+                  <tr key={r.id} style={{ borderTop: `1px solid ${T.border}`, background: r.sinPrecio ? `${T.red}08` : r.stale ? `${T.yellow}08` : "transparent" }}>
+                    <td style={{ padding: "10px 12px", fontSize: 13 }}>{r.name}</td>
+                    <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 700 }}>{r.qty}</td>
+                    <td style={{ padding: "10px 12px", fontSize: 13, color: r.sinPrecio ? T.red : T.ink }}>{r.sinPrecio ? "—" : fmt(r.costo)}</td>
+                    <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 700, color: T.orange }}>{fmt(r.cmv)}</td>
+                    <td style={{ padding: "10px 12px", fontSize: 13, color: T.accent }}>{fmt(r.precioVenta)}</td>
+                    <td style={{ padding: "10px 12px", fontSize: 13, color: r.margen >= 0 ? T.blue : T.red }}>{fmt(r.margen)}</td>
+                    <td style={{ padding: "10px 12px" }}>
+                      {r.sinPrecio ? <span style={{ background: T.redLight, color: T.red, padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 700 }}>SIN PRECIO</span>
+                        : r.stale ? <span style={{ background: T.yellowLight, color: T.yellow, padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 700 }}>DESACTUALIZADO</span>
+                        : <span style={{ background: T.accentLight, color: T.accent, padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 700 }}>OK</span>}
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+          </div>
+        );
+      }
+    },
     scorecard: {
       title: "Scorecard PyME", layer: "es", mvp: true, tag: "Cross",
       render: () => {
@@ -6774,7 +6939,7 @@ function ReportesModule({ saleInvoices, purchaseInvoices, products, clients, sup
 
   const layers = [
     { id: "op", label: "Operativos", freq: "Diario", desc: "Control diario de ventas, cobranzas y stock", color: "#0F6E56", colorLight: "#E1F5EE", reports: ["ventas_dia","cobranzas_dia","aging","stock_alertas","mov_dia","entregas_dia","pipeline"] },
-    { id: "ta", label: "Tácticos", freq: "Semanal / Mensual", desc: "Tendencias, rankings y performance del período", color: "#185FA5", colorLight: "#E6F1FB", reports: ["evolucion_ventas","ranking_productos","margenes","abc_ventas","pago_medio","rotacion","valorizacion","ranking_clientes","antiguedad_saldos","clientes_nuevos","eficiencia_log","ciclos"] },
+    { id: "ta", label: "Tácticos", freq: "Semanal / Mensual", desc: "Tendencias, rankings y performance del período", color: "#185FA5", colorLight: "#E6F1FB", reports: ["evolucion_ventas","ranking_productos","margenes","abc_ventas","pago_medio","rotacion","valorizacion","ranking_clientes","antiguedad_saldos","clientes_nuevos","eficiencia_log","ciclos","cmv"] },
     { id: "es", label: "Estratégicos", freq: "Trimestral / Anual", desc: "P&L, cashflow y visión financiera del negocio", color: "#534AB7", colorLight: "#EEEDFE", reports: ["pyl","equilibrio","cashflow","estacionalidad","rentabilidad_cliente","concentracion","mix_productos","scorecard"] },
     { id: "cx", label: "Caja", freq: "Diario / Período", desc: "Gastos e ingresos de efectivo por período", color: "#92400E", colorLight: "#FEF3C7", reports: ["caja_movimientos"] },
   ];
@@ -7684,12 +7849,215 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
 }
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
+// ─── MODULE: CHEQUES ──────────────────────────────────────────────────────────
+function ChequesModule({ cheques, setCheques, companyId }) {
+  const [tab, setTab] = useState("cobrar");
+  const [showForm, setShowForm] = useState(false);
+  const [formTipo, setFormTipo] = useState("cobrar");
+  const [formNumero, setFormNumero] = useState("");
+  const [formFechaPago, setFormFechaPago] = useState(today);
+  const [formFechaVenc, setFormFechaVenc] = useState("");
+  const [formMonto, setFormMonto] = useState(0);
+  const [formEmisor, setFormEmisor] = useState("");
+  const [importMsg, setImportMsg] = useState(null);
+
+  const cobrar = cheques.filter(c => c.tipo === "cobrar");
+  const pagar = cheques.filter(c => c.tipo === "pagar");
+
+  const addCheque = () => {
+    const c = { id: crypto.randomUUID(), tipo: formTipo, numero: formNumero, fechaPago: formFechaPago, fechaVencimiento: formFechaVenc || formFechaPago, monto: parseFloat(formMonto) || 0, emisor: formEmisor, estado: "pendiente" };
+    setCheques(prev => [...prev, c]);
+    if (companyId) supabase.from('cheques').insert(chequeToDb(c, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
+    setShowForm(false);
+    setFormNumero(""); setFormMonto(0); setFormEmisor(""); setFormFechaVenc(""); setFormFechaPago(today);
+  };
+
+  const marcarEstado = (id, estado) => {
+    setCheques(prev => prev.map(c => c.id === id ? { ...c, estado } : c));
+    if (companyId) supabase.from('cheques').update({ estado }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
+  };
+
+  const importarExcel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const tipoImport = tab === "pagar" ? "pagar" : "cobrar";
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const wb = XLSX.read(ev.target.result, { type: 'binary', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      const toDateStr = (v) => {
+        if (!v) return today;
+        if (v instanceof Date) return v.toISOString().slice(0, 10);
+        const s = String(v).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+        const parts = s.split(/[/\-\.]/);
+        if (parts.length === 3) { const [d, m, y] = parts; return `${y.length === 2 ? '20' + y : y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`; }
+        return today;
+      };
+      const nuevos = [];
+      rows.slice(1).filter(r => r.some(c => c !== "")).forEach(row => {
+        const numero = String(row[0] || "").trim();
+        const monto = parseFloat(String(row[3] || "0").replace(",", ".")) || 0;
+        if (!numero && !monto) return;
+        const c = { id: crypto.randomUUID(), tipo: tipoImport, numero, fechaPago: toDateStr(row[1]), fechaVencimiento: toDateStr(row[2]) || toDateStr(row[1]), monto, emisor: String(row[4] || "").trim(), estado: "pendiente" };
+        nuevos.push(c);
+      });
+      setCheques(prev => [...prev, ...nuevos]);
+      if (companyId) nuevos.forEach(c => supabase.from('cheques').insert(chequeToDb(c, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }));
+      setImportMsg(`${nuevos.length} cheques importados como "${tipoImport}"`);
+      setTimeout(() => setImportMsg(null), 4000);
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  };
+
+  const flujoData = (() => {
+    const days = {};
+    cheques.filter(c => c.estado === "pendiente").forEach(c => {
+      const d = c.fechaPago;
+      if (!days[d]) days[d] = { cobrar: 0, pagar: 0 };
+      days[d][c.tipo] += c.monto;
+    });
+    return Object.entries(days).sort((a, b) => a[0].localeCompare(b[0]));
+  })();
+
+  const listaCheques = tab === "cobrar" ? cobrar : tab === "pagar" ? pagar : [];
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>Cheques</div>
+          <div style={{ fontSize: 13, color: T.muted }}>Cheques a cobrar, a pagar y flujo diario</div>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <label style={{ padding: "9px 16px", borderRadius: 9, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center" }}>
+            📥 Importar Excel
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={importarExcel} />
+          </label>
+          <Btn onClick={() => { setFormTipo(tab === "pagar" ? "pagar" : "cobrar"); setShowForm(true); }}>+ Nuevo cheque</Btn>
+        </div>
+      </div>
+
+      {importMsg && <div style={{ background: T.accentLight, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: T.accent }}>✓ {importMsg}</div>}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
+        {[
+          ["A cobrar (pendiente)", cobrar.filter(c=>c.estado==="pendiente").reduce((s,c)=>s+c.monto,0), T.accent],
+          ["Cobrados", cobrar.filter(c=>c.estado==="cobrado").reduce((s,c)=>s+c.monto,0), T.blue],
+          ["A pagar (pendiente)", pagar.filter(c=>c.estado==="pendiente").reduce((s,c)=>s+c.monto,0), T.orange],
+          ["Pagados", pagar.filter(c=>c.estado==="pagado").reduce((s,c)=>s+c.monto,0), T.muted],
+        ].map(([l,v,c]) => (
+          <div key={l} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
+            <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, marginBottom: 6 }}>{l.toUpperCase()}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: c }}>{fmt(v)}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {[["cobrar","A Cobrar"],["pagar","A Pagar"],["flujo","Flujo diario"]].map(([id,label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            style={{ padding: "8px 18px", borderRadius: 8, border: `1px solid ${tab===id?T.accent:T.border}`, background: tab===id?T.accentLight:"transparent", color: tab===id?T.accent:T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "flujo" ? (
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+          {flujoData.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 40, color: T.muted, fontSize: 13 }}>No hay cheques pendientes registrados.</div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>
+                {["Fecha","A cobrar","A pagar","Balance del día"].map(h => <th key={h} style={{ padding: "11px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>{flujoData.map(([d, v]) => (
+                <tr key={d} style={{ borderTop: `1px solid ${T.border}`, background: d === today ? `${T.accent}10` : "transparent" }}>
+                  <td style={{ padding: "10px 14px", fontFamily: "monospace", fontWeight: 600 }}>{d}{d === today && <span style={{ marginLeft: 8, fontSize: 10, background: T.accentLight, color: T.accent, padding: "1px 6px", borderRadius: 6, fontWeight: 700 }}>HOY</span>}</td>
+                  <td style={{ padding: "10px 14px", color: T.accent, fontWeight: 700 }}>{v.cobrar > 0 ? fmt(v.cobrar) : <span style={{color:T.faint}}>—</span>}</td>
+                  <td style={{ padding: "10px 14px", color: T.red, fontWeight: 700 }}>{v.pagar > 0 ? fmt(v.pagar) : <span style={{color:T.faint}}>—</span>}</td>
+                  <td style={{ padding: "10px 14px", fontWeight: 800, color: v.cobrar - v.pagar >= 0 ? T.blue : T.red }}>{fmt(v.cobrar - v.pagar)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
+        </div>
+      ) : (
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+          {listaCheques.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 40, color: T.muted, fontSize: 13 }}>No hay cheques {tab === "cobrar" ? "a cobrar" : "a pagar"} registrados. Importá un Excel o creá uno manual.</div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>
+                {["N° Cheque","Emisor","Fecha pago","Vencimiento","Monto","Estado",""].map(h => <th key={h} style={{ padding: "11px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>{listaCheques.sort((a,b) => a.fechaPago.localeCompare(b.fechaPago)).map(c => {
+                const vencido = c.estado === "pendiente" && c.fechaVencimiento < today;
+                return (
+                  <tr key={c.id} style={{ borderTop: `1px solid ${T.border}`, background: vencido ? `${T.red}08` : "transparent" }}>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", color: T.blue, fontWeight: 700 }}>{c.numero || "—"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 13 }}>{c.emisor || "—"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 13, color: T.muted }}>{c.fechaPago}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 13, color: vencido ? T.red : T.muted }}>{c.fechaVencimiento || "—"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: tab === "cobrar" ? T.accent : T.orange }}>{fmt(c.monto)}</td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <span style={{ background: c.estado === "pendiente" ? (vencido ? T.redLight : T.yellowLight) : T.accentLight, color: c.estado === "pendiente" ? (vencido ? T.red : T.yellow) : T.accent, padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 700 }}>
+                        {c.estado.toUpperCase()}{vencido ? " ⚠" : ""}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>
+                      {c.estado === "pendiente" && (
+                        <button onClick={() => marcarEstado(c.id, tab === "cobrar" ? "cobrado" : "pagado")}
+                          style={{ padding: "5px 12px", borderRadius: 7, border: `1px solid ${T.accent}`, background: T.accentLight, color: T.accent, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                          Marcar {tab === "cobrar" ? "cobrado" : "pagado"}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {showForm && (
+        <Modal title="Nuevo cheque" onClose={() => setShowForm(false)}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            {[["cobrar","A cobrar"],["pagar","A pagar"]].map(([v,l]) => (
+              <button key={v} onClick={() => setFormTipo(v)}
+                style={{ flex: 1, padding: "10px", borderRadius: 8, border: `2px solid ${formTipo===v?T.accent:T.border}`, background: formTipo===v?T.accentLight:T.surface, color: formTipo===v?T.accent:T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+            <Input label="N° DE CHEQUE" value={formNumero} onChange={setFormNumero} placeholder="ej: 12345678" />
+            <Input label="EMISOR" value={formEmisor} onChange={setFormEmisor} placeholder="Nombre del emisor" />
+            <Input label="FECHA DE PAGO" type="date" value={formFechaPago} onChange={setFormFechaPago} />
+            <Input label="FECHA VENCIMIENTO" type="date" value={formFechaVenc} onChange={setFormFechaVenc} />
+            <Input label="MONTO ($)" type="number" value={formMonto} onChange={v => setFormMonto(parseFloat(v)||0)} />
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <Btn v="ghost" onClick={() => setShowForm(false)}>Cancelar</Btn>
+            <Btn onClick={addCheque} disabled={!formFechaPago || formMonto <= 0}>Guardar</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 const NAV = [
   { id: "hub",        label: "Inicio",     icon: "⬡" },
   { id: "ventas",     label: "Ventas",     icon: "◈" },
   { id: "comercial",  label: "Comercial",  icon: "◇" },
   { id: "compras",    label: "Compras",    icon: "◉" },
   { id: "caja",       label: "Caja",       icon: "◈" },
+  { id: "cheques",    label: "Cheques",    icon: "✦" },
   { id: "inventario", label: "Inventario", icon: "▦" },
   { id: "logistica",  label: "Logística",  icon: "🚚" },
   { id: "reportes",   label: "Reportes",   icon: "◎" },
@@ -7709,6 +8077,7 @@ export default function App({ session, profile, onLogout }) {
   const [purchaseInvoices, setPurchaseInvoices] = useState([]);
   const [cajas, setCajas] = useState([]);
   const [cajaMovimientos, setCajaMovimientos] = useState([]);
+  const [cheques, setCheques] = useState([]);
   const [defaultMontoInicial, setDefaultMontoInicial] = useState(0);
   const [showDocBuilder, setShowDocBuilder] = useState(false);
   const [docBuilderType, setDocBuilderType] = useState("factura");
@@ -7749,7 +8118,7 @@ export default function App({ session, profile, onLogout }) {
             new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout: ${label}`)), 10000))
           ]);
 
-        const [r1, r2, r3, r4, r5, r6, r7, r8, r9] = await Promise.all([
+        const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10] = await Promise.all([
           fetchWithTimeout(supabase.from('products').select('*').eq('company_id', companyId).order('name'), 'products'),
           fetchWithTimeout(supabase.from('clients').select('*').eq('company_id', companyId).order('name'), 'clients'),
           fetchWithTimeout(supabase.from('suppliers').select('*').eq('company_id', companyId).order('name'), 'suppliers'),
@@ -7759,6 +8128,7 @@ export default function App({ session, profile, onLogout }) {
           fetchWithTimeout(supabase.from('price_lists').select('*').eq('company_id', companyId).order('label'), 'price_lists'),
           fetchWithTimeout(supabase.from('cajas').select('*').eq('company_id', companyId).order('date', { ascending: false }), 'cajas'),
           fetchWithTimeout(supabase.from('caja_movimientos').select('*').eq('company_id', companyId).order('created_at'), 'caja_movimientos'),
+          fetchWithTimeout(supabase.from('cheques').select('*').eq('company_id', companyId).order('fecha_pago'), 'cheques'),
         ]);
 
         if (r1.error) throw new Error('products: ' + r1.error.message);
@@ -7770,6 +8140,7 @@ export default function App({ session, profile, onLogout }) {
         if (r7.error) throw new Error('price_lists: ' + r7.error.message);
         if (r8.error) throw new Error('cajas: ' + r8.error.message);
         if (r9.error) throw new Error('caja_movimientos: ' + r9.error.message);
+        if (r10.error) throw new Error('cheques: ' + r10.error.message);
 
         if (r1.data) setProducts(r1.data.map(mapProduct));
         if (r2.data) setClients(r2.data.map(mapClient));
@@ -7779,6 +8150,7 @@ export default function App({ session, profile, onLogout }) {
         if (r6.data) setEmpleados(r6.data.map(mapEmployee));
         if (r8.data) setCajas(r8.data.map(mapCaja));
         if (r9.data) setCajaMovimientos(r9.data.map(mapCajaMovimiento));
+        if (r10.data) setCheques(r10.data.map(mapCheque));
 
         if (r7.data?.length) {
           setPriceLists(r7.data.map(mapPriceList));
@@ -7952,6 +8324,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} cajas={cajas} cajaMovimientos={cajaMovimientos} />}
         {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} companyId={companyId} />}
+        {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
       </div>
 
