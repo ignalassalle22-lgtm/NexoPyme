@@ -7915,18 +7915,21 @@ function ChequesModule({ cheques, setCheques, companyId }) {
       // Detectar columnas por encabezado
       const headerRow = rows[0].map(h => String(h || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim());
       const hasHeaders = headerRow.some(h => /[a-z]/.test(h));
-      const findCol = (...patterns) => {
-        const idx = headerRow.findIndex(h => patterns.some(p => h.includes(p)));
+      // findCol: busca patterns, opcionalmente excluye columnas que contengan exclude
+      const findCol = (patterns, exclude = []) => {
+        const idx = headerRow.findIndex(h => patterns.some(p => h.includes(p)) && !exclude.some(ex => h.includes(ex)));
         return idx >= 0 ? idx : -1;
       };
 
       let colNumero = 0, colFechaPago = 1, colFechaVenc = 2, colMonto = 3, colEmisor = 4;
       if (hasHeaders) {
-        const n = findCol('nro', 'num', 'cheque', 'n°', 'numero');
-        const fp = findCol('fecha pag', 'pago', 'cobro', 'acredit', 'emisi', 'fecha');
-        const fv = findCol('vencim', 'vto', 'vence');
-        const m = findCol('monto', 'importe', 'valor', 'amount');
-        const em = findCol('emisor', 'librador', 'beneficiario', 'nombre', 'titular');
+        const n = findCol(['nro', 'num', 'cheque', 'n°', 'numero']);
+        const fp = findCol(['fecha pag', 'pago', 'cobro', 'acredit', 'fecha'], ['vencim', 'vto', 'vence']);
+        const fv = findCol(['vencim', 'vto', 'vence']);
+        const m = findCol(['monto', 'importe', 'valor', 'amount']);
+        // Emisor: priorizar "emitido por" sobre "banco emisor" — excluir columnas que contengan "banco"
+        let em = findCol(['emitido', 'librador', 'beneficiario', 'titular']);
+        if (em < 0) em = findCol(['nombre', 'emisor', 'cliente'], ['banco']);
         if (n >= 0) colNumero = n;
         if (fp >= 0) colFechaPago = fp;
         if (fv >= 0) colFechaVenc = fv;
@@ -7934,18 +7937,25 @@ function ChequesModule({ cheques, setCheques, companyId }) {
         if (em >= 0) colEmisor = em;
       }
 
+      // Numeros de cheque ya cargados (para evitar duplicados)
+      const existingNumeros = new Set(cheques.map(c => c.numero).filter(Boolean));
+
       const dataRows = hasHeaders ? rows.slice(1) : rows;
       const nuevos = [];
+      let duplicados = 0;
       dataRows.filter(r => r.some(c => c !== "")).forEach(row => {
         const numero = String(row[colNumero] || "").trim();
         const monto = parseFloat(String(row[colMonto] || "0").replace(/[^0-9,.-]/g, "").replace(",", ".")) || 0;
         if (!numero && !monto) return;
+        if (numero && existingNumeros.has(numero)) { duplicados++; return; }
         const c = { id: crypto.randomUUID(), tipo: tipoImport, numero, fechaPago: toDateStr(row[colFechaPago]), fechaVencimiento: toDateStr(row[colFechaVenc]) || toDateStr(row[colFechaPago]), monto, emisor: String(row[colEmisor] || "").trim(), estado: "pendiente" };
         nuevos.push(c);
+        if (numero) existingNumeros.add(numero);
       });
       setCheques(prev => [...prev, ...nuevos]);
       if (companyId) nuevos.forEach(c => supabase.from('cheques').insert(chequeToDb(c, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }));
-      setImportMsg(`${nuevos.length} cheques importados como "${tipoImport}"${hasHeaders ? " (encabezados detectados)" : ""}`);
+      const dupMsg = duplicados > 0 ? ` · ${duplicados} duplicado${duplicados > 1 ? "s" : ""} ignorado${duplicados > 1 ? "s" : ""}` : "";
+      setImportMsg(`${nuevos.length} cheques importados${dupMsg}`);
       setTimeout(() => setImportMsg(null), 4000);
     };
     reader.readAsBinaryString(file);
