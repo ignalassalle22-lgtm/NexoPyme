@@ -7879,6 +7879,18 @@ function ChequesModule({ cheques, setCheques, companyId }) {
     if (companyId) supabase.from('cheques').update({ estado }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
   };
 
+  const eliminarCheque = (id) => {
+    setCheques(prev => prev.filter(c => c.id !== id));
+    if (companyId) supabase.from('cheques').delete().eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
+  };
+
+  const vaciarCheques = () => {
+    if (!window.confirm(`¿Vaciar todos los cheques ${tab === "pagar" ? "a pagar" : "a cobrar"}? Esta acción no se puede deshacer.`)) return;
+    const ids = (tab === "cobrar" ? cobrar : pagar).map(c => c.id);
+    setCheques(prev => prev.filter(c => !ids.includes(c.id)));
+    if (companyId) supabase.from('cheques').delete().in('id', ids).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
+  };
+
   const descargarPlantilla = () => {
     const ws = XLSX.utils.aoa_to_sheet([
       ["Nro Cheque", "Fecha Pago", "Fecha Vencimiento", "Monto", "Emisor"],
@@ -7990,6 +8002,12 @@ function ChequesModule({ cheques, setCheques, companyId }) {
             📥 Importar Excel
             <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={importarExcel} />
           </label>
+          {(tab === "cobrar" || tab === "pagar") && (tab === "cobrar" ? cobrar : pagar).length > 0 && (
+            <button onClick={vaciarCheques}
+              style={{ padding: "9px 16px", borderRadius: 9, border: `1px solid ${T.red}60`, background: T.redLight, color: T.red, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+              🗑 Vaciar lista
+            </button>
+          )}
           <Btn onClick={() => { setFormTipo(tab === "pagar" ? "pagar" : "cobrar"); setShowForm(true); }}>+ Nuevo cheque</Btn>
         </div>
       </div>
@@ -8046,7 +8064,7 @@ function ChequesModule({ cheques, setCheques, companyId }) {
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr style={{ background: T.surface }}>
-                {["N° Cheque","Emisor","Fecha pago","Vencimiento","Monto","Estado",""].map(h => <th key={h} style={{ padding: "11px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}
+                {["N° Cheque","Emisor","Fecha pago","Vencimiento","Monto","Estado","",""].map(h => <th key={h} style={{ padding: "11px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}
               </tr></thead>
               <tbody>{listaCheques.sort((a,b) => a.fechaPago.localeCompare(b.fechaPago)).map(c => {
                 const vencido = c.estado === "pendiente" && c.fechaVencimiento < today;
@@ -8069,6 +8087,13 @@ function ChequesModule({ cheques, setCheques, companyId }) {
                           Marcar {tab === "cobrar" ? "cobrado" : "pagado"}
                         </button>
                       )}
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <button onClick={() => eliminarCheque(c.id)}
+                        style={{ background: "none", border: "none", color: T.faint, cursor: "pointer", fontSize: 16, lineHeight: 1 }}
+                        title="Eliminar cheque"
+                        onMouseEnter={e => e.target.style.color = T.red}
+                        onMouseLeave={e => e.target.style.color = T.faint}>✕</button>
                     </td>
                   </tr>
                 );
