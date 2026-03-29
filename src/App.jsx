@@ -8408,10 +8408,15 @@ function ChequesModule({ cheques, setCheques, companyId }) {
                       </span>
                     </td>
                     <td style={{ padding: "10px 14px" }}>
-                      {c.estado === "pendiente" && (
+                      {c.estado === "pendiente" ? (
                         <button onClick={() => marcarEstado(c.id, tab === "cobrar" ? "cobrado" : "pagado")}
                           style={{ padding: "5px 12px", borderRadius: 7, border: `1px solid ${T.accent}`, background: T.accentLight, color: T.accent, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                           Marcar {tab === "cobrar" ? "cobrado" : "pagado"}
+                        </button>
+                      ) : (
+                        <button onClick={() => marcarEstado(c.id, "pendiente")}
+                          style={{ padding: "5px 12px", borderRadius: 7, border: `1px solid ${T.border}`, background: "transparent", color: T.muted, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                          ↩ Revertir
                         </button>
                       )}
                     </td>
