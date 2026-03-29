@@ -8728,6 +8728,7 @@ export default function App({ session, profile, onLogout }) {
   const companyDisplayName = profile?.company_name || 'Mi Empresa';
   const isJefe = !profile?.role || profile.role === 'jefe';
   const userPerms = profile?.permissions || {};
+  const canEdit = (mod) => isJefe || userPerms[mod] === 'edit';
   const visibleNav = [
     ...NAV.filter(n => isJefe || (userPerms[n.id] !== 'none' && userPerms[n.id])),
     ...(isJefe ? [{ id: "usuarios", label: "Usuarios", icon: "👤" }] : []),
@@ -8975,7 +8976,13 @@ export default function App({ session, profile, onLogout }) {
         <ReadOnlyCtx.Provider value={!isJefe && userPerms[module] === 'view'}>
         <div className={!isJefe && userPerms[module] === 'view' ? 'ro-wrap' : ''}>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
-        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" })} />}
+        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile}
+          onNewFactura={canEdit('ventas') ? () => openDoc("factura") : () => {}}
+          onNewRemito={canEdit('ventas') ? () => openDoc("remito") : () => {}}
+          onNewPresupuesto={canEdit('ventas') ? () => openDoc("presupuesto") : () => {}}
+          onNewPresupuestoIA={canEdit('ventas') ? (preload) => openDoc("presupuesto", preload) : () => {}}
+          onEditDoc={canEdit('ventas') ? (inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" }) : () => {}}
+        />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
         {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => { if (isJefe || userPerms['compras'] === 'edit') setShowPurchaseBuilder(true); }} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} />}
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} />}
