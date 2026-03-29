@@ -8715,7 +8715,11 @@ export default function App({ session, profile, onLogout }) {
   const [docBuilderType, setDocBuilderType] = useState("factura");
   const [preloadDoc, setPreloadDoc] = useState(null);
 
-  const openDoc = (type, preload) => { setDocBuilderType(type); setPreloadDoc(preload || null); setShowDocBuilder(true); };
+  const openDoc = (type, preload) => {
+    const perm = isJefe ? 'edit' : (userPerms[module] || 'none');
+    if (perm !== 'edit') return;
+    setDocBuilderType(type); setPreloadDoc(preload || null); setShowDocBuilder(true);
+  };
   const [showPurchaseBuilder, setShowPurchaseBuilder] = useState(false);
   const [idCounter, setIdCounter] = useState(5);
   const [dbLoading, setDbLoading] = useState(true);
@@ -8924,6 +8928,11 @@ export default function App({ session, profile, onLogout }) {
         input, select, button, textarea { font-family: inherit; }
         ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: ${T.faint}; border-radius: 3px; }
         input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.5); }
+        .ro-wrap button:not(.ro-ok), .ro-wrap input:not([type=search]):not(.ro-ok),
+        .ro-wrap select:not(.ro-ok), .ro-wrap textarea:not(.ro-ok) {
+          pointer-events: none !important; opacity: 0.4 !important; cursor: not-allowed !important;
+        }
+        .ro-wrap tr[style*="cursor: pointer"], .ro-wrap [onClick] { pointer-events: none !important; cursor: default !important; }
       `}</style>
 
       {/* Sidebar */}
@@ -8964,10 +8973,11 @@ export default function App({ session, profile, onLogout }) {
           </div>
         )}
         <ReadOnlyCtx.Provider value={!isJefe && userPerms[module] === 'view'}>
+        <div className={!isJefe && userPerms[module] === 'view' ? 'ro-wrap' : ''}>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
         {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" })} />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
-        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} />}
+        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => { if (isJefe || userPerms['compras'] === 'edit') setShowPurchaseBuilder(true); }} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} />}
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} cajas={cajas} cajaMovimientos={cajaMovimientos} />}
@@ -8975,6 +8985,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
         {module === "usuarios" && isJefe && <UsuariosModule companyId={companyId} profile={profile} />}
+        </div>
         </ReadOnlyCtx.Provider>
       </div>
 
