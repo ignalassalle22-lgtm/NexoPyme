@@ -211,6 +211,8 @@ const cajaToDb = (c, cid) => ({ id: c.id, company_id: cid, date: c.date, turno: 
 const cajaMovimientoToDb = (m, cid) => ({ id: m.id, company_id: cid, caja_id: m.cajaId, tipo: m.tipo, monto: m.monto, fecha: m.fecha, hora: m.hora, motivo: m.motivo, empleado_id: m.empleadoId || null, observaciones: m.observaciones || null, origen: m.origen, origen_id: m.origenId || null });
 const mapCheque = r => ({ id: r.id, tipo: r.tipo, numero: r.numero || '', fechaPago: r.fecha_pago, fechaVencimiento: r.fecha_vencimiento, monto: r.monto ?? 0, emisor: r.emisor || '', estado: r.estado || 'pendiente' });
 const chequeToDb = (c, cid) => ({ id: c.id, company_id: cid, tipo: c.tipo, numero: c.numero, fecha_pago: c.fechaPago, fecha_vencimiento: c.fechaVencimiento, monto: c.monto, emisor: c.emisor, estado: c.estado });
+const mapOrdenCompra = r => ({ id: r.id, ref: r.ref || '', supplierId: r.supplier_id, supplierName: r.supplier_name || '', date: r.date, estado: r.estado || 'pendiente', observaciones: r.observaciones || '', total: r.total ?? 0, lines: r.lines || [] });
+const ordenCompraToDb = (o, cid) => ({ id: o.id, company_id: cid, ref: o.ref, supplier_id: o.supplierId, supplier_name: o.supplierName, date: o.date, estado: o.estado, observaciones: o.observaciones, total: o.total, lines: o.lines });
 
 // Helper: human-readable display ref for sale/purchase invoices
 const docRef = inv => inv?.ref || inv?.id || '';
@@ -1200,8 +1202,160 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   );
 }
 
+// ─── ORDEN DE COMPRA BUILDER ──────────────────────────────────────────────────
+function OrdenCompraBuilder({ suppliers, onSave, onClose }) {
+  const [supplierId, setSupplierId] = useState("");
+  const [observaciones, setObservaciones] = useState("");
+  const [lines, setLines] = useState([]);
+  const [nombre, setNombre] = useState("");
+  const [qty, setQty] = useState(1);
+  const [precio, setPrecio] = useState("");
+  const [done, setDone] = useState(false);
+  const [savedOC, setSavedOC] = useState(null);
+
+  const supplier = suppliers.find(s => s.id === supplierId);
+  const total = lines.reduce((s, l) => s + l.qty * l.precio, 0);
+
+  const addLine = () => {
+    if (!nombre.trim()) return;
+    setLines(prev => [...prev, { nombre: nombre.trim(), qty: qty || 1, precio: parseFloat(precio) || 0 }]);
+    setNombre(""); setQty(1); setPrecio("");
+  };
+
+  const handleConfirm = () => {
+    if (!supplierId || lines.length === 0) return;
+    const oc = { supplierId, supplierName: supplier.name, observaciones, lines, total };
+    const saved = onSave(oc);
+    setSavedOC(saved);
+    setDone(true);
+  };
+
+  const handlePrint = () => {
+    if (!savedOC) return;
+    const win = window.open('', '_blank', 'width=800,height=600');
+    const fecha = savedOC.date;
+    const linesHtml = savedOC.lines.map(l => `
+      <tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${l.nombre}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${l.qty}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">$${Number(l.precio).toLocaleString('es-AR')}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">$${Number(l.qty * l.precio).toLocaleString('es-AR')}</td>
+      </tr>`).join('');
+    win.document.write(`<!DOCTYPE html><html><head><title>Orden de Compra ${savedOC.ref}</title>
+      <style>body{font-family:'Segoe UI',sans-serif;color:#1a1a1a;padding:40px;max-width:720px;margin:0 auto}
+      h1{font-size:24px;font-weight:800;color:#2ea043;margin-bottom:4px}
+      .sub{color:#6b7280;font-size:13px;margin-bottom:24px}
+      .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:24px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px}
+      .label{font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:.8px;margin-bottom:3px}
+      .val{font-size:13px;font-weight:600}
+      table{width:100%;border-collapse:collapse;margin-bottom:20px}
+      thead tr{background:#f3f4f6}
+      th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:#6b7280;letter-spacing:.8px}
+      .total-row td{font-size:15px;font-weight:800;color:#2ea043;padding:10px 12px;border-top:2px solid #e5e7eb}
+      .obs{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;font-size:13px;color:#374151;margin-bottom:20px}
+      .footer{text-align:center;font-size:11px;color:#9ca3af;margin-top:40px}
+      @media print{body{padding:20px}}</style></head>
+      <body>
+      <h1>Orden de Compra</h1>
+      <div class="sub">${savedOC.ref} &nbsp;·&nbsp; ${fecha}</div>
+      <div class="grid">
+        <div><div class="label">PROVEEDOR</div><div class="val">${savedOC.supplierName}</div></div>
+        <div><div class="label">FECHA</div><div class="val">${fecha}</div></div>
+        <div><div class="label">ESTADO</div><div class="val">Pendiente</div></div>
+        <div><div class="label">REFERENCIA</div><div class="val">${savedOC.ref}</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Artículo</th><th style="text-align:center">Cant.</th><th style="text-align:right">Precio Unit.</th><th style="text-align:right">Subtotal</th></tr></thead>
+        <tbody>${linesHtml}
+        <tr class="total-row"><td colspan="3" style="text-align:right">TOTAL</td><td style="text-align:right">$${Number(savedOC.total).toLocaleString('es-AR')}</td></tr>
+        </tbody>
+      </table>
+      ${savedOC.observaciones ? `<div class="label" style="margin-bottom:6px">OBSERVACIONES</div><div class="obs">${savedOC.observaciones}</div>` : ''}
+      <div class="footer">Documento generado por NexoPyME</div>
+      <script>window.onload=()=>{window.print();}</script>
+      </body></html>`);
+    win.document.close();
+  };
+
+  if (done && savedOC) return (
+    <Modal title="Orden creada" onClose={onClose}>
+      <div style={{ textAlign: "center", padding: "20px 0" }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>✓</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: T.accent, marginBottom: 8 }}>Orden registrada</div>
+        <div style={{ color: T.muted, fontSize: 13, marginBottom: 20 }}>Ref: <strong style={{ color: T.ink }}>{savedOC.ref}</strong> · {savedOC.supplierName}</div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <Btn v="ghost" onClick={handlePrint}>⬡ Exportar PDF</Btn>
+          <Btn onClick={onClose}>Cerrar</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+
+  return (
+    <Modal title="Nueva orden de compra" onClose={onClose} xl>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, marginBottom: 18 }}>
+        <Select label="PROVEEDOR" value={supplierId} onChange={setSupplierId} options={[{ value: "", label: "Seleccionar proveedor..." }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]} />
+        <div />
+      </div>
+
+      {supplierId && (
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginBottom: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>AGREGAR ARTÍCULO</div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <div style={{ flex: 3 }}>
+              <Input label="DESCRIPCIÓN DEL ARTÍCULO" value={nombre} onChange={setNombre} placeholder="Nombre del producto o servicio..." />
+            </div>
+            <div style={{ flex: 0.7 }}>
+              <Input label="CANTIDAD" type="number" value={qty} onChange={v => setQty(parseInt(v) || 1)} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <Input label="PRECIO UNITARIO" type="number" value={precio} onChange={setPrecio} placeholder="0" />
+            </div>
+            <Btn onClick={addLine} disabled={!nombre.trim()}>Agregar</Btn>
+          </div>
+        </div>
+      )}
+
+      {lines.length > 0 && (
+        <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 16 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr style={{ background: T.surface }}>
+              {["Artículo", "Cant.", "Precio Unit.", "Subtotal", ""].map(h =>
+                <th key={h} style={{ padding: "9px 13px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+            </tr></thead>
+            <tbody>{lines.map((l, i) => (
+              <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+                <td style={{ padding: "11px 13px", fontSize: 13 }}>{l.nombre}</td>
+                <td style={{ padding: "11px 13px", fontSize: 13 }}>{l.qty}</td>
+                <td style={{ padding: "11px 13px", fontSize: 13 }}>{fmt(l.precio)}</td>
+                <td style={{ padding: "11px 13px", fontSize: 14, fontWeight: 700 }}>{fmt(l.qty * l.precio)}</td>
+                <td style={{ padding: "11px 13px" }}><button onClick={() => setLines(lines.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer" }}>✕</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+          <div style={{ padding: "12px 16px", borderTop: `2px solid ${T.border}`, display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 13, color: T.muted }}>TOTAL</span>
+            <span style={{ fontSize: 18, fontWeight: 800, color: T.accent }}>{fmt(total)}</span>
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginBottom: 18 }}>
+        <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>OBSERVACIONES</label>
+        <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} placeholder="Condiciones de entrega, plazos, notas para el proveedor..."
+          style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", minHeight: 72, resize: "vertical" }} />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        <Btn v="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={handleConfirm} disabled={!supplierId || lines.length === 0}>✓ Crear orden de compra</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── PURCHASE INVOICE BUILDER ─────────────────────────────────────────────────
-function PurchaseBuilder({ suppliers, products, onSave, onClose }) {
+function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra = [] }) {
   const [supplierId, setSupplierId] = useState("");
   const [nroFactura, setNroFactura] = useState("");
   const [payStatus, setPayStatus] = useState("pendiente");
@@ -1211,8 +1365,10 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose }) {
   const [priceInput, setPriceInput] = useState("");
   const [codeError, setCodeError] = useState("");
   const [done, setDone] = useState(false);
+  const [ordenCompraId, setOrdenCompraId] = useState("");
 
   const supplier = suppliers.find(s => s.id === supplierId);
+  const ocOptions = ordenesCompra.filter(o => o.supplierId === supplierId && o.estado !== 'recibida');
 
   // Find product by supplier code OR internal SKU, returns { product, supplierCode, suggestedPrice }
   const findProduct = (code) => {
@@ -1309,7 +1465,7 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose }) {
   const totalIva = lines.reduce((s, l) => s + l.ivaImporte, 0);
   const total = totalNeto + totalIva;
 
-  const confirm = () => { onSave({ lines, total, totalNeto, totalIva, supplierId, supplierName: supplier.name, payStatus, nroFactura }); setDone(true); };
+  const confirm = () => { onSave({ lines, total, totalNeto, totalIva, supplierId, supplierName: supplier.name, payStatus, nroFactura, ordenCompraId: ordenCompraId || null }); setDone(true); };
 
   if (done) return (
     <Modal title="Factura registrada" onClose={onClose}>
@@ -1329,10 +1485,16 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose }) {
     <Modal title="Nueva factura de proveedor" onClose={onClose} xl>
       {/* Row 1: proveedor + nro factura + estado */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 14, marginBottom: 18 }}>
-        <Select label="PROVEEDOR" value={supplierId} onChange={v => { setSupplierId(v); setLines([]); setCodeInput(""); }} options={[{ value: "", label: "Seleccionar proveedor..." }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]} />
+        <Select label="PROVEEDOR" value={supplierId} onChange={v => { setSupplierId(v); setLines([]); setCodeInput(""); setOrdenCompraId(""); }} options={[{ value: "", label: "Seleccionar proveedor..." }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]} />
         <Input label="N° DE FACTURA" value={nroFactura} onChange={setNroFactura} placeholder="ej: 0001-00012345" mono />
         <Select label="ESTADO DE PAGO" value={payStatus} onChange={setPayStatus} options={[{ value: "pendiente", label: "Pendiente de pago" }, { value: "pagada", label: "Ya pagada / Contado" }]} />
       </div>
+      {supplierId && ocOptions.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <Select label="VINCULAR A ORDEN DE COMPRA (opcional)" value={ordenCompraId} onChange={setOrdenCompraId}
+            options={[{ value: "", label: "Sin orden de compra asociada" }, ...ocOptions.map(o => ({ value: o.id, label: `${o.ref} · ${o.supplierName} · ${fmt(o.total)}` }))]} />
+        </div>
+      )}
 
       {supplierId && (
         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginBottom: 18 }}>
@@ -3861,8 +4023,9 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
 }
 
 // ─── MODULE: COMPRAS ──────────────────────────────────────────────────────────
-function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase }) {
+function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase, ordenesCompra, setOrdenesCompra }) {
   const [tab, setTab] = useState("invoices");
+  const [showOCBuilder, setShowOCBuilder] = useState(false);
   const [showSupForm, setShowSupForm] = useState(false);
   const [supForm, setSupForm] = useState({ name: "", cuit: "", contact: "", email: "", phone: "", paymentDays: 30, bank: "", cbu: "", direccion: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" });
   const [searchInvNum, setSearchInvNum] = useState("");
@@ -3978,17 +4141,33 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
   const markPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pagada" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
   const unmarkPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pendiente' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
 
+  const handleSaveOC = ({ supplierId, supplierName, observaciones, lines, total }) => {
+    const id = crypto.randomUUID();
+    const ref = "OC-" + String(Date.now()).slice(-6);
+    const newOC = { id, ref, supplierId, supplierName, date: today, estado: "pendiente", observaciones, lines, total };
+    setOrdenesCompra(prev => [newOC, ...prev]);
+    if (companyId) supabase.from('ordenes_compra').insert(ordenCompraToDb(newOC, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    return newOC;
+  };
+
+  const eliminarOC = (id) => {
+    if (!window.confirm("¿Eliminar esta orden de compra?")) return;
+    setOrdenesCompra(prev => prev.filter(o => o.id !== id));
+    if (companyId) supabase.from('ordenes_compra').delete().eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+  };
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div><div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Compras</div><div style={{ fontSize: 13, color: T.muted }}>Proveedores, facturas y listas de precios</div></div>
         <div style={{ display: "flex", gap: 8 }}>
           <Btn v="ghost" onClick={() => { setShowIAImport(true); setIaPdfResult(null); setIaPdfFile(null); setIaPdfError(""); }}>✦ Importar PDF con IA</Btn>
+          <Btn v="ghost" onClick={() => setShowOCBuilder(true)}>+ Nueva orden de compra</Btn>
           <Btn onClick={onNewPurchase}>+ Nueva factura de compra</Btn>
         </div>
       </div>
       <div style={{ display: "flex", gap: 4, marginBottom: 22, background: T.surface, borderRadius: 10, padding: 4, width: "fit-content" }}>
-        {[["invoices", "Facturas a pagar"], ["suppliers", "Proveedores"], ["prices", "Listas de precios"]].map(([v, l]) => (
+        {[["invoices", "Facturas a pagar"], ["orders", "Órdenes de compra"], ["suppliers", "Proveedores"], ["prices", "Listas de precios"]].map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)} style={{ padding: "7px 16px", borderRadius: 7, border: "none", background: tab === v ? T.paper : "transparent", color: tab === v ? T.ink : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
         ))}
       </div>
@@ -4108,6 +4287,48 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
       {tab === "prices" && (
         <PriceListsTab products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} />
       )}
+
+      {tab === "orders" && (
+        <>
+          <div style={{ display: "flex", gap: 14, marginBottom: 16 }}>
+            {[
+              { l: "Órdenes pendientes", v: (ordenesCompra || []).filter(o => o.estado === 'pendiente').length, c: T.yellow },
+              { l: "Órdenes recibidas", v: (ordenesCompra || []).filter(o => o.estado === 'recibida').length, c: T.accent },
+              { l: "Total en órdenes activas", v: fmt((ordenesCompra || []).filter(o => o.estado === 'pendiente').reduce((s, o) => s + o.total, 0)), c: T.ink },
+            ].map((k, i) => (
+              <div key={i} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", flex: 1 }}>
+                <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 6 }}>{k.l}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: k.c }}>{k.v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: T.surface }}>{["Referencia", "Proveedor", "Fecha", "Total", "Estado", ""].map(h => <th key={h} style={{ padding: "11px 15px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+              <tbody>{(ordenesCompra || []).length === 0 ? (
+                <tr><td colSpan={6} style={{ padding: "32px 15px", textAlign: "center", color: T.muted, fontSize: 13 }}>No hay órdenes de compra. Creá la primera con "+ Nueva orden de compra".</td></tr>
+              ) : (ordenesCompra || []).map(oc => (
+                <tr key={oc.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                  <td style={{ padding: "12px 15px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{oc.ref}</td>
+                  <td style={{ padding: "12px 15px", fontSize: 13, fontWeight: 600 }}>{oc.supplierName}</td>
+                  <td style={{ padding: "12px 15px", fontSize: 12, color: T.muted }}>{oc.date}</td>
+                  <td style={{ padding: "12px 15px", fontSize: 14, fontWeight: 800 }}>{fmt(oc.total)}</td>
+                  <td style={{ padding: "12px 15px" }}>
+                    <span style={{ padding: "3px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: oc.estado === 'recibida' ? T.greenLight : T.yellowLight, color: oc.estado === 'recibida' ? T.accent : T.yellow }}>
+                      {oc.estado === 'recibida' ? 'Recibida' : 'Pendiente'}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 15px" }}>
+                    <button onClick={() => eliminarOC(oc.id)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14 }} title="Eliminar">✕</button>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {showOCBuilder && <OrdenCompraBuilder suppliers={suppliers} onSave={handleSaveOC} onClose={() => setShowOCBuilder(false)} />}
 
       {/* Modal IA PDF Import */}
       {showIAImport && (
@@ -8229,6 +8450,7 @@ export default function App({ session, profile, onLogout }) {
   const [cajas, setCajas] = useState([]);
   const [cajaMovimientos, setCajaMovimientos] = useState([]);
   const [cheques, setCheques] = useState([]);
+  const [ordenesCompra, setOrdenesCompra] = useState([]);
   const [defaultMontoInicial, setDefaultMontoInicial] = useState(0);
   const [showDocBuilder, setShowDocBuilder] = useState(false);
   const [docBuilderType, setDocBuilderType] = useState("factura");
@@ -8269,7 +8491,7 @@ export default function App({ session, profile, onLogout }) {
             new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout: ${label}`)), 10000))
           ]);
 
-        const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10] = await Promise.all([
+        const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11] = await Promise.all([
           fetchWithTimeout(supabase.from('products').select('*').eq('company_id', companyId).order('name'), 'products'),
           fetchWithTimeout(supabase.from('clients').select('*').eq('company_id', companyId).order('name'), 'clients'),
           fetchWithTimeout(supabase.from('suppliers').select('*').eq('company_id', companyId).order('name'), 'suppliers'),
@@ -8280,6 +8502,7 @@ export default function App({ session, profile, onLogout }) {
           fetchWithTimeout(supabase.from('cajas').select('*').eq('company_id', companyId).order('date', { ascending: false }), 'cajas'),
           fetchWithTimeout(supabase.from('caja_movimientos').select('*').eq('company_id', companyId).order('created_at'), 'caja_movimientos'),
           fetchWithTimeout(supabase.from('cheques').select('*').eq('company_id', companyId).order('fecha_pago'), 'cheques'),
+          fetchWithTimeout(supabase.from('ordenes_compra').select('*').eq('company_id', companyId).order('date', { ascending: false }), 'ordenes_compra'),
         ]);
 
         if (r1.error) throw new Error('products: ' + r1.error.message);
@@ -8292,6 +8515,7 @@ export default function App({ session, profile, onLogout }) {
         if (r8.error) throw new Error('cajas: ' + r8.error.message);
         if (r9.error) throw new Error('caja_movimientos: ' + r9.error.message);
         if (r10.error) throw new Error('cheques: ' + r10.error.message);
+        if (r11.error) throw new Error('ordenes_compra: ' + r11.error.message);
 
         if (r1.data) setProducts(r1.data.map(mapProduct));
         if (r2.data) setClients(r2.data.map(mapClient));
@@ -8302,6 +8526,7 @@ export default function App({ session, profile, onLogout }) {
         if (r8.data) setCajas(r8.data.map(mapCaja));
         if (r9.data) setCajaMovimientos(r9.data.map(mapCajaMovimiento));
         if (r10.data) setCheques(r10.data.map(mapCheque));
+        if (r11.data) setOrdenesCompra(r11.data.map(mapOrdenCompra));
 
         if (r7.data?.length) {
           setPriceLists(r7.data.map(mapPriceList));
@@ -8390,7 +8615,7 @@ export default function App({ session, profile, onLogout }) {
     if (imprimirPDF && generarPDF) generarPDF(id);
   };
 
-  const handleSavePurchase = ({ lines, total, totalNeto, totalIva, supplierId, supplierName, payStatus, nroFactura }) => {
+  const handleSavePurchase = ({ lines, total, totalNeto, totalIva, supplierId, supplierName, payStatus, nroFactura, ordenCompraId }) => {
     setProducts(prev => {
       const next = prev.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock + l.qty } : p; });
       if (companyId) next.filter(p => lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }));
@@ -8402,6 +8627,10 @@ export default function App({ session, profile, onLogout }) {
     const newPI = { id, ref, nroFactura: nroFactura || null, supplierId, supplierName, date: today, dueDate: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: payStatus, lines };
     setPurchaseInvoices(prev => [newPI, ...prev]);
     if (companyId) supabase.from('purchase_invoices').insert(purchaseInvoiceToDb(newPI, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    if (ordenCompraId) {
+      setOrdenesCompra(prev => prev.map(o => o.id === ordenCompraId ? { ...o, estado: 'recibida' } : o));
+      if (companyId) supabase.from('ordenes_compra').update({ estado: 'recibida' }).eq('id', ordenCompraId).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    }
     setShowPurchaseBuilder(false);
   };
 
@@ -8470,7 +8699,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
         {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" })} />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
-        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} />}
+        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} />}
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} cajas={cajas} cajaMovimientos={cajaMovimientos} />}
@@ -8480,7 +8709,7 @@ export default function App({ session, profile, onLogout }) {
       </div>
 
       {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} priceLists={priceLists} vendedores={vendedores} />}
-      {showPurchaseBuilder && <PurchaseBuilder suppliers={suppliers} products={products} onSave={handleSavePurchase} onClose={() => setShowPurchaseBuilder(false)} />}
+      {showPurchaseBuilder && <PurchaseBuilder suppliers={suppliers} products={products} onSave={handleSavePurchase} onClose={() => setShowPurchaseBuilder(false)} ordenesCompra={ordenesCompra} />}
     </div>
   );
 }
