@@ -22,6 +22,7 @@ function AdminPanel({ profile, onLogout }) {
   const [rejectReason, setRejectReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState(null)
+  const [companyProfiles, setCompanyProfiles] = useState({})
 
   // User requests
   const [userRequests, setUserRequests] = useState([])
@@ -58,6 +59,24 @@ function AdminPanel({ profile, onLogout }) {
     if (!window.confirm('¿Suspender esta cuenta? El usuario no podrá acceder hasta que la reactives.')) return
     await supabase.from('companies').update({ status: 'rejected', rejection_reason: 'Cuenta suspendida por el administrador.' }).eq('id', id)
     setCompanies(prev => prev.map(c => c.id === id ? { ...c, status: 'rejected', rejection_reason: 'Cuenta suspendida por el administrador.' } : c))
+  }
+
+  const loadCompanyProfiles = async (companyId) => {
+    if (companyProfiles[companyId]) return
+    const { data } = await supabase.from('profiles').select('id, role, display_name, email').eq('company_id', companyId)
+    if (data) setCompanyProfiles(prev => ({ ...prev, [companyId]: data }))
+  }
+
+  const toggleJefe = async (profileId, companyId) => {
+    const profiles = companyProfiles[companyId] || []
+    const prof = profiles.find(p => p.id === profileId)
+    if (!prof) return
+    const newRole = prof.role === 'jefe' ? 'user' : 'jefe'
+    await supabase.from('profiles').update({ role: newRole }).eq('id', profileId)
+    setCompanyProfiles(prev => ({
+      ...prev,
+      [companyId]: prev[companyId].map(p => p.id === profileId ? { ...p, role: newRole } : p)
+    }))
   }
 
   const reactivate = async (id) => {
@@ -261,7 +280,7 @@ function AdminPanel({ profile, onLogout }) {
 
                   // Fila principal
                   rows.push(
-                    <tr key={c.id} style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer' }} onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}>
+                    <tr key={c.id} style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer' }} onClick={() => { const next = expandedId === c.id ? null : c.id; setExpandedId(next); if (next) loadCompanyProfiles(c.id); }}>
                       <td style={{ padding: '12px 15px' }}>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{c.name}</div>
                         <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{c.address || '—'}</div>
@@ -304,10 +323,11 @@ function AdminPanel({ profile, onLogout }) {
 
                   // Detalle expandido
                   if (expandedId === c.id) {
+                    const profiles = companyProfiles[c.id]
                     rows.push(
                       <tr key={c.id + '-detail'} style={{ background: T.surface }}>
                         <td colSpan={7} style={{ padding: '14px 20px' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
                             {[
                               ['Nombre empresa', c.name],
                               ['CUIT', c.cuit || '—'],
@@ -323,6 +343,32 @@ function AdminPanel({ profile, onLogout }) {
                                 <div style={{ fontSize: 13, color: T.ink }}>{val}</div>
                               </div>
                             ))}
+                          </div>
+                          <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 14 }}>
+                            <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 10 }}>USUARIOS DE LA EMPRESA</div>
+                            {!profiles ? (
+                              <div style={{ fontSize: 12, color: T.muted }}>Cargando…</div>
+                            ) : profiles.length === 0 ? (
+                              <div style={{ fontSize: 12, color: T.muted }}>Sin usuarios registrados.</div>
+                            ) : (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                {profiles.map(p => {
+                                  const isJefe = p.role === 'jefe'
+                                  return (
+                                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: T.paper, border: `1px solid ${isJefe ? T.purple : T.border}`, borderRadius: 8, padding: '8px 14px' }}>
+                                      <div>
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{p.display_name || p.email}</div>
+                                        <div style={{ fontSize: 11, color: T.muted }}>{p.email}</div>
+                                      </div>
+                                      <button onClick={() => toggleJefe(p.id, c.id)}
+                                        style={{ background: isJefe ? T.purpleLight : T.surface2, color: isJefe ? T.purple : T.muted, border: `1px solid ${isJefe ? T.purple : T.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                                        {isJefe ? '★ Jefe' : '☆ Hacer jefe'}
+                                      </button>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>
