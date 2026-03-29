@@ -4233,10 +4233,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
 
   const addProduct = () => {
     const overrides = form.clientCodes.map(r => ({ clientId: r.clientId, customCode: r.customCode, skuRef: form.sku }));
-    // Para compuestos, calcular precios como suma de componentes
-    const finalPrices = form.esCompuesto
-      ? Object.fromEntries(initPriceLists.map(pl => [pl.id, form.componentes.reduce((sum, c) => { const p = products.find(x => x.id === c.productId); return sum + (p?.prices?.[pl.id] || 0) * c.qty; }, 0)]))
-      : form.prices;
+    const finalPrices = form.esCompuesto ? preciosCompuesto : form.prices;
     const np = { ...form, prices: finalPrices, id: crypto.randomUUID(), stock: 0, clientOverrides: overrides };
     setProducts([...products, np]);
     if (companyId) supabase.from('products').insert(productToDb(np, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
@@ -4244,6 +4241,23 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
     setForm(EMPTY_FORM);
     setCcClient(""); setCcCode("");
   };
+
+  // Precios calculados para producto compuesto (actualizados en cada render con form actual)
+  const preciosCompuesto = (() => {
+    const result = {};
+    initPriceLists.forEach(pl => {
+      result[pl.id] = form.componentes.reduce((sum, c) => {
+        const p = products.find(x => x.id === c.productId);
+        return sum + (p?.prices?.[pl.id] || 0) * (c.qty || 1);
+      }, 0);
+    });
+    return result;
+  })();
+  const faltantesCompuesto = form.componentes.flatMap(c => {
+    const p = products.find(x => x.id === c.productId);
+    return initPriceLists.filter(pl => !(p?.prices?.[pl.id] > 0)).map(pl => ({ nombre: p?.name || "?", lista: pl.label }));
+  });
+  const compuestoInvalido = form.esCompuesto && (form.componentes.length === 0 || faltantesCompuesto.length > 0);
 
   const critical = products.filter(p => p.tracksStock !== false && p.stock < p.minStock);
 
@@ -4641,45 +4655,32 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
           </div>
 
           {/* ── PRECIOS ── */}
-          {form.esCompuesto ? (() => {
-            const preciosCalc = {};
-            initPriceLists.forEach(pl => {
-              preciosCalc[pl.id] = form.componentes.reduce((sum, c) => {
-                const p = products.find(x => x.id === c.productId);
-                return sum + (p?.prices?.[pl.id] || 0) * c.qty;
-              }, 0);
-            });
-            const faltantes = form.componentes.flatMap(c => {
-              const p = products.find(x => x.id === c.productId);
-              return initPriceLists.filter(pl => !(p?.prices?.[pl.id] > 0)).map(pl => ({ nombre: p?.name || "?", lista: pl.label }));
-            });
-            return (
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>PRECIOS CALCULADOS AUTOMÁTICAMENTE (S/IVA)</div>
-                {faltantes.length > 0 && (
-                  <div style={{ background: T.redLight, border: `1px solid ${T.red}40`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: T.red }}>
-                    <strong>No se puede guardar:</strong> los siguientes componentes tienen precio en $0 para alguna lista:
-                    <ul style={{ margin: "6px 0 0 16px", padding: 0 }}>
-                      {faltantes.map((f, i) => <li key={i}>{f.nombre} — {f.lista}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {form.componentes.length === 0 ? (
-                  <div style={{ fontSize: 12, color: T.muted, fontStyle: "italic" }}>Agregá componentes para calcular el precio.</div>
-                ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-                    {initPriceLists.map(pl => (
-                      <div key={pl.id} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px" }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 6 }}>{pl.label.toUpperCase()}</div>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: preciosCalc[pl.id] > 0 ? T.purple : T.red }}>{fmt(preciosCalc[pl.id])}</div>
-                        <div style={{ fontSize: 10, color: T.faint, marginTop: 3 }}>suma de componentes</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })() : (
+          {form.esCompuesto ? (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>PRECIOS CALCULADOS AUTOMÁTICAMENTE (S/IVA)</div>
+              {faltantesCompuesto.length > 0 && (
+                <div style={{ background: T.redLight, border: `1px solid ${T.red}40`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: T.red }}>
+                  <strong>No se puede guardar:</strong> faltan precios en:
+                  <ul style={{ margin: "6px 0 0 16px", padding: 0 }}>
+                    {faltantesCompuesto.map((f, i) => <li key={i}>{f.nombre} — {f.lista}</li>)}
+                  </ul>
+                </div>
+              )}
+              {form.componentes.length === 0 ? (
+                <div style={{ fontSize: 12, color: T.muted, fontStyle: "italic" }}>Agregá componentes para calcular el precio.</div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+                  {initPriceLists.map(pl => (
+                    <div key={pl.id} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px" }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 6 }}>{pl.label.toUpperCase()}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: preciosCompuesto[pl.id] > 0 ? T.purple : T.red }}>{fmt(preciosCompuesto[pl.id])}</div>
+                      <div style={{ fontSize: 10, color: T.faint, marginTop: 3 }}>suma de componentes</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
             <>
               <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>PRECIOS DE VENTA POR LISTA (S/IVA)</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 24 }}>
@@ -4752,7 +4753,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
 
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <Btn v="ghost" onClick={() => { setShowForm(false); setForm(EMPTY_FORM); setCcClient(""); setCcCode(""); }}>Cancelar</Btn>
-            <Btn onClick={addProduct} disabled={!form.name || !form.sku || (form.esCompuesto && (form.componentes.length === 0 || form.componentes.some(c => { const p = products.find(x => x.id === c.productId); return initPriceLists.some(pl => !(p?.prices?.[pl.id] > 0)); })))}>Crear</Btn>
+            <Btn onClick={addProduct} disabled={!form.name || !form.sku || compuestoInvalido}>Crear</Btn>
           </div>
         </Modal>
       )}
