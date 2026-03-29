@@ -8929,11 +8929,6 @@ export default function App({ session, profile, onLogout }) {
         input, select, button, textarea { font-family: inherit; }
         ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: ${T.faint}; border-radius: 3px; }
         input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.5); }
-        .ro-wrap button:not(.ro-ok), .ro-wrap input:not([type=search]):not(.ro-ok),
-        .ro-wrap select:not(.ro-ok), .ro-wrap textarea:not(.ro-ok) {
-          pointer-events: none !important; opacity: 0.4 !important; cursor: not-allowed !important;
-        }
-        .ro-wrap tr[style*="cursor: pointer"], .ro-wrap [onClick] { pointer-events: none !important; cursor: default !important; }
       `}</style>
 
       {/* Sidebar */}
