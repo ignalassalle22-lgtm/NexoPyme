@@ -211,8 +211,8 @@ const cajaToDb = (c, cid) => ({ id: c.id, company_id: cid, date: c.date, turno: 
 const cajaMovimientoToDb = (m, cid) => ({ id: m.id, company_id: cid, caja_id: m.cajaId, tipo: m.tipo, monto: m.monto, fecha: m.fecha, hora: m.hora, motivo: m.motivo, empleado_id: m.empleadoId || null, observaciones: m.observaciones || null, origen: m.origen, origen_id: m.origenId || null });
 const mapCheque = r => ({ id: r.id, tipo: r.tipo, numero: r.numero || '', fechaPago: r.fecha_pago, fechaVencimiento: r.fecha_vencimiento, monto: r.monto ?? 0, emisor: r.emisor || '', estado: r.estado || 'pendiente' });
 const chequeToDb = (c, cid) => ({ id: c.id, company_id: cid, tipo: c.tipo, numero: c.numero, fecha_pago: c.fechaPago, fecha_vencimiento: c.fechaVencimiento, monto: c.monto, emisor: c.emisor, estado: c.estado });
-const mapOrdenCompra = r => ({ id: r.id, ref: r.ref || '', supplierId: r.supplier_id, supplierName: r.supplier_name || '', date: r.date, estado: r.estado || 'pendiente', observaciones: r.observaciones || '', total: r.total ?? 0, lines: r.lines || [] });
-const ordenCompraToDb = (o, cid) => ({ id: o.id, company_id: cid, ref: o.ref, supplier_id: o.supplierId, supplier_name: o.supplierName, date: o.date, estado: o.estado, observaciones: o.observaciones, total: o.total, lines: o.lines });
+const mapOrdenCompra = r => ({ id: r.id, ref: r.ref || '', supplierId: r.supplier_id, supplierName: r.supplier_name || '', date: r.date, observaciones: r.observaciones || '', total: r.total ?? 0, lines: r.lines || [] });
+const ordenCompraToDb = (o, cid) => ({ id: o.id, company_id: cid, ref: o.ref, supplier_id: o.supplierId, supplier_name: o.supplierName, date: o.date, observaciones: o.observaciones, total: o.total, lines: o.lines });
 
 // Helper: human-readable display ref for sale/purchase invoices
 const docRef = inv => inv?.ref || inv?.id || '';
@@ -1202,6 +1202,77 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   );
 }
 
+// ─── ORDEN DE COMPRA: PDF PRINT ───────────────────────────────────────────────
+function imprimirOC(oc) {
+  const win = window.open('', '_blank', 'width=800,height=600');
+  const totalNeto = oc.lines.reduce((s, l) => s + (l.neto ?? l.qty * (l.precioNeto ?? l.precio ?? 0)), 0);
+  const totalIva = oc.lines.reduce((s, l) => s + (l.ivaImporte ?? 0), 0);
+  const ivaByRate = oc.lines.reduce((acc, l) => {
+    const rate = l.iva ?? 0;
+    if (rate > 0) acc[rate] = (acc[rate] || 0) + (l.ivaImporte ?? 0);
+    return acc;
+  }, {});
+  const linesHtml = oc.lines.map(l => {
+    const neto = l.neto ?? l.qty * (l.precioNeto ?? l.precio ?? 0);
+    const iv = l.ivaImporte ?? 0;
+    const sub = l.subtotal ?? (neto + iv);
+    return `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${l.nombre}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${l.qty}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">$${Number(l.precioNeto ?? l.precio ?? 0).toLocaleString('es-AR')}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${l.iva ?? 0}%</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">$${Number(iv).toLocaleString('es-AR')}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">$${Number(sub).toLocaleString('es-AR')}</td>
+    </tr>`;
+  }).join('');
+  const ivaRowsHtml = Object.entries(ivaByRate).map(([rate, imp]) =>
+    `<tr><td colspan="5" style="text-align:right;padding:6px 12px;color:#6b7280;font-size:13px">IVA ${rate}%</td><td style="text-align:right;padding:6px 12px;color:#d97706;font-size:13px">$${Number(imp).toLocaleString('es-AR')}</td></tr>`
+  ).join('');
+  win.document.write(`<!DOCTYPE html><html><head><title>Orden de Compra ${oc.ref}</title>
+    <style>body{font-family:'Segoe UI',sans-serif;color:#1a1a1a;padding:40px;max-width:760px;margin:0 auto}
+    h1{font-size:24px;font-weight:800;color:#2ea043;margin-bottom:4px}
+    .sub{color:#6b7280;font-size:13px;margin-bottom:24px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:24px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px}
+    .label{font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:.8px;margin-bottom:3px}
+    .val{font-size:13px;font-weight:600}
+    table{width:100%;border-collapse:collapse;margin-bottom:20px}
+    thead tr{background:#f3f4f6}
+    th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:#6b7280;letter-spacing:.8px}
+    .subtot td{padding:6px 12px;font-size:13px;color:#6b7280;border-top:1px solid #e5e7eb}
+    .total-row td{font-size:15px;font-weight:800;color:#2ea043;padding:10px 12px;border-top:2px solid #e5e7eb}
+    .obs{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;font-size:13px;color:#374151;margin-bottom:20px}
+    .footer{text-align:center;font-size:11px;color:#9ca3af;margin-top:40px}
+    @media print{body{padding:20px}}</style></head>
+    <body>
+    <h1>Orden de Compra</h1>
+    <div class="sub">${oc.ref} &nbsp;·&nbsp; ${oc.date}</div>
+    <div class="grid">
+      <div><div class="label">PROVEEDOR</div><div class="val">${oc.supplierName}</div></div>
+      <div><div class="label">FECHA</div><div class="val">${oc.date}</div></div>
+      <div><div class="label">REFERENCIA</div><div class="val">${oc.ref}</div></div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Artículo</th>
+        <th style="text-align:center">Cant.</th>
+        <th style="text-align:right">P. Unit. s/IVA</th>
+        <th style="text-align:center">IVA</th>
+        <th style="text-align:right">IVA $</th>
+        <th style="text-align:right">Subtotal c/IVA</th>
+      </tr></thead>
+      <tbody>${linesHtml}
+      <tr class="subtot"><td colspan="5" style="text-align:right">Subtotal s/IVA</td><td style="text-align:right">$${Number(totalNeto).toLocaleString('es-AR')}</td></tr>
+      ${ivaRowsHtml}
+      <tr class="total-row"><td colspan="5" style="text-align:right">TOTAL</td><td style="text-align:right">$${Number(oc.total).toLocaleString('es-AR')}</td></tr>
+      </tbody>
+    </table>
+    ${oc.observaciones ? `<div class="label" style="margin-bottom:6px">OBSERVACIONES</div><div class="obs">${oc.observaciones}</div>` : ''}
+    <div class="footer">Documento generado por NexoPyME</div>
+    <script>window.onload=()=>{window.print();}</script>
+    </body></html>`);
+  win.document.close();
+}
+
 // ─── ORDEN DE COMPRA BUILDER ──────────────────────────────────────────────────
 function OrdenCompraBuilder({ suppliers, onSave, onClose }) {
   const [supplierId, setSupplierId] = useState("");
@@ -1209,17 +1280,24 @@ function OrdenCompraBuilder({ suppliers, onSave, onClose }) {
   const [lines, setLines] = useState([]);
   const [nombre, setNombre] = useState("");
   const [qty, setQty] = useState(1);
-  const [precio, setPrecio] = useState("");
+  const [precioNeto, setPrecioNeto] = useState("");
+  const [iva, setIva] = useState(21);
   const [done, setDone] = useState(false);
   const [savedOC, setSavedOC] = useState(null);
 
   const supplier = suppliers.find(s => s.id === supplierId);
-  const total = lines.reduce((s, l) => s + l.qty * l.precio, 0);
+  const totalNeto = lines.reduce((s, l) => s + l.neto, 0);
+  const totalIva = lines.reduce((s, l) => s + l.ivaImporte, 0);
+  const total = totalNeto + totalIva;
 
   const addLine = () => {
     if (!nombre.trim()) return;
-    setLines(prev => [...prev, { nombre: nombre.trim(), qty: qty || 1, precio: parseFloat(precio) || 0 }]);
-    setNombre(""); setQty(1); setPrecio("");
+    const pn = parseFloat(precioNeto) || 0;
+    const q = qty || 1;
+    const neto = q * pn;
+    const ivaImporte = Math.round(neto * iva) / 100;
+    setLines(prev => [...prev, { nombre: nombre.trim(), qty: q, precioNeto: pn, iva, neto, ivaImporte, subtotal: neto + ivaImporte }]);
+    setNombre(""); setQty(1); setPrecioNeto("");
   };
 
   const handleConfirm = () => {
@@ -1230,53 +1308,6 @@ function OrdenCompraBuilder({ suppliers, onSave, onClose }) {
     setDone(true);
   };
 
-  const handlePrint = () => {
-    if (!savedOC) return;
-    const win = window.open('', '_blank', 'width=800,height=600');
-    const fecha = savedOC.date;
-    const linesHtml = savedOC.lines.map(l => `
-      <tr>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${l.nombre}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${l.qty}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">$${Number(l.precio).toLocaleString('es-AR')}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">$${Number(l.qty * l.precio).toLocaleString('es-AR')}</td>
-      </tr>`).join('');
-    win.document.write(`<!DOCTYPE html><html><head><title>Orden de Compra ${savedOC.ref}</title>
-      <style>body{font-family:'Segoe UI',sans-serif;color:#1a1a1a;padding:40px;max-width:720px;margin:0 auto}
-      h1{font-size:24px;font-weight:800;color:#2ea043;margin-bottom:4px}
-      .sub{color:#6b7280;font-size:13px;margin-bottom:24px}
-      .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:24px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px}
-      .label{font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:.8px;margin-bottom:3px}
-      .val{font-size:13px;font-weight:600}
-      table{width:100%;border-collapse:collapse;margin-bottom:20px}
-      thead tr{background:#f3f4f6}
-      th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:#6b7280;letter-spacing:.8px}
-      .total-row td{font-size:15px;font-weight:800;color:#2ea043;padding:10px 12px;border-top:2px solid #e5e7eb}
-      .obs{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;font-size:13px;color:#374151;margin-bottom:20px}
-      .footer{text-align:center;font-size:11px;color:#9ca3af;margin-top:40px}
-      @media print{body{padding:20px}}</style></head>
-      <body>
-      <h1>Orden de Compra</h1>
-      <div class="sub">${savedOC.ref} &nbsp;·&nbsp; ${fecha}</div>
-      <div class="grid">
-        <div><div class="label">PROVEEDOR</div><div class="val">${savedOC.supplierName}</div></div>
-        <div><div class="label">FECHA</div><div class="val">${fecha}</div></div>
-        <div><div class="label">ESTADO</div><div class="val">Pendiente</div></div>
-        <div><div class="label">REFERENCIA</div><div class="val">${savedOC.ref}</div></div>
-      </div>
-      <table>
-        <thead><tr><th>Artículo</th><th style="text-align:center">Cant.</th><th style="text-align:right">Precio Unit.</th><th style="text-align:right">Subtotal</th></tr></thead>
-        <tbody>${linesHtml}
-        <tr class="total-row"><td colspan="3" style="text-align:right">TOTAL</td><td style="text-align:right">$${Number(savedOC.total).toLocaleString('es-AR')}</td></tr>
-        </tbody>
-      </table>
-      ${savedOC.observaciones ? `<div class="label" style="margin-bottom:6px">OBSERVACIONES</div><div class="obs">${savedOC.observaciones}</div>` : ''}
-      <div class="footer">Documento generado por NexoPyME</div>
-      <script>window.onload=()=>{window.print();}</script>
-      </body></html>`);
-    win.document.close();
-  };
-
   if (done && savedOC) return (
     <Modal title="Orden creada" onClose={onClose}>
       <div style={{ textAlign: "center", padding: "20px 0" }}>
@@ -1284,7 +1315,7 @@ function OrdenCompraBuilder({ suppliers, onSave, onClose }) {
         <div style={{ fontSize: 18, fontWeight: 800, color: T.accent, marginBottom: 8 }}>Orden registrada</div>
         <div style={{ color: T.muted, fontSize: 13, marginBottom: 20 }}>Ref: <strong style={{ color: T.ink }}>{savedOC.ref}</strong> · {savedOC.supplierName}</div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <Btn v="ghost" onClick={handlePrint}>⬡ Exportar PDF</Btn>
+          <Btn v="ghost" onClick={() => imprimirOC(savedOC)}>⬡ Exportar PDF</Btn>
           <Btn onClick={onClose}>Cerrar</Btn>
         </div>
       </div>
@@ -1303,13 +1334,16 @@ function OrdenCompraBuilder({ suppliers, onSave, onClose }) {
           <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>AGREGAR ARTÍCULO</div>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
             <div style={{ flex: 3 }}>
-              <Input label="DESCRIPCIÓN DEL ARTÍCULO" value={nombre} onChange={setNombre} placeholder="Nombre del producto o servicio..." />
+              <Input label="DESCRIPCIÓN" value={nombre} onChange={setNombre} placeholder="Nombre del producto o servicio..." />
             </div>
-            <div style={{ flex: 0.7 }}>
-              <Input label="CANTIDAD" type="number" value={qty} onChange={v => setQty(parseInt(v) || 1)} />
+            <div style={{ flex: 0.6 }}>
+              <Input label="CANT." type="number" value={qty} onChange={v => setQty(parseInt(v) || 1)} />
             </div>
             <div style={{ flex: 1 }}>
-              <Input label="PRECIO UNITARIO" type="number" value={precio} onChange={setPrecio} placeholder="0" />
+              <Input label="PRECIO UNIT. S/IVA" type="number" value={precioNeto} onChange={setPrecioNeto} placeholder="0" />
+            </div>
+            <div style={{ flex: 0.6 }}>
+              <Select label="IVA %" value={String(iva)} onChange={v => setIva(Number(v))} options={[{ value: "0", label: "0%" }, { value: "10.5", label: "10.5%" }, { value: "21", label: "21%" }, { value: "27", label: "27%" }]} />
             </div>
             <Btn onClick={addLine} disabled={!nombre.trim()}>Agregar</Btn>
           </div>
@@ -1320,22 +1354,27 @@ function OrdenCompraBuilder({ suppliers, onSave, onClose }) {
         <div style={{ border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 16 }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr style={{ background: T.surface }}>
-              {["Artículo", "Cant.", "Precio Unit.", "Subtotal", ""].map(h =>
+              {["Artículo", "Cant.", "P. Unit. s/IVA", "IVA", "IVA $", "Subtotal c/IVA", ""].map(h =>
                 <th key={h} style={{ padding: "9px 13px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
             </tr></thead>
             <tbody>{lines.map((l, i) => (
               <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
                 <td style={{ padding: "11px 13px", fontSize: 13 }}>{l.nombre}</td>
                 <td style={{ padding: "11px 13px", fontSize: 13 }}>{l.qty}</td>
-                <td style={{ padding: "11px 13px", fontSize: 13 }}>{fmt(l.precio)}</td>
-                <td style={{ padding: "11px 13px", fontSize: 14, fontWeight: 700 }}>{fmt(l.qty * l.precio)}</td>
+                <td style={{ padding: "11px 13px", fontSize: 13 }}>{fmt(l.precioNeto)}</td>
+                <td style={{ padding: "11px 13px", fontSize: 12, color: T.muted }}>{l.iva}%</td>
+                <td style={{ padding: "11px 13px", fontSize: 13, color: T.yellow }}>{fmt(l.ivaImporte)}</td>
+                <td style={{ padding: "11px 13px", fontSize: 14, fontWeight: 700 }}>{fmt(l.subtotal)}</td>
                 <td style={{ padding: "11px 13px" }}><button onClick={() => setLines(lines.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer" }}>✕</button></td>
               </tr>
             ))}</tbody>
           </table>
-          <div style={{ padding: "12px 16px", borderTop: `2px solid ${T.border}`, display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
-            <span style={{ fontSize: 13, color: T.muted }}>TOTAL</span>
-            <span style={{ fontSize: 18, fontWeight: 800, color: T.accent }}>{fmt(total)}</span>
+          <div style={{ padding: "12px 16px", borderTop: `2px solid ${T.border}` }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 24, alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: T.muted }}>Subtotal s/IVA: <strong style={{ color: T.ink }}>{fmt(totalNeto)}</strong></span>
+              <span style={{ fontSize: 12, color: T.muted }}>IVA: <strong style={{ color: T.yellow }}>{fmt(totalIva)}</strong></span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: T.accent }}>TOTAL {fmt(total)}</span>
+            </div>
           </div>
         </div>
       )}
@@ -1368,7 +1407,7 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
   const [ordenCompraId, setOrdenCompraId] = useState("");
 
   const supplier = suppliers.find(s => s.id === supplierId);
-  const ocOptions = ordenesCompra.filter(o => o.supplierId === supplierId && o.estado !== 'recibida');
+  const ocOptions = ordenesCompra.filter(o => o.supplierId === supplierId);
 
   // Find product by supplier code OR internal SKU, returns { product, supplierCode, suggestedPrice }
   const findProduct = (code) => {
@@ -4144,7 +4183,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
   const handleSaveOC = ({ supplierId, supplierName, observaciones, lines, total }) => {
     const id = crypto.randomUUID();
     const ref = "OC-" + String(Date.now()).slice(-6);
-    const newOC = { id, ref, supplierId, supplierName, date: today, estado: "pendiente", observaciones, lines, total };
+    const newOC = { id, ref, supplierId, supplierName, date: today, observaciones, lines, total };
     setOrdenesCompra(prev => [newOC, ...prev]);
     if (companyId) supabase.from('ordenes_compra').insert(ordenCompraToDb(newOC, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     return newOC;
@@ -4292,9 +4331,8 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
         <>
           <div style={{ display: "flex", gap: 14, marginBottom: 16 }}>
             {[
-              { l: "Órdenes pendientes", v: (ordenesCompra || []).filter(o => o.estado === 'pendiente').length, c: T.yellow },
-              { l: "Órdenes recibidas", v: (ordenesCompra || []).filter(o => o.estado === 'recibida').length, c: T.accent },
-              { l: "Total en órdenes activas", v: fmt((ordenesCompra || []).filter(o => o.estado === 'pendiente').reduce((s, o) => s + o.total, 0)), c: T.ink },
+              { l: "Total de órdenes", v: (ordenesCompra || []).length, c: T.ink },
+              { l: "Total comprometido", v: fmt((ordenesCompra || []).reduce((s, o) => s + o.total, 0)), c: T.orange },
             ].map((k, i) => (
               <div key={i} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", flex: 1 }}>
                 <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 6 }}>{k.l}</div>
@@ -4304,21 +4342,17 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
           </div>
           <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr style={{ background: T.surface }}>{["Referencia", "Proveedor", "Fecha", "Total", "Estado", ""].map(h => <th key={h} style={{ padding: "11px 15px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+              <thead><tr style={{ background: T.surface }}>{["Referencia", "Proveedor", "Fecha", "Total c/IVA", ""].map(h => <th key={h} style={{ padding: "11px 15px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
               <tbody>{(ordenesCompra || []).length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: "32px 15px", textAlign: "center", color: T.muted, fontSize: 13 }}>No hay órdenes de compra. Creá la primera con "+ Nueva orden de compra".</td></tr>
+                <tr><td colSpan={5} style={{ padding: "32px 15px", textAlign: "center", color: T.muted, fontSize: 13 }}>No hay órdenes de compra. Creá la primera con "+ Nueva orden de compra".</td></tr>
               ) : (ordenesCompra || []).map(oc => (
                 <tr key={oc.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "12px 15px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.orange }}>{oc.ref}</td>
                   <td style={{ padding: "12px 15px", fontSize: 13, fontWeight: 600 }}>{oc.supplierName}</td>
                   <td style={{ padding: "12px 15px", fontSize: 12, color: T.muted }}>{oc.date}</td>
                   <td style={{ padding: "12px 15px", fontSize: 14, fontWeight: 800 }}>{fmt(oc.total)}</td>
-                  <td style={{ padding: "12px 15px" }}>
-                    <span style={{ padding: "3px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: oc.estado === 'recibida' ? T.greenLight : T.yellowLight, color: oc.estado === 'recibida' ? T.accent : T.yellow }}>
-                      {oc.estado === 'recibida' ? 'Recibida' : 'Pendiente'}
-                    </span>
-                  </td>
-                  <td style={{ padding: "12px 15px" }}>
+                  <td style={{ padding: "12px 15px", display: "flex", gap: 8, alignItems: "center" }}>
+                    <Btn sm v="ghost" onClick={() => imprimirOC(oc)}>⬡ PDF</Btn>
                     <button onClick={() => eliminarOC(oc.id)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14 }} title="Eliminar">✕</button>
                   </td>
                 </tr>
@@ -8627,10 +8661,6 @@ export default function App({ session, profile, onLogout }) {
     const newPI = { id, ref, nroFactura: nroFactura || null, supplierId, supplierName, date: today, dueDate: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: payStatus, lines };
     setPurchaseInvoices(prev => [newPI, ...prev]);
     if (companyId) supabase.from('purchase_invoices').insert(purchaseInvoiceToDb(newPI, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
-    if (ordenCompraId) {
-      setOrdenesCompra(prev => prev.map(o => o.id === ordenCompraId ? { ...o, estado: 'recibida' } : o));
-      if (companyId) supabase.from('ordenes_compra').update({ estado: 'recibida' }).eq('id', ordenCompraId).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
-    }
     setShowPurchaseBuilder(false);
   };
 
