@@ -2246,7 +2246,7 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
 // ─── VENDEDORES TAB ───────────────────────────────────────────────────────────
 const EMPTY_VENDEDOR = { codigo: "", nombre: "", comision: "" };
 
-function VendedoresTab({ vendedores, setVendedores, saleInvoices, readOnly = false }) {
+function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_VENDEDOR);
   const [editingId, setEditingId] = useState(null);
@@ -2275,7 +2275,7 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices, readOnly = fal
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>Vendedores</div>
-        {!readOnly && <Btn sm onClick={openNew}>+ Nuevo vendedor</Btn>}
+        <Btn sm onClick={openNew}>+ Nuevo vendedor</Btn>
       </div>
 
       {showForm && (
@@ -2321,12 +2321,10 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices, readOnly = fal
                     <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700 }}>{fmt(ventas)}</td>
                     <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700, color: T.accent }}>{fmt(comisionEstimada)}</td>
                     <td style={{ padding: "12px 16px" }}>
-                      {!readOnly && (
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <Btn sm v="ghost" onClick={() => openEdit(v)}>Editar</Btn>
-                          <Btn sm v="ghost" onClick={() => remove(v.id)}>Eliminar</Btn>
-                        </div>
-                      )}
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Btn sm v="ghost" onClick={() => openEdit(v)}>Editar</Btn>
+                        <Btn sm v="ghost" onClick={() => remove(v.id)}>Eliminar</Btn>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -2340,7 +2338,7 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices, readOnly = fal
 }
 
 // ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
-function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc, readOnly = false }) {
+function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
   const [tab, setTab] = useState("docs");
   const [filterType, setFilterType] = useState("all");
   const [searchDocNum, setSearchDocNum] = useState("");
@@ -2881,26 +2879,24 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div><div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Ventas</div><div style={{ fontSize: 13, color: T.muted }}>Facturación, clientes y seguimiento comercial</div></div>
-        {!readOnly && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setShowIAModal(true)}
-              style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-              ✦ Presupuesto desde mensaje / PDF
-            </button>
-            <button onClick={onNewPresupuesto}
-              style={{ background: T.purpleLight, color: T.purple, border: `1px solid ${T.purple}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-              📋 Nuevo presupuesto
-            </button>
-            <button onClick={onNewRemito}
-              style={{ background: T.orangeLight, color: T.orange, border: `1px solid ${T.orange}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-              📦 Nuevo remito
-            </button>
-            <button onClick={onNewFactura}
-              style={{ background: T.accent, color: "#fff", border: `1px solid ${T.accent}`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-              📄 Nueva factura
-            </button>
-          </div>
-        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setShowIAModal(true)}
+            style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            ✦ Presupuesto desde mensaje / PDF
+          </button>
+          <button onClick={onNewPresupuesto}
+            style={{ background: T.purpleLight, color: T.purple, border: `1px solid ${T.purple}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            📋 Nuevo presupuesto
+          </button>
+          <button onClick={onNewRemito}
+            style={{ background: T.orangeLight, color: T.orange, border: `1px solid ${T.orange}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            📦 Nuevo remito
+          </button>
+          <button onClick={onNewFactura}
+            style={{ background: T.accent, color: "#fff", border: `1px solid ${T.accent}`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            📄 Nueva factura
+          </button>
+        </div>
       </div>
       <div style={{ display: "flex", gap: 4, marginBottom: 22, background: T.surface, borderRadius: 10, padding: 4, width: "fit-content" }}>
         {[["docs", "Documentos"], ["clients", "Clientes"], ["vendedores", "Vendedores"], ["cobranzas", "💰 Cobranzas"]].map(([v, l]) => (
@@ -2976,7 +2972,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, marginBottom: 14, alignItems: "flex-end" }}>
             <SearchBar value={searchClientName} onChange={setSearchClientName} placeholder="Nombre o código..." />
             <SearchBar value={searchClientCuit} onChange={setSearchClientCuit} placeholder="CUIT..." />
-            {!readOnly && <Btn sm onClick={() => setNewClient(true)}>+ Nuevo cliente</Btn>}
+            <Btn sm onClick={() => setNewClient(true)}>+ Nuevo cliente</Btn>
           </div>
           {newClient && (
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20, marginBottom: 16 }}>
@@ -3049,7 +3045,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
       )}
 
       {tab === "vendedores" && (
-        <VendedoresTab vendedores={vendedores} setVendedores={setVendedores} saleInvoices={saleInvoices} readOnly={readOnly} />
+        <VendedoresTab vendedores={vendedores} setVendedores={setVendedores} saleInvoices={saleInvoices} />
       )}
 
       {tab === "cobranzas" && (
@@ -4068,7 +4064,7 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
 }
 
 // ─── MODULE: COMPRAS ──────────────────────────────────────────────────────────
-function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase, ordenesCompra, setOrdenesCompra, readOnly = false }) {
+function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase, ordenesCompra, setOrdenesCompra }) {
   const [tab, setTab] = useState("invoices");
   const [showOCBuilder, setShowOCBuilder] = useState(false);
   const [showSupForm, setShowSupForm] = useState(false);
@@ -4205,13 +4201,11 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div><div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Compras</div><div style={{ fontSize: 13, color: T.muted }}>Proveedores, facturas y listas de precios</div></div>
-        {!readOnly && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn v="ghost" onClick={() => { setShowIAImport(true); setIaPdfResult(null); setIaPdfFile(null); setIaPdfError(""); }}>✦ Importar PDF con IA</Btn>
-            <Btn v="ghost" onClick={() => setShowOCBuilder(true)}>+ Nueva orden de compra</Btn>
-            <Btn onClick={onNewPurchase}>+ Nueva factura de compra</Btn>
-          </div>
-        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn v="ghost" onClick={() => { setShowIAImport(true); setIaPdfResult(null); setIaPdfFile(null); setIaPdfError(""); }}>✦ Importar PDF con IA</Btn>
+          <Btn v="ghost" onClick={() => setShowOCBuilder(true)}>+ Nueva orden de compra</Btn>
+          <Btn onClick={onNewPurchase}>+ Nueva factura de compra</Btn>
+        </div>
       </div>
       <div style={{ display: "flex", gap: 4, marginBottom: 22, background: T.surface, borderRadius: 10, padding: 4, width: "fit-content" }}>
         {[["invoices", "Facturas a pagar"], ["orders", "Órdenes de compra"], ["suppliers", "Proveedores"], ["prices", "Listas de precios"]].map(([v, l]) => (
@@ -4275,8 +4269,8 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                   <td style={{ padding: "12px 15px", fontSize: 14, fontWeight: 800 }}>{fmt(inv.total)}</td>
                   <td style={{ padding: "12px 15px" }}><Badge status={inv.status} /></td>
                   <td style={{ padding: "12px 15px" }}>
-                    {!readOnly && inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => markPagada(inv.id)}>Marcar pagada</Btn>}
-                    {!readOnly && inv.status === "pagada" && <Btn sm v="ghost" onClick={() => unmarkPagada(inv.id)}>↩ Revertir a pendiente</Btn>}
+                    {inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => markPagada(inv.id)}>Marcar pagada</Btn>}
+                    {inv.status === "pagada" && <Btn sm v="ghost" onClick={() => unmarkPagada(inv.id)}>↩ Revertir a pendiente</Btn>}
                   </td>
                 </tr>
               ))}</tbody>
@@ -4290,7 +4284,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, marginBottom: 14, alignItems: "flex-end" }}>
             <SearchBar value={searchSupName} onChange={setSearchSupName} placeholder="Nombre..." />
             <SearchBar value={searchSupCuit} onChange={setSearchSupCuit} placeholder="CUIT..." />
-            {!readOnly && <Btn sm onClick={() => setShowSupForm(true)}>+ Nuevo proveedor</Btn>}
+            <Btn sm onClick={() => setShowSupForm(true)}>+ Nuevo proveedor</Btn>
           </div>
           {showSupForm && (
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20, marginBottom: 16 }}>
@@ -4361,7 +4355,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                   <td style={{ padding: "12px 15px", fontSize: 14, fontWeight: 800 }}>{fmt(oc.total)}</td>
                   <td style={{ padding: "12px 15px", display: "flex", gap: 8, alignItems: "center" }}>
                     <Btn sm v="ghost" onClick={() => imprimirOC(oc)}>⬡ PDF</Btn>
-                    {!readOnly && <button onClick={() => eliminarOC(oc.id)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14 }} title="Eliminar">✕</button>}
+                    <button onClick={() => eliminarOC(oc.id)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14 }} title="Eliminar">✕</button>
                   </td>
                 </tr>
               ))}</tbody>
@@ -4483,7 +4477,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
 // ─── MODULE: INVENTARIO ───────────────────────────────────────────────────────
 const EMPTY_FORM = { name: "", sku: "", category: "", unit: "unidad", minStock: 10, cost: 0, iva: 21, tracksStock: true, prices: { lista_a: 0, lista_b: 0, lista_c: 0 }, clientCodes: [], esCompuesto: false, componentes: [] };
 
-function InventarioModule({ products, setProducts, clients, suppliers, priceLists, companyId, readOnly = false }) {
+function InventarioModule({ products, setProducts, clients, suppliers, priceLists, companyId }) {
   const [showForm, setShowForm] = useState(false);
   const [adjustProd, setAdjustProd] = useState(null);
   const [adjustQty, setAdjustQty] = useState(0);
@@ -4667,13 +4661,11 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <a href="https://cdn.example.com" style={{ display: "none" }}>.</a>
-          {!readOnly && (
-            <label style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${T.blue}40`, background: T.blueLight, color: T.blue, fontSize: 12, cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
-              📥 Importar masivo
-              <input type="file" accept=".xlsx,.xls,.csv" onChange={handleBulkImport} style={{ display: "none" }} />
-            </label>
-          )}
-          {!readOnly && <Btn onClick={() => setShowForm(true)}>+ Nuevo producto</Btn>}
+          <label style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${T.blue}40`, background: T.blueLight, color: T.blue, fontSize: 12, cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+            📥 Importar masivo
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleBulkImport} style={{ display: "none" }} />
+          </label>
+          <Btn onClick={() => setShowForm(true)}>+ Nuevo producto</Btn>
         </div>
       </div>
 
@@ -5102,11 +5094,11 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
                 </td>
                 <td style={{ padding: "12px 14px" }}>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {!readOnly && !isService && <Btn sm v="ghost" onClick={() => { setAdjustProd(p); setAdjustQty(0); }}>Ajustar</Btn>}
-                    {!readOnly && <button onClick={() => setEditingProduct({...p})}
+                    {!isService && <Btn sm v="ghost" onClick={() => { setAdjustProd(p); setAdjustQty(0); }}>Ajustar</Btn>}
+                    <button onClick={() => setEditingProduct({...p})}
                       style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
                       Editar
-                    </button>}
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -7464,7 +7456,7 @@ function calcSueldo(emp) {
   return { bruto, adicionalAntiguedad, jubilacion, inssjp, obraSocial, totalRetenciones, neto };
 }
 
-function RRHHModule({ empleados, setEmpleados, companyId, readOnly = false }) {
+function RRHHModule({ empleados, setEmpleados, companyId }) {
   const [tab, setTab] = useState("empleados");
   const [showEmpForm, setShowEmpForm] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
@@ -7591,7 +7583,7 @@ td,th{padding:6px 10px;border:1px solid #ddd}th{background:#f5f5f5;font-weight:7
       {tab === "empleados" && (
         <div>
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-            {!readOnly && <Btn onClick={openNewEmp}>+ Nuevo Empleado</Btn>}
+            <Btn onClick={openNewEmp}>+ Nuevo Empleado</Btn>
           </div>
           <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -7616,12 +7608,10 @@ td,th{padding:6px 10px;border:1px solid #ddd}th{background:#f5f5f5;font-weight:7
                       <span style={{ background: emp.estado === "activo" ? T.accentLight : emp.estado === "licencia" ? T.blueLight : T.redLight, color: emp.estado === "activo" ? T.accent : emp.estado === "licencia" ? T.blue : T.red, padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{emp.estado}</span>
                     </td>
                     <td style={{ padding: "10px 12px" }}>
-                      {!readOnly && (
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <Btn sm v="ghost" onClick={() => openEditEmp(emp)}>✏ Editar</Btn>
-                          <Btn sm v="danger" onClick={() => deleteEmp(emp.id)}>✕</Btn>
-                        </div>
-                      )}
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Btn sm v="ghost" onClick={() => openEditEmp(emp)}>✏ Editar</Btn>
+                        <Btn sm v="danger" onClick={() => deleteEmp(emp.id)}>✕</Btn>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -7875,7 +7865,7 @@ td,th{padding:6px 10px;border:1px solid #ddd}th{background:#f5f5f5;font-weight:7
 }
 
 // ─── MODULE: CAJA ─────────────────────────────────────────────────────────────
-function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, saleInvoices, empleados, defaultMontoInicial, setDefaultMontoInicial, companyId, readOnly = false }) {
+function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, saleInvoices, empleados, defaultMontoInicial, setDefaultMontoInicial, companyId }) {
   const hoy = today; // usa la misma constante que los documentos
   const [selectedCajaId, setSelectedCajaId] = useState(null);
   const [showAbrirModal, setShowAbrirModal] = useState(false);
@@ -8055,7 +8045,7 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
           {movs.length === 0 ? (
             <div style={{ padding: 40, textAlign: "center", color: T.muted, fontSize: 13 }}>
               No hay movimientos para este día.
-              {estaAbierta && !readOnly && <div style={{ marginTop: 12 }}><Btn v="ghost" onClick={() => setShowMovModal(true)}>+ Agregar movimiento manual</Btn></div>}
+              {estaAbierta && <div style={{ marginTop: 12 }}><Btn v="ghost" onClick={() => setShowMovModal(true)}>+ Agregar movimiento manual</Btn></div>}
             </div>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -8140,8 +8130,8 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
           <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Control de flujo de efectivo diario</div>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          {!readOnly && <Btn v="ghost" onClick={() => setShowConfigModal(true)}>Configurar monto inicial</Btn>}
-          {!readOnly && <Btn onClick={() => { setFormFecha(hoy); setFormMonto(String(defaultMontoInicial)); setFormTurno(""); setShowAbrirModal(true); }}>+ Abrir caja</Btn>}
+          <Btn v="ghost" onClick={() => setShowConfigModal(true)}>Configurar monto inicial</Btn>
+          <Btn onClick={() => { setFormFecha(hoy); setFormMonto(String(defaultMontoInicial)); setFormTurno(""); setShowAbrirModal(true); }}>+ Abrir caja</Btn>
         </div>
       </div>
 
@@ -8150,7 +8140,7 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
           <div style={{ fontSize: 48, marginBottom: 16, color: T.faint }}>◈</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Sin cajas registradas</div>
           <div style={{ fontSize: 13, marginBottom: 24 }}>Abrí la primera caja del día para comenzar a registrar el flujo de efectivo.</div>
-          {!readOnly && <Btn onClick={() => { setFormFecha(hoy); setFormMonto(String(defaultMontoInicial)); setFormTurno(""); setShowAbrirModal(true); }}>+ Abrir caja</Btn>}
+          <Btn onClick={() => { setFormFecha(hoy); setFormMonto(String(defaultMontoInicial)); setFormTurno(""); setShowAbrirModal(true); }}>+ Abrir caja</Btn>
         </div>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
@@ -8191,7 +8181,7 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 // ─── MODULE: CHEQUES ──────────────────────────────────────────────────────────
-function ChequesModule({ cheques, setCheques, companyId, readOnly = false }) {
+function ChequesModule({ cheques, setCheques, companyId }) {
   const [tab, setTab] = useState("cobrar");
   const [showForm, setShowForm] = useState(false);
   const [formTipo, setFormTipo] = useState("cobrar");
@@ -8337,19 +8327,17 @@ function ChequesModule({ cheques, setCheques, companyId, readOnly = false }) {
             style={{ padding: "9px 16px", borderRadius: 9, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
             📋 Plantilla
           </button>
-          {!readOnly && (
-            <label style={{ padding: "9px 16px", borderRadius: 9, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center" }}>
-              📥 Importar Excel
-              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={importarExcel} />
-            </label>
-          )}
-          {!readOnly && (tab === "cobrar" || tab === "pagar") && (tab === "cobrar" ? cobrar : pagar).length > 0 && (
+          <label style={{ padding: "9px 16px", borderRadius: 9, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center" }}>
+            📥 Importar Excel
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={importarExcel} />
+          </label>
+          {(tab === "cobrar" || tab === "pagar") && (tab === "cobrar" ? cobrar : pagar).length > 0 && (
             <button onClick={vaciarCheques}
               style={{ padding: "9px 16px", borderRadius: 9, border: `1px solid ${T.red}60`, background: T.redLight, color: T.red, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
               🗑 Vaciar lista
             </button>
           )}
-          {!readOnly && <Btn onClick={() => { setFormTipo(tab === "pagar" ? "pagar" : "cobrar"); setShowForm(true); }}>+ Nuevo cheque</Btn>}
+          <Btn onClick={() => { setFormTipo(tab === "pagar" ? "pagar" : "cobrar"); setShowForm(true); }}>+ Nuevo cheque</Btn>
         </div>
       </div>
 
@@ -8422,7 +8410,7 @@ function ChequesModule({ cheques, setCheques, companyId, readOnly = false }) {
                       </span>
                     </td>
                     <td style={{ padding: "10px 14px" }}>
-                      {!readOnly && (c.estado === "pendiente" ? (
+                      {c.estado === "pendiente" ? (
                         <button onClick={() => marcarEstado(c.id, tab === "cobrar" ? "cobrado" : "pagado")}
                           style={{ padding: "5px 12px", borderRadius: 7, border: `1px solid ${T.accent}`, background: T.accentLight, color: T.accent, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                           Marcar {tab === "cobrar" ? "cobrado" : "pagado"}
@@ -8432,14 +8420,14 @@ function ChequesModule({ cheques, setCheques, companyId, readOnly = false }) {
                           style={{ padding: "5px 12px", borderRadius: 7, border: `1px solid ${T.border}`, background: "transparent", color: T.muted, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                           ↩ Revertir
                         </button>
-                      ))}
+                      )}
                     </td>
                     <td style={{ padding: "10px 14px" }}>
-                      {!readOnly && <button onClick={() => eliminarCheque(c.id)}
+                      <button onClick={() => eliminarCheque(c.id)}
                         style={{ background: "none", border: "none", color: T.faint, cursor: "pointer", fontSize: 16, lineHeight: 1 }}
                         title="Eliminar cheque"
                         onMouseEnter={e => e.target.style.color = T.red}
-                        onMouseLeave={e => e.target.style.color = T.faint}>✕</button>}
+                        onMouseLeave={e => e.target.style.color = T.faint}>✕</button>
                     </td>
                   </tr>
                 );
@@ -8485,7 +8473,7 @@ const PERM_MODULES = [
   { id: "reportes", label: "Reportes" }, { id: "rrhh", label: "RRHH" },
 ];
 
-const DEFAULT_PERMS = Object.fromEntries(PERM_MODULES.map(m => [m.id, "view"]));
+const DEFAULT_PERMS = Object.fromEntries(PERM_MODULES.map(m => [m.id, "edit"]));
 
 function UsuariosModule({ companyId, profile }) {
   const [users, setUsers] = useState([]);
@@ -8641,26 +8629,16 @@ function UsuariosModule({ companyId, profile }) {
               <div style={{ padding: "16px 20px", background: T.surface, borderBottom: `1px solid ${T.border}` }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 12 }}>PERMISOS POR MÓDULO</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 14 }}>
-                  {PERM_MODULES.map(m => (
-                    <div key={m.id} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 12px" }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>{m.label}</div>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        {["edit", "view", "none"].map(v => (
-                          <button key={v} onClick={() => setPermsForm(p => ({ ...p, [m.id]: v }))}
-                            style={{ flex: 1, padding: "4px 2px", borderRadius: 5, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-                              background: permsForm[m.id] === v ? (v === "edit" ? T.accentLight : v === "view" ? T.blueLight : T.surface2) : T.surface2,
-                              color: permsForm[m.id] === v ? (v === "edit" ? T.accent : v === "view" ? T.blue : T.muted) : T.faint,
-                              outline: permsForm[m.id] === v ? `1px solid ${v === "edit" ? T.accent : v === "view" ? T.blue : T.border}` : "none",
-                            }}>
-                            {v === "edit" ? "✎" : v === "view" ? "👁" : "✕"}
-                          </button>
-                        ))}
-                      </div>
-                      <div style={{ fontSize: 10, color: T.muted, marginTop: 5, textAlign: "center" }}>
-                        {permsForm[m.id] === "edit" ? "Completo" : permsForm[m.id] === "view" ? "Solo ver" : "Sin acceso"}
-                      </div>
-                    </div>
-                  ))}
+                  {PERM_MODULES.map(m => {
+                    const active = permsForm[m.id] && permsForm[m.id] !== 'none';
+                    return (
+                      <button key={m.id} onClick={() => setPermsForm(p => ({ ...p, [m.id]: active ? 'none' : 'edit' }))}
+                        style={{ background: active ? T.accentLight : T.surface2, border: `1px solid ${active ? T.accent : T.border}`, borderRadius: 8, padding: "10px 12px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: active ? T.ink : T.muted, marginBottom: 4 }}>{m.label}</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: active ? T.accent : T.faint }}>{active ? "✓ Activo" : "✕ Sin acceso"}</div>
+                      </button>
+                    );
+                  })}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <Btn sm onClick={() => savePerms(u.id)} disabled={saving}>Guardar permisos</Btn>
@@ -8726,8 +8704,6 @@ export default function App({ session, profile, onLogout }) {
   const [preloadDoc, setPreloadDoc] = useState(null);
 
   const openDoc = (type, preload) => {
-    const perm = isJefe ? 'edit' : (userPerms[module] || 'none');
-    if (perm !== 'edit') return;
     setDocBuilderType(type); setPreloadDoc(preload || null); setShowDocBuilder(true);
   };
   const [showPurchaseBuilder, setShowPurchaseBuilder] = useState(false);
@@ -8738,9 +8714,8 @@ export default function App({ session, profile, onLogout }) {
   const companyDisplayName = profile?.company_name || 'Mi Empresa';
   const isJefe = !profile?.role || profile.role === 'jefe';
   const userPerms = profile?.permissions || {};
-  const canEdit = (mod) => isJefe || userPerms[mod] === 'edit';
   const visibleNav = [
-    ...NAV.filter(n => isJefe || (userPerms[n.id] !== 'none' && userPerms[n.id])),
+    ...NAV.filter(n => isJefe || (userPerms[n.id] && userPerms[n.id] !== 'none')),
     ...(isJefe ? [{ id: "usuarios", label: "Usuarios", icon: "👤" }] : []),
   ];
 
@@ -8972,16 +8947,10 @@ export default function App({ session, profile, onLogout }) {
 
       {/* Main */}
       <div style={{ flex: 1, overflowY: "auto", padding: "32px 36px" }}>
-        {!isJefe && userPerms[module] === 'view' && (
-          <div style={{ background: T.blueLight, border: `1px solid ${T.blue}`, borderRadius: 10, padding: "10px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: T.blue }}>
-            <span style={{ fontSize: 16 }}>👁</span>
-            <span><strong>Modo solo lectura</strong> — podés ver la información pero no realizar cambios.</span>
-          </div>
-        )}
-        <ReadOnlyCtx.Provider value={!isJefe && userPerms[module] === 'view'}>
-        <div className={!isJefe && userPerms[module] === 'view' ? 'ro-wrap' : ''}>
+        <ReadOnlyCtx.Provider value={false}>
+        <div>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
-        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile} readOnly={!canEdit('ventas')}
+        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile}
           onNewFactura={() => openDoc("factura")}
           onNewRemito={() => openDoc("remito")}
           onNewPresupuesto={() => openDoc("presupuesto")}
@@ -8989,13 +8958,13 @@ export default function App({ session, profile, onLogout }) {
           onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" })}
         />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
-        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => { if (isJefe || userPerms['compras'] === 'edit') setShowPurchaseBuilder(true); }} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} readOnly={!canEdit('compras')} />}
-        {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} readOnly={!canEdit('inventario')} />}
+        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} />}
+        {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} cajas={cajas} cajaMovimientos={cajaMovimientos} />}
-        {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} companyId={companyId} readOnly={!canEdit('caja')} />}
-        {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} readOnly={!canEdit('cheques')} />}
-        {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} readOnly={!canEdit('rrhh')} />}
+        {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} companyId={companyId} />}
+        {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} />}
+        {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
         {module === "usuarios" && isJefe && <UsuariosModule companyId={companyId} profile={profile} />}
         </div>
         </ReadOnlyCtx.Provider>
