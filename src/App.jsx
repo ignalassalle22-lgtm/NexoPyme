@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, createContext, useContext } from "react";
 import * as XLSX from 'xlsx-js-style';
 import { Workbook as ExcelWorkbook } from 'exceljs';
 import { supabase } from './lib/supabase.js';
@@ -253,7 +253,11 @@ const Badge = ({ status }) => {
   return <span style={{ background: bg, color, padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{status.charAt(0).toUpperCase() + status.slice(1)}</span>;
 };
 
+const ReadOnlyCtx = createContext(false);
+
 const Btn = ({ children, onClick, v = "primary", sm, disabled, full }) => {
+  const readOnly = useContext(ReadOnlyCtx);
+  const isDisabled = disabled || readOnly;
   const s = {
     primary: { bg: T.accent, color: "#fff", border: `1px solid ${T.accent}` },
     ghost: { bg: "transparent", color: T.ink, border: `1px solid ${T.border}` },
@@ -261,7 +265,7 @@ const Btn = ({ children, onClick, v = "primary", sm, disabled, full }) => {
     orange: { bg: T.orangeLight, color: T.orange, border: `1px solid #5a2e0e` },
     danger: { bg: T.redLight, color: T.red, border: `1px solid #5a1a1a` },
   }[v];
-  return <button onClick={onClick} disabled={disabled} style={{ background: s.bg, color: s.color, border: s.border, borderRadius: 8, padding: sm ? "5px 12px" : "9px 18px", fontWeight: 700, fontSize: sm ? 11 : 13, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, fontFamily: "inherit", width: full ? "100%" : "auto" }}>{children}</button>;
+  return <button onClick={isDisabled ? undefined : onClick} disabled={isDisabled} style={{ background: s.bg, color: s.color, border: s.border, borderRadius: 8, padding: sm ? "5px 12px" : "9px 18px", fontWeight: 700, fontSize: sm ? 11 : 13, cursor: isDisabled ? "default" : "pointer", opacity: isDisabled ? 0.4 : 1, fontFamily: "inherit", width: full ? "100%" : "auto" }}>{children}</button>;
 };
 
 function Input({ label, value, onChange, placeholder, mono, type = "text", small }) {
@@ -8953,6 +8957,13 @@ export default function App({ session, profile, onLogout }) {
 
       {/* Main */}
       <div style={{ flex: 1, overflowY: "auto", padding: "32px 36px" }}>
+        {!isJefe && userPerms[module] === 'view' && (
+          <div style={{ background: T.blueLight, border: `1px solid ${T.blue}`, borderRadius: 10, padding: "10px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: T.blue }}>
+            <span style={{ fontSize: 16 }}>👁</span>
+            <span><strong>Modo solo lectura</strong> — podés ver la información pero no realizar cambios.</span>
+          </div>
+        )}
+        <ReadOnlyCtx.Provider value={!isJefe && userPerms[module] === 'view'}>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
         {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile} onNewFactura={() => openDoc("factura")} onNewRemito={() => openDoc("remito")} onNewPresupuesto={() => openDoc("presupuesto")} onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)} onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" })} />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
@@ -8964,6 +8975,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
         {module === "usuarios" && isJefe && <UsuariosModule companyId={companyId} profile={profile} />}
+        </ReadOnlyCtx.Provider>
       </div>
 
       {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} priceLists={priceLists} vendedores={vendedores} />}
