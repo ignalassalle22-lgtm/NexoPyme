@@ -2246,7 +2246,7 @@ function HubModule({ saleInvoices, purchaseInvoices, products, clients, supplier
 // ─── VENDEDORES TAB ───────────────────────────────────────────────────────────
 const EMPTY_VENDEDOR = { codigo: "", nombre: "", comision: "" };
 
-function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
+function VendedoresTab({ vendedores, setVendedores, saleInvoices, readOnly = false }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_VENDEDOR);
   const [editingId, setEditingId] = useState(null);
@@ -2275,7 +2275,7 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>Vendedores</div>
-        <Btn sm onClick={openNew}>+ Nuevo vendedor</Btn>
+        {!readOnly && <Btn sm onClick={openNew}>+ Nuevo vendedor</Btn>}
       </div>
 
       {showForm && (
@@ -2321,10 +2321,12 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
                     <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700 }}>{fmt(ventas)}</td>
                     <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700, color: T.accent }}>{fmt(comisionEstimada)}</td>
                     <td style={{ padding: "12px 16px" }}>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <Btn sm v="ghost" onClick={() => openEdit(v)}>Editar</Btn>
-                        <Btn sm v="ghost" onClick={() => remove(v.id)}>Eliminar</Btn>
-                      </div>
+                      {!readOnly && (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <Btn sm v="ghost" onClick={() => openEdit(v)}>Editar</Btn>
+                          <Btn sm v="ghost" onClick={() => remove(v.id)}>Eliminar</Btn>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -2338,7 +2340,7 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
 }
 
 // ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
-function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
+function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc, readOnly = false }) {
   const [tab, setTab] = useState("docs");
   const [filterType, setFilterType] = useState("all");
   const [searchDocNum, setSearchDocNum] = useState("");
@@ -2879,24 +2881,26 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div><div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Ventas</div><div style={{ fontSize: 13, color: T.muted }}>Facturación, clientes y seguimiento comercial</div></div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setShowIAModal(true)}
-            style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-            ✦ Presupuesto desde mensaje / PDF
-          </button>
-          <button onClick={onNewPresupuesto}
-            style={{ background: T.purpleLight, color: T.purple, border: `1px solid ${T.purple}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-            📋 Nuevo presupuesto
-          </button>
-          <button onClick={onNewRemito}
-            style={{ background: T.orangeLight, color: T.orange, border: `1px solid ${T.orange}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-            📦 Nuevo remito
-          </button>
-          <button onClick={onNewFactura}
-            style={{ background: T.accent, color: "#fff", border: `1px solid ${T.accent}`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-            📄 Nueva factura
-          </button>
-        </div>
+        {!readOnly && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setShowIAModal(true)}
+              style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              ✦ Presupuesto desde mensaje / PDF
+            </button>
+            <button onClick={onNewPresupuesto}
+              style={{ background: T.purpleLight, color: T.purple, border: `1px solid ${T.purple}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              📋 Nuevo presupuesto
+            </button>
+            <button onClick={onNewRemito}
+              style={{ background: T.orangeLight, color: T.orange, border: `1px solid ${T.orange}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              📦 Nuevo remito
+            </button>
+            <button onClick={onNewFactura}
+              style={{ background: T.accent, color: "#fff", border: `1px solid ${T.accent}`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              📄 Nueva factura
+            </button>
+          </div>
+        )}
       </div>
       <div style={{ display: "flex", gap: 4, marginBottom: 22, background: T.surface, borderRadius: 10, padding: 4, width: "fit-content" }}>
         {[["docs", "Documentos"], ["clients", "Clientes"], ["vendedores", "Vendedores"], ["cobranzas", "💰 Cobranzas"]].map(([v, l]) => (
@@ -2972,7 +2976,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, marginBottom: 14, alignItems: "flex-end" }}>
             <SearchBar value={searchClientName} onChange={setSearchClientName} placeholder="Nombre o código..." />
             <SearchBar value={searchClientCuit} onChange={setSearchClientCuit} placeholder="CUIT..." />
-            <Btn sm onClick={() => setNewClient(true)}>+ Nuevo cliente</Btn>
+            {!readOnly && <Btn sm onClick={() => setNewClient(true)}>+ Nuevo cliente</Btn>}
           </div>
           {newClient && (
             <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20, marginBottom: 16 }}>
@@ -3045,7 +3049,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
       )}
 
       {tab === "vendedores" && (
-        <VendedoresTab vendedores={vendedores} setVendedores={setVendedores} saleInvoices={saleInvoices} />
+        <VendedoresTab vendedores={vendedores} setVendedores={setVendedores} saleInvoices={saleInvoices} readOnly={readOnly} />
       )}
 
       {tab === "cobranzas" && (
@@ -8977,12 +8981,12 @@ export default function App({ session, profile, onLogout }) {
         <ReadOnlyCtx.Provider value={!isJefe && userPerms[module] === 'view'}>
         <div className={!isJefe && userPerms[module] === 'view' ? 'ro-wrap' : ''}>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
-        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile}
-          onNewFactura={canEdit('ventas') ? () => openDoc("factura") : () => {}}
-          onNewRemito={canEdit('ventas') ? () => openDoc("remito") : () => {}}
-          onNewPresupuesto={canEdit('ventas') ? () => openDoc("presupuesto") : () => {}}
-          onNewPresupuestoIA={canEdit('ventas') ? (preload) => openDoc("presupuesto", preload) : () => {}}
-          onEditDoc={canEdit('ventas') ? (inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" }) : () => {}}
+        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile} readOnly={!canEdit('ventas')}
+          onNewFactura={() => openDoc("factura")}
+          onNewRemito={() => openDoc("remito")}
+          onNewPresupuesto={() => openDoc("presupuesto")}
+          onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)}
+          onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" })}
         />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
         {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => { if (isJefe || userPerms['compras'] === 'edit') setShowPurchaseBuilder(true); }} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} readOnly={!canEdit('compras')} />}
