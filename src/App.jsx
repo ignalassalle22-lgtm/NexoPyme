@@ -3545,6 +3545,28 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
     setEditingListLabel("");
   };
 
+  const deleteList = (listId) => {
+    if (priceLists.length <= 1) { alert("No podés eliminar la única lista de precios. Debe quedar al menos una."); return; }
+    const lista = priceLists.find(l => l.id === listId);
+    if (!lista) return;
+    const productosAfectados = products.filter(p => (p.prices?.[listId] > 0) || (p.pricesUsd?.[listId] > 0)).length;
+    // Primera confirmación
+    if (!window.confirm(`¿Eliminar la lista "${lista.label}"?\n\nEsto borrará los precios de esta lista en ${productosAfectados} producto${productosAfectados !== 1 ? "s" : ""}. La acción no se puede deshacer.`)) return;
+    // Segunda confirmación
+    if (!window.confirm(`CONFIRMACIÓN FINAL\n\n¿Estás completamente seguro de que querés eliminar "${lista.label}" de forma permanente?\n\nPresioná Aceptar solo si estás seguro.`)) return;
+    // Eliminar de estado
+    setPriceLists(prev => prev.filter(l => l.id !== listId));
+    setProducts(prev => prev.map(p => {
+      const newPrices = { ...p.prices }; delete newPrices[listId];
+      const newPricesUsd = { ...(p.pricesUsd || {}) }; delete newPricesUsd[listId];
+      const updated = { ...p, prices: newPrices, pricesUsd: newPricesUsd };
+      if (companyId) supabase.from('products').update({ prices: newPrices, prices_usd: newPricesUsd }).eq('id', p.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+      return updated;
+    }));
+    if (companyId) supabase.from('price_lists').delete().eq('id', listId).eq('company_id', companyId).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    if (selectedList === listId) setSelectedList(priceLists.find(l => l.id !== listId)?.id || "");
+  };
+
   const savePrice = (productId, ars, usd) => {
     const arsVal = parseFloat(ars) || 0;
     const usdVal = parseFloat(usd) || 0;
@@ -3646,6 +3668,10 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
                   </button>
                   <button title="Renombrar lista" onClick={() => { setEditingListId(l.id); setEditingListLabel(l.label); }}
                     style={{ background: "none", border: "none", color: T.muted, fontSize: 12, cursor: "pointer", padding: "0 2px", opacity: 0.5 }}>✏</button>
+                  <button title="Eliminar lista" onClick={() => deleteList(l.id)}
+                    style={{ background: "none", border: "none", color: T.faint, fontSize: 12, cursor: "pointer", padding: "0 2px" }}
+                    onMouseEnter={e => e.target.style.color = T.red}
+                    onMouseLeave={e => e.target.style.color = T.faint}>🗑</button>
                 </div>
               )}
             </div>
