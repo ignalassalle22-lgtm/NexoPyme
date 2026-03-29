@@ -256,8 +256,6 @@ const Badge = ({ status }) => {
 const ReadOnlyCtx = createContext(false);
 
 const Btn = ({ children, onClick, v = "primary", sm, disabled, full }) => {
-  const readOnly = useContext(ReadOnlyCtx);
-  const isDisabled = disabled || readOnly;
   const s = {
     primary: { bg: T.accent, color: "#fff", border: `1px solid ${T.accent}` },
     ghost: { bg: "transparent", color: T.ink, border: `1px solid ${T.border}` },
@@ -265,7 +263,7 @@ const Btn = ({ children, onClick, v = "primary", sm, disabled, full }) => {
     orange: { bg: T.orangeLight, color: T.orange, border: `1px solid #5a2e0e` },
     danger: { bg: T.redLight, color: T.red, border: `1px solid #5a1a1a` },
   }[v];
-  return <button onClick={isDisabled ? undefined : onClick} disabled={isDisabled} style={{ background: s.bg, color: s.color, border: s.border, borderRadius: 8, padding: sm ? "5px 12px" : "9px 18px", fontWeight: 700, fontSize: sm ? 11 : 13, cursor: isDisabled ? "default" : "pointer", opacity: isDisabled ? 0.4 : 1, fontFamily: "inherit", width: full ? "100%" : "auto" }}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} style={{ background: s.bg, color: s.color, border: s.border, borderRadius: 8, padding: sm ? "5px 12px" : "9px 18px", fontWeight: 700, fontSize: sm ? 11 : 13, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, fontFamily: "inherit", width: full ? "100%" : "auto" }}>{children}</button>;
 };
 
 function Input({ label, value, onChange, placeholder, mono, type = "text", small }) {
