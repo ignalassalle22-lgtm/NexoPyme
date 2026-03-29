@@ -8462,6 +8462,222 @@ function ChequesModule({ cheques, setCheques, companyId }) {
   );
 }
 
+// ─── USUARIOS MODULE ──────────────────────────────────────────────────────────
+const PERM_MODULES = [
+  { id: "hub", label: "Inicio" }, { id: "ventas", label: "Ventas" },
+  { id: "comercial", label: "Comercial" }, { id: "compras", label: "Compras" },
+  { id: "caja", label: "Caja" }, { id: "cheques", label: "Cheques" },
+  { id: "inventario", label: "Inventario" }, { id: "logistica", label: "Logística" },
+  { id: "reportes", label: "Reportes" }, { id: "rrhh", label: "RRHH" },
+];
+
+const DEFAULT_PERMS = Object.fromEntries(PERM_MODULES.map(m => [m.id, "view"]));
+
+function UsuariosModule({ companyId, profile }) {
+  const [users, setUsers] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ display_name: "", email: "", password: "", role: "user" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [editPermsId, setEditPermsId] = useState(null);
+  const [permsForm, setPermsForm] = useState({});
+
+  useEffect(() => { loadData(); }, [companyId]);
+
+  const loadData = async () => {
+    setLoading(true);
+    const [{ data: usersData }, { data: reqData }] = await Promise.all([
+      supabase.from("profiles").select("*").eq("company_id", companyId).eq("role", "user").eq("active", true),
+      supabase.from("user_requests").select("*").eq("company_id", companyId).order("requested_at", { ascending: false }),
+    ]);
+    if (usersData) setUsers(usersData);
+    if (reqData) setRequests(reqData);
+    setLoading(false);
+  };
+
+  const submitRequest = async (e) => {
+    e.preventDefault();
+    if (!form.display_name.trim() || !form.email.trim() || !form.password) { setError("Completá todos los campos"); return; }
+    if (form.password.length < 6) { setError("La contraseña debe tener al menos 6 caracteres"); return; }
+    setSaving(true); setError("");
+    const { error: err } = await supabase.from("user_requests").insert({
+      company_id: companyId, company_name: profile.company_name,
+      display_name: form.display_name.trim(), email: form.email.trim(),
+      password: form.password, role: form.role, requested_by: profile.id,
+    });
+    if (err) { setError(err.message); } else {
+      setShowForm(false); setForm({ display_name: "", email: "", password: "", role: "user" });
+      await loadData();
+    }
+    setSaving(false);
+  };
+
+  const savePerms = async (userId) => {
+    setSaving(true);
+    await supabase.from("profiles").update({ permissions: permsForm }).eq("id", userId);
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, permissions: permsForm } : u));
+    setEditPermsId(null); setSaving(false);
+  };
+
+  const deactivate = async (userId, name) => {
+    if (!window.confirm(`¿Desactivar a ${name}? Ya no podrá acceder.`)) return;
+    await supabase.from("profiles").update({ active: false }).eq("id", userId);
+    setUsers(prev => prev.filter(u => u.id !== userId));
+  };
+
+  const pendingReqs = requests.filter(r => r.status === "pending");
+  const otherReqs = requests.filter(r => r.status !== "pending");
+
+  const statusBadge = (s) => {
+    const map = { pending: { bg: T.yellowLight, c: T.yellow, l: "Pendiente" }, approved: { bg: T.accentLight, c: T.accent, l: "Aprobada" }, rejected: { bg: T.redLight, c: T.red, l: "Rechazada" } };
+    const x = map[s] || map.pending;
+    return <span style={{ background: x.bg, color: x.c, padding: "2px 9px", borderRadius: 8, fontSize: 11, fontWeight: 700 }}>{x.l}</span>;
+  };
+
+  if (loading) return <div style={{ padding: 40, color: T.muted, textAlign: "center" }}>Cargando…</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Usuarios</div>
+          <div style={{ fontSize: 13, color: T.muted }}>Gestioná los usuarios de tu empresa</div>
+        </div>
+        <Btn onClick={() => { setShowForm(true); setError(""); }}>+ Solicitar nuevo usuario</Btn>
+      </div>
+
+      {/* Formulario nuevo usuario */}
+      {showForm && (
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24, marginBottom: 24 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Solicitud de nuevo usuario</div>
+          <form onSubmit={submitRequest}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 12, alignItems: "end", marginBottom: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, display: "block", marginBottom: 5 }}>NOMBRE COMPLETO *</label>
+                <input value={form.display_name} onChange={e => setForm(f => ({ ...f, display_name: e.target.value }))} placeholder="Juan García" style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: "9px 12px", color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, display: "block", marginBottom: 5 }}>EMAIL *</label>
+                <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="juan@empresa.com" style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: "9px 12px", color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, display: "block", marginBottom: 5 }}>CONTRASEÑA *</label>
+                <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Mínimo 6 caracteres" style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: "9px 12px", color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn type="submit" disabled={saving}>{saving ? "Enviando…" : "Solicitar"}</Btn>
+                <Btn v="ghost" onClick={() => { setShowForm(false); setError(""); }}>Cancelar</Btn>
+              </div>
+            </div>
+            {error && <div style={{ background: T.redLight, color: T.red, borderRadius: 7, padding: "9px 12px", fontSize: 13 }}>{error}</div>}
+          </form>
+          <div style={{ marginTop: 10, background: T.yellowLight, border: `1px solid ${T.yellow}`, borderRadius: 8, padding: "9px 12px", fontSize: 12, color: T.yellow }}>
+            ⚠ La solicitud quedará pendiente hasta que el administrador la apruebe. Una vez aprobada, el usuario podrá iniciar sesión.
+          </div>
+        </div>
+      )}
+
+      {/* Solicitudes pendientes */}
+      {pendingReqs.length > 0 && (
+        <div style={{ background: T.paper, border: `1px solid ${T.yellow}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.yellow, marginBottom: 12 }}>Solicitudes pendientes de aprobación ({pendingReqs.length})</div>
+          {pendingReqs.map(r => (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${T.border}` }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{r.display_name}</div>
+                <div style={{ fontSize: 12, color: T.muted }}>{r.email} · {r.role === "jefe" ? "Jefe" : "Usuario"}</div>
+              </div>
+              {statusBadge(r.status)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Usuarios activos */}
+      <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 20 }}>
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, fontSize: 13, fontWeight: 700 }}>Usuarios activos ({users.length})</div>
+        {users.length === 0 ? (
+          <div style={{ padding: "32px", textAlign: "center", color: T.muted, fontSize: 13 }}>Todavía no hay usuarios en tu empresa.</div>
+        ) : users.map(u => (
+          <div key={u.id}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: `1px solid ${T.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: T.surface, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: T.accent }}>
+                  {(u.display_name || "?")[0].toUpperCase()}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{u.display_name || "Sin nombre"}</div>
+                  <div style={{ fontSize: 12, color: T.muted }}>{u.email || "—"}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button onClick={() => { setEditPermsId(editPermsId === u.id ? null : u.id); setPermsForm(u.permissions || DEFAULT_PERMS); }}
+                  style={{ background: editPermsId === u.id ? T.accentLight : "transparent", color: editPermsId === u.id ? T.accent : T.muted, border: `1px solid ${editPermsId === u.id ? T.accent : T.border}`, borderRadius: 7, padding: "5px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                  {editPermsId === u.id ? "▲ Permisos" : "▼ Permisos"}
+                </button>
+                <button onClick={() => deactivate(u.id, u.display_name)}
+                  style={{ background: "transparent", color: T.muted, border: `1px solid ${T.border}`, borderRadius: 7, padding: "5px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                  Desactivar
+                </button>
+              </div>
+            </div>
+            {editPermsId === u.id && (
+              <div style={{ padding: "16px 20px", background: T.surface, borderBottom: `1px solid ${T.border}` }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 12 }}>PERMISOS POR MÓDULO</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 14 }}>
+                  {PERM_MODULES.map(m => (
+                    <div key={m.id} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>{m.label}</div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {["edit", "view", "none"].map(v => (
+                          <button key={v} onClick={() => setPermsForm(p => ({ ...p, [m.id]: v }))}
+                            style={{ flex: 1, padding: "4px 2px", borderRadius: 5, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                              background: permsForm[m.id] === v ? (v === "edit" ? T.accentLight : v === "view" ? T.blueLight : T.surface2) : T.surface2,
+                              color: permsForm[m.id] === v ? (v === "edit" ? T.accent : v === "view" ? T.blue : T.muted) : T.faint,
+                              outline: permsForm[m.id] === v ? `1px solid ${v === "edit" ? T.accent : v === "view" ? T.blue : T.border}` : "none",
+                            }}>
+                            {v === "edit" ? "✎" : v === "view" ? "👁" : "✕"}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ fontSize: 10, color: T.muted, marginTop: 5, textAlign: "center" }}>
+                        {permsForm[m.id] === "edit" ? "Completo" : permsForm[m.id] === "view" ? "Solo ver" : "Sin acceso"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn sm onClick={() => savePerms(u.id)} disabled={saving}>Guardar permisos</Btn>
+                  <Btn v="ghost" sm onClick={() => setEditPermsId(null)}>Cancelar</Btn>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Historial de solicitudes */}
+      {otherReqs.length > 0 && (
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, fontSize: 13, fontWeight: 700 }}>Historial de solicitudes</div>
+          {otherReqs.map(r => (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", borderBottom: `1px solid ${T.border}` }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{r.display_name}</div>
+                <div style={{ fontSize: 12, color: T.muted }}>{r.email}</div>
+                {r.rejection_reason && <div style={{ fontSize: 12, color: T.red, marginTop: 3 }}>Motivo: {r.rejection_reason}</div>}
+              </div>
+              {statusBadge(r.status)}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const NAV = [
   { id: "hub",        label: "Inicio",     icon: "⬡" },
   { id: "ventas",     label: "Ventas",     icon: "◈" },
@@ -8502,6 +8718,12 @@ export default function App({ session, profile, onLogout }) {
 
   const companyId = profile?.company_id;
   const companyDisplayName = profile?.company_name || 'Mi Empresa';
+  const isJefe = !profile?.role || profile.role === 'jefe';
+  const userPerms = profile?.permissions || {};
+  const visibleNav = [
+    ...NAV.filter(n => isJefe || (userPerms[n.id] !== 'none' && userPerms[n.id])),
+    ...(isJefe ? [{ id: "usuarios", label: "Usuarios", icon: "👤" }] : []),
+  ];
 
   const nextId = (prefix) => { const n = idCounter + 1; setIdCounter(n); return `${prefix}-${String(n).padStart(4, "0")}`; };
 
@@ -8707,7 +8929,7 @@ export default function App({ session, profile, onLogout }) {
           <div style={{ fontSize: 10, color: T.muted, marginTop: 1 }}>plataforma integral</div>
         </div>
         <nav style={{ flex: 1 }}>
-          {NAV.map(n => (
+          {visibleNav.map(n => (
             <button key={n.id} onClick={() => setModule(n.id)}
               style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, border: "none", cursor: "pointer", marginBottom: 2, textAlign: "left", background: module === n.id ? T.surface : "transparent", color: module === n.id ? T.ink : T.muted, fontWeight: module === n.id ? 700 : 500, fontSize: 13, borderLeft: `3px solid ${module === n.id ? T.accent : "transparent"}`, transition: "all 0.12s" }}>
               <span style={{ fontSize: 15 }}>{n.icon}</span>
@@ -8720,7 +8942,7 @@ export default function App({ session, profile, onLogout }) {
         <div style={{ padding: "12px", background: T.surface, borderRadius: 10, border: `1px solid ${T.border}` }}>
           <div style={{ fontSize: 10, color: T.muted, marginBottom: 3 }}>EMPRESA</div>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{companyDisplayName}</div>
-          <div style={{ fontSize: 11, color: T.muted, marginBottom: 10 }}>{profile?.email || ''}</div>
+          <div style={{ fontSize: 11, color: T.muted, marginBottom: 10 }}>{profile?.display_name || profile?.email || ''}</div>
           <button onClick={onLogout} style={{ width: "100%", background: "transparent", border: `1px solid ${T.border}`, borderRadius: 6, padding: "6px 10px", color: T.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s" }}
             onMouseEnter={e => { e.target.style.borderColor = T.red; e.target.style.color = T.red; }}
             onMouseLeave={e => { e.target.style.borderColor = T.border; e.target.style.color = T.muted; }}>
@@ -8741,6 +8963,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} companyId={companyId} />}
         {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
+        {module === "usuarios" && isJefe && <UsuariosModule companyId={companyId} profile={profile} />}
       </div>
 
       {showDocBuilder && <DocBuilder type={docBuilderType} clients={clients} products={products} saleInvoices={saleInvoices} tipoCambio={tipoCambio} preload={preloadDoc} onSave={handleSaveDoc} onClose={() => { setShowDocBuilder(false); setPreloadDoc(null); }} priceLists={priceLists} vendedores={vendedores} />}

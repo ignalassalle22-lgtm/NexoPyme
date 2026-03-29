@@ -10,6 +10,7 @@ const T = {
   red: "#f85149", redLight: "#2d0f0e",
   orange: "#f0883e",
   blue: "#58a6ff", blueLight: "#0c1d33",
+  purple: "#a371f7", purpleLight: "#1e1240",
 }
 
 // ─── ADMIN PANEL ──────────────────────────────────────────────────────────────
@@ -22,7 +23,14 @@ function AdminPanel({ profile, onLogout }) {
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState(null)
 
+  // User requests
+  const [userRequests, setUserRequests] = useState([])
+  const [urLoading, setUrLoading] = useState(false)
+  const [urRejectId, setUrRejectId] = useState(null)
+  const [urRejectReason, setUrRejectReason] = useState('')
+
   useEffect(() => { loadCompanies() }, [])
+  useEffect(() => { if (tab === 'usuarios') loadUserRequests() }, [tab])
 
   const loadCompanies = async () => {
     setLoading(true)
@@ -55,6 +63,29 @@ function AdminPanel({ profile, onLogout }) {
   const reactivate = async (id) => {
     await supabase.from('companies').update({ status: 'approved', rejection_reason: null }).eq('id', id)
     setCompanies(prev => prev.map(c => c.id === id ? { ...c, status: 'approved', rejection_reason: null } : c))
+  }
+
+  const loadUserRequests = async () => {
+    setUrLoading(true)
+    const { data } = await supabase.from('user_requests').select('*').order('requested_at', { ascending: false })
+    if (data) setUserRequests(data)
+    setUrLoading(false)
+  }
+
+  const approveUser = async (id) => {
+    setSaving(true)
+    const { error } = await supabase.rpc('approve_user_request', { p_request_id: id })
+    if (error) alert('Error al aprobar: ' + error.message)
+    else setUserRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
+    setSaving(false)
+  }
+
+  const confirmRejectUser = async () => {
+    if (!urRejectReason.trim()) return
+    setSaving(true)
+    await supabase.from('user_requests').update({ status: 'rejected', rejection_reason: urRejectReason.trim() }).eq('id', urRejectId)
+    setUserRequests(prev => prev.map(r => r.id === urRejectId ? { ...r, status: 'rejected', rejection_reason: urRejectReason.trim() } : r))
+    setUrRejectId(null); setUrRejectReason(''); setSaving(false)
   }
 
   const pending = companies.filter(c => c.status === 'pending')
@@ -104,7 +135,12 @@ function AdminPanel({ profile, onLogout }) {
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: T.surface, borderRadius: 10, padding: 4, width: 'fit-content' }}>
-          {[['pending', `Pendientes (${pending.length})`], ['approved', 'Activas'], ['all', 'Todas']].map(([v, l]) => (
+          {[
+            ['pending', `Pendientes (${pending.length})`],
+            ['approved', 'Activas'],
+            ['all', 'Todas'],
+            ['usuarios', `Usuarios (${userRequests.filter(r => r.status === 'pending').length})`],
+          ].map(([v, l]) => (
             <button key={v} onClick={() => setTab(v)}
               style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: tab === v ? T.paper : 'transparent', color: tab === v ? T.ink : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
               {l}
@@ -112,8 +148,98 @@ function AdminPanel({ profile, onLogout }) {
           ))}
         </div>
 
-        {/* Tabla */}
-        {loading ? (
+        {/* Tabla solicitudes de usuarios */}
+        {tab === 'usuarios' && (
+          urLoading ? (
+            <div style={{ textAlign: 'center', color: T.muted, padding: 40 }}>Cargando solicitudes…</div>
+          ) : userRequests.length === 0 ? (
+            <div style={{ textAlign: 'center', color: T.muted, padding: 40, background: T.paper, borderRadius: 12, border: `1px solid ${T.border}` }}>
+              No hay solicitudes de nuevos usuarios.
+            </div>
+          ) : (
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: T.surface }}>
+                    {['Empresa', 'Nombre', 'Email', 'Rol', 'Solicitado', 'Estado', 'Acciones'].map(h => (
+                      <th key={h} style={{ padding: '11px 15px', textAlign: 'left', fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {userRequests.flatMap(r => {
+                    const rows = []
+                    rows.push(
+                      <tr key={r.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                        <td style={{ padding: '12px 15px', fontSize: 13, color: T.muted }}>{r.company_name || '—'}</td>
+                        <td style={{ padding: '12px 15px', fontWeight: 700, fontSize: 14 }}>{r.display_name}</td>
+                        <td style={{ padding: '12px 15px', fontSize: 12, color: T.blue }}>{r.email}</td>
+                        <td style={{ padding: '12px 15px', fontSize: 12 }}>
+                          <span style={{ background: r.role === 'jefe' ? T.purpleLight : T.surface, color: r.role === 'jefe' ? T.purple : T.muted, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
+                            {r.role === 'jefe' ? 'Jefe' : 'Usuario'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 15px', fontSize: 12, color: T.muted }}>
+                          {r.requested_at ? new Date(r.requested_at).toLocaleDateString('es-AR') : '—'}
+                        </td>
+                        <td style={{ padding: '12px 15px' }}>{statusBadge(r.status)}</td>
+                        <td style={{ padding: '12px 15px' }}>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            {r.status === 'pending' && (<>
+                              <button onClick={() => approveUser(r.id)} disabled={saving}
+                                style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                ✓ Aprobar
+                              </button>
+                              <button onClick={() => { setUrRejectId(r.id); setUrRejectReason('') }}
+                                style={{ background: T.redLight, color: T.red, border: `1px solid ${T.red}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                ✕ Rechazar
+                              </button>
+                            </>)}
+                            {r.status === 'rejected' && (
+                              <span style={{ fontSize: 12, color: T.red }}>{r.rejection_reason || 'Rechazada'}</span>
+                            )}
+                            {r.status === 'approved' && (
+                              <span style={{ fontSize: 12, color: T.accent }}>Cuenta creada</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                    if (urRejectId === r.id) {
+                      rows.push(
+                        <tr key={r.id + '-reject'} style={{ background: T.redLight }}>
+                          <td colSpan={7} style={{ padding: '14px 20px' }}>
+                            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                              <span style={{ fontSize: 13, color: T.red, fontWeight: 600, whiteSpace: 'nowrap' }}>Motivo del rechazo:</span>
+                              <input
+                                value={urRejectReason}
+                                onChange={e => setUrRejectReason(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && confirmRejectUser()}
+                                placeholder="Ej: Email ya registrado, datos incorrectos..."
+                                autoFocus
+                                style={{ flex: 1, background: T.surface, border: `1px solid ${T.red}`, borderRadius: 6, padding: '8px 12px', color: T.ink, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
+                              />
+                              <button onClick={confirmRejectUser} disabled={saving || !urRejectReason.trim()}
+                                style={{ background: T.red, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: !urRejectReason.trim() ? 0.5 : 1 }}>
+                                Confirmar
+                              </button>
+                              <button onClick={() => { setUrRejectId(null); setUrRejectReason('') }}
+                                style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 18 }}>✕</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    }
+                    return rows
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
+
+        {/* Tabla empresas */}
+        {tab !== 'usuarios' && (loading ? (
           <div style={{ textAlign: 'center', color: T.muted, padding: 40 }}>Cargando cuentas…</div>
         ) : shown.length === 0 ? (
           <div style={{ textAlign: 'center', color: T.muted, padding: 40, background: T.paper, borderRadius: 12, border: `1px solid ${T.border}` }}>
@@ -235,7 +361,7 @@ function AdminPanel({ profile, onLogout }) {
               </tbody>
             </table>
           </div>
-        )}
+        ))}
       </div>
     </div>
   )
