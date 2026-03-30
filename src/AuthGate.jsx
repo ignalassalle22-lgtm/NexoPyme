@@ -15,23 +15,32 @@ const T = {
 
 // ─── ADMIN PANEL ──────────────────────────────────────────────────────────────
 function AdminPanel({ profile, onLogout }) {
+  const [tab, setTab] = useState('empresas')
+  const [saving, setSaving] = useState(false)
+
+  // Solicitudes empresas
   const [companies, setCompanies] = useState([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('pending')
+  const [companyFilter, setCompanyFilter] = useState('pending')
   const [rejectId, setRejectId] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [expandedId, setExpandedId] = useState(null)
-  const [companyProfiles, setCompanyProfiles] = useState({})
 
-  // User requests
+  // Solicitudes usuarios
   const [userRequests, setUserRequests] = useState([])
   const [urLoading, setUrLoading] = useState(false)
   const [urRejectId, setUrRejectId] = useState(null)
   const [urRejectReason, setUrRejectReason] = useState('')
 
+  // Gestión
+  const [gestionCompanyId, setGestionCompanyId] = useState(null)
+  const [companyProfiles, setCompanyProfiles] = useState({})
+  const [editingProfileId, setEditingProfileId] = useState(null)
+  const [editForm, setEditForm] = useState({})
+  const [expandedId, setExpandedId] = useState(null)
+
   useEffect(() => { loadCompanies() }, [])
   useEffect(() => { if (tab === 'usuarios') loadUserRequests() }, [tab])
+  useEffect(() => { if (tab === 'gestion') loadCompanies() }, [tab])
 
   const loadCompanies = async () => {
     setLoading(true)
@@ -62,21 +71,32 @@ function AdminPanel({ profile, onLogout }) {
   }
 
   const loadCompanyProfiles = async (companyId) => {
-    if (companyProfiles[companyId]) return
-    const { data } = await supabase.from('profiles').select('id, role, display_name, email').eq('company_id', companyId)
+    const { data } = await supabase.from('profiles').select('*').eq('company_id', companyId)
     if (data) setCompanyProfiles(prev => ({ ...prev, [companyId]: data }))
   }
 
   const toggleJefe = async (profileId, companyId) => {
-    const profiles = companyProfiles[companyId] || []
-    const prof = profiles.find(p => p.id === profileId)
+    const profs = companyProfiles[companyId] || []
+    const prof = profs.find(p => p.id === profileId)
     if (!prof) return
     const newRole = prof.role === 'jefe' ? 'user' : 'jefe'
     await supabase.from('profiles').update({ role: newRole }).eq('id', profileId)
-    setCompanyProfiles(prev => ({
-      ...prev,
-      [companyId]: prev[companyId].map(p => p.id === profileId ? { ...p, role: newRole } : p)
-    }))
+    setCompanyProfiles(prev => ({ ...prev, [companyId]: prev[companyId].map(p => p.id === profileId ? { ...p, role: newRole } : p) }))
+  }
+
+  const toggleActive = async (profileId, companyId) => {
+    const profs = companyProfiles[companyId] || []
+    const prof = profs.find(p => p.id === profileId)
+    if (!prof) return
+    const newActive = !prof.active
+    await supabase.from('profiles').update({ active: newActive }).eq('id', profileId)
+    setCompanyProfiles(prev => ({ ...prev, [companyId]: prev[companyId].map(p => p.id === profileId ? { ...p, active: newActive } : p) }))
+  }
+
+  const saveEditProfile = async (profileId, companyId) => {
+    await supabase.from('profiles').update({ display_name: editForm.display_name }).eq('id', profileId)
+    setCompanyProfiles(prev => ({ ...prev, [companyId]: prev[companyId].map(p => p.id === profileId ? { ...p, ...editForm } : p) }))
+    setEditingProfileId(null)
   }
 
   const reactivate = async (id) => {
@@ -108,7 +128,7 @@ function AdminPanel({ profile, onLogout }) {
   }
 
   const pending = companies.filter(c => c.status === 'pending')
-  const shown = tab === 'pending' ? pending : tab === 'approved' ? companies.filter(c => c.status === 'approved') : companies
+  const shownCompanies = companyFilter === 'pending' ? pending : companyFilter === 'approved' ? companies.filter(c => c.status === 'approved') : companies
 
   const statusBadge = (status) => {
     const map = {
@@ -152,13 +172,12 @@ function AdminPanel({ profile, onLogout }) {
           ))}
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: T.surface, borderRadius: 10, padding: 4, width: 'fit-content' }}>
+        {/* Tabs principales */}
+        <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: T.surface, borderRadius: 10, padding: 4, width: 'fit-content' }}>
           {[
-            ['pending', `Pendientes (${pending.length})`],
-            ['approved', 'Activas'],
-            ['all', 'Todas'],
-            ['usuarios', `Usuarios (${userRequests.filter(r => r.status === 'pending').length})`],
+            ['empresas', `Solicitudes empresas (${pending.length})`],
+            ['usuarios', `Solicitudes usuarios (${userRequests.filter(r => r.status === 'pending').length})`],
+            ['gestion', 'Gestión'],
           ].map(([v, l]) => (
             <button key={v} onClick={() => setTab(v)}
               style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: tab === v ? T.paper : 'transparent', color: tab === v ? T.ink : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -167,7 +186,131 @@ function AdminPanel({ profile, onLogout }) {
           ))}
         </div>
 
-        {/* Tabla solicitudes de usuarios */}
+        {/* ── TAB: Solicitudes empresas ── */}
+        {tab === 'empresas' && (<>
+          {/* Sub-filtro */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {[['pending', 'Pendientes'], ['approved', 'Aprobadas'], ['all', 'Todas']].map(([v, l]) => (
+              <button key={v} onClick={() => setCompanyFilter(v)}
+                style={{ padding: '6px 16px', borderRadius: 7, border: `1px solid ${companyFilter === v ? T.accent : T.border}`, background: companyFilter === v ? T.accentLight : 'transparent', color: companyFilter === v ? T.accent : T.muted, fontWeight: 600, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {l}
+              </button>
+            ))}
+          </div>
+
+          {loading ? (
+            <div style={{ textAlign: 'center', color: T.muted, padding: 40 }}>Cargando cuentas…</div>
+          ) : shownCompanies.length === 0 ? (
+            <div style={{ textAlign: 'center', color: T.muted, padding: 40, background: T.paper, borderRadius: 12, border: `1px solid ${T.border}` }}>
+              {companyFilter === 'pending' ? 'No hay solicitudes pendientes.' : 'No hay cuentas en esta categoría.'}
+            </div>
+          ) : (
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: T.surface }}>
+                    {['Empresa', 'CUIT', 'Contacto', 'Teléfono', 'Solicitado', 'Estado', 'Acciones'].map(h => (
+                      <th key={h} style={{ padding: '11px 15px', textAlign: 'left', fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {shownCompanies.flatMap(c => {
+                    const rows = []
+                    rows.push(
+                      <tr key={c.id} style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer' }}
+                        onClick={() => { const next = expandedId === c.id ? null : c.id; setExpandedId(next); if (next) loadCompanyProfiles(c.id) }}>
+                        <td style={{ padding: '12px 15px' }}>
+                          <div style={{ fontWeight: 700, fontSize: 14 }}>{c.name}</div>
+                          <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{c.address || '—'}</div>
+                        </td>
+                        <td style={{ padding: '12px 15px', fontFamily: 'monospace', fontSize: 12, color: T.orange }}>{c.cuit || '—'}</td>
+                        <td style={{ padding: '12px 15px', fontSize: 13 }}>{c.contact_person || '—'}</td>
+                        <td style={{ padding: '12px 15px', fontSize: 13, color: T.muted }}>{c.phone || '—'}</td>
+                        <td style={{ padding: '12px 15px', fontSize: 12, color: T.muted }}>
+                          {c.requested_at ? new Date(c.requested_at).toLocaleDateString('es-AR') : '—'}
+                        </td>
+                        <td style={{ padding: '12px 15px' }}>{statusBadge(c.status)}</td>
+                        <td style={{ padding: '12px 15px' }}>
+                          <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                            {c.status === 'pending' && (<>
+                              <button onClick={() => approve(c.id)} disabled={saving}
+                                style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                ✓ Aprobar
+                              </button>
+                              <button onClick={() => { setRejectId(c.id); setRejectReason('') }}
+                                style={{ background: T.redLight, color: T.red, border: `1px solid ${T.red}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                ✕ Rechazar
+                              </button>
+                            </>)}
+                            {c.status === 'approved' && (
+                              <button onClick={() => suspend(c.id)}
+                                style={{ background: 'transparent', color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                Suspender
+                              </button>
+                            )}
+                            {c.status === 'rejected' && (
+                              <button onClick={() => reactivate(c.id)}
+                                style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                Reactivar
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                    if (expandedId === c.id) {
+                      rows.push(
+                        <tr key={c.id + '-detail'} style={{ background: T.surface }}>
+                          <td colSpan={7} style={{ padding: '14px 20px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+                              {[
+                                ['Nombre empresa', c.name], ['CUIT', c.cuit || '—'],
+                                ['Persona de contacto', c.contact_person || '—'], ['Teléfono', c.phone || '—'],
+                                ['Dirección', c.address || '—'], ['Estado', c.status],
+                                ['Motivo de rechazo', c.rejection_reason || '—'],
+                                ['Fecha solicitud', c.requested_at ? new Date(c.requested_at).toLocaleString('es-AR') : '—'],
+                              ].map(([label, val]) => (
+                                <div key={label}>
+                                  <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 3 }}>{label.toUpperCase()}</div>
+                                  <div style={{ fontSize: 13, color: T.ink }}>{val}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    }
+                    if (rejectId === c.id) {
+                      rows.push(
+                        <tr key={c.id + '-reject'} style={{ background: T.redLight }}>
+                          <td colSpan={7} style={{ padding: '14px 20px' }}>
+                            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                              <span style={{ fontSize: 13, color: T.red, fontWeight: 600, whiteSpace: 'nowrap' }}>Motivo del rechazo:</span>
+                              <input value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && confirmReject()}
+                                placeholder="Ej: CUIT no verificado, información incompleta..." autoFocus
+                                style={{ flex: 1, background: T.surface, border: `1px solid ${T.red}`, borderRadius: 6, padding: '8px 12px', color: T.ink, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                              <button onClick={confirmReject} disabled={saving || !rejectReason.trim()}
+                                style={{ background: T.red, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: !rejectReason.trim() ? 0.5 : 1 }}>
+                                Confirmar
+                              </button>
+                              <button onClick={() => { setRejectId(null); setRejectReason('') }}
+                                style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 18 }}>✕</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    }
+                    return rows
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>)}
+
+        {/* ── TAB: Solicitudes usuarios ── */}
         {tab === 'usuarios' && (
           urLoading ? (
             <div style={{ textAlign: 'center', color: T.muted, padding: 40 }}>Cargando solicitudes…</div>
@@ -230,14 +373,10 @@ function AdminPanel({ profile, onLogout }) {
                           <td colSpan={7} style={{ padding: '14px 20px' }}>
                             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                               <span style={{ fontSize: 13, color: T.red, fontWeight: 600, whiteSpace: 'nowrap' }}>Motivo del rechazo:</span>
-                              <input
-                                value={urRejectReason}
-                                onChange={e => setUrRejectReason(e.target.value)}
+                              <input value={urRejectReason} onChange={e => setUrRejectReason(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && confirmRejectUser()}
-                                placeholder="Ej: Email ya registrado, datos incorrectos..."
-                                autoFocus
-                                style={{ flex: 1, background: T.surface, border: `1px solid ${T.red}`, borderRadius: 6, padding: '8px 12px', color: T.ink, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
-                              />
+                                placeholder="Ej: Email ya registrado, datos incorrectos..." autoFocus
+                                style={{ flex: 1, background: T.surface, border: `1px solid ${T.red}`, borderRadius: 6, padding: '8px 12px', color: T.ink, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
                               <button onClick={confirmRejectUser} disabled={saving || !urRejectReason.trim()}
                                 style={{ background: T.red, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: !urRejectReason.trim() ? 0.5 : 1 }}>
                                 Confirmar
@@ -257,157 +396,112 @@ function AdminPanel({ profile, onLogout }) {
           )
         )}
 
-        {/* Tabla empresas */}
-        {tab !== 'usuarios' && (loading ? (
-          <div style={{ textAlign: 'center', color: T.muted, padding: 40 }}>Cargando cuentas…</div>
-        ) : shown.length === 0 ? (
-          <div style={{ textAlign: 'center', color: T.muted, padding: 40, background: T.paper, borderRadius: 12, border: `1px solid ${T.border}` }}>
-            {tab === 'pending' ? 'No hay solicitudes pendientes.' : 'No hay cuentas en esta categoría.'}
-          </div>
-        ) : (
-          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: T.surface }}>
-                  {['Empresa', 'CUIT', 'Contacto', 'Teléfono', 'Solicitado', 'Estado', 'Acciones'].map(h => (
-                    <th key={h} style={{ padding: '11px 15px', textAlign: 'left', fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {shown.flatMap(c => {
-                  const rows = []
+        {/* ── TAB: Gestión ── */}
+        {tab === 'gestion' && (
+          gestionCompanyId ? (() => {
+            const co = companies.find(c => c.id === gestionCompanyId)
+            const profiles = companyProfiles[gestionCompanyId]
+            return (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                  <button onClick={() => setGestionCompanyId(null)}
+                    style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: '6px 14px', color: T.muted, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    ← Volver
+                  </button>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800 }}>{co?.name}</div>
+                    <div style={{ fontSize: 12, color: T.muted }}>{co?.cuit} · {co?.contact_person}</div>
+                  </div>
+                  {co && statusBadge(co.status)}
+                </div>
 
-                  // Fila principal
-                  rows.push(
-                    <tr key={c.id} style={{ borderTop: `1px solid ${T.border}`, cursor: 'pointer' }} onClick={() => { const next = expandedId === c.id ? null : c.id; setExpandedId(next); if (next) loadCompanyProfiles(c.id); }}>
-                      <td style={{ padding: '12px 15px' }}>
-                        <div style={{ fontWeight: 700, fontSize: 14 }}>{c.name}</div>
-                        <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{c.address || '—'}</div>
-                      </td>
-                      <td style={{ padding: '12px 15px', fontFamily: 'monospace', fontSize: 12, color: T.orange }}>{c.cuit || '—'}</td>
-                      <td style={{ padding: '12px 15px', fontSize: 13 }}>{c.contact_person || '—'}</td>
-                      <td style={{ padding: '12px 15px', fontSize: 13, color: T.muted }}>{c.phone || '—'}</td>
-                      <td style={{ padding: '12px 15px', fontSize: 12, color: T.muted }}>
-                        {c.requested_at ? new Date(c.requested_at).toLocaleDateString('es-AR') : '—'}
-                      </td>
-                      <td style={{ padding: '12px 15px' }}>{statusBadge(c.status)}</td>
-                      <td style={{ padding: '12px 15px' }}>
-                        <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
-                          {c.status === 'pending' && (<>
-                            <button onClick={() => approve(c.id)} disabled={saving}
-                              style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                              ✓ Aprobar
-                            </button>
-                            <button onClick={() => { setRejectId(c.id); setRejectReason('') }}
-                              style={{ background: T.redLight, color: T.red, border: `1px solid ${T.red}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                              ✕ Rechazar
-                            </button>
-                          </>)}
-                          {c.status === 'approved' && (
-                            <button onClick={() => suspend(c.id)}
-                              style={{ background: 'transparent', color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                              Suspender
-                            </button>
-                          )}
-                          {c.status === 'rejected' && (
-                            <button onClick={() => reactivate(c.id)}
-                              style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                              Reactivar
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-
-                  // Detalle expandido
-                  if (expandedId === c.id) {
-                    const profiles = companyProfiles[c.id]
-                    rows.push(
-                      <tr key={c.id + '-detail'} style={{ background: T.surface }}>
-                        <td colSpan={7} style={{ padding: '14px 20px' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
-                            {[
-                              ['Nombre empresa', c.name],
-                              ['CUIT', c.cuit || '—'],
-                              ['Persona de contacto', c.contact_person || '—'],
-                              ['Teléfono', c.phone || '—'],
-                              ['Dirección', c.address || '—'],
-                              ['Estado', c.status],
-                              ['Motivo de rechazo', c.rejection_reason || '—'],
-                              ['Fecha solicitud', c.requested_at ? new Date(c.requested_at).toLocaleString('es-AR') : '—'],
-                            ].map(([label, val]) => (
-                              <div key={label}>
-                                <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 3 }}>{label.toUpperCase()}</div>
-                                <div style={{ fontSize: 13, color: T.ink }}>{val}</div>
-                              </div>
-                            ))}
-                          </div>
-                          <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 14 }}>
-                            <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, marginBottom: 10 }}>USUARIOS DE LA EMPRESA</div>
-                            {!profiles ? (
-                              <div style={{ fontSize: 12, color: T.muted }}>Cargando…</div>
-                            ) : profiles.length === 0 ? (
-                              <div style={{ fontSize: 12, color: T.muted }}>Sin usuarios registrados.</div>
+                {!profiles ? (
+                  <div style={{ textAlign: 'center', color: T.muted, padding: 40 }}>Cargando usuarios…</div>
+                ) : profiles.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: T.muted, padding: 40, background: T.paper, borderRadius: 12, border: `1px solid ${T.border}` }}>
+                    Esta empresa no tiene usuarios registrados.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {profiles.map(p => {
+                      const isJefe = p.role === 'jefe'
+                      const isEditing = editingProfileId === p.id
+                      return (
+                        <div key={p.id} style={{ background: T.paper, border: `1px solid ${isJefe ? T.purple : T.border}`, borderRadius: 12, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                          <div style={{ flex: 1, minWidth: 160 }}>
+                            {isEditing ? (
+                              <input value={editForm.display_name || ''} onChange={e => setEditForm(f => ({ ...f, display_name: e.target.value }))}
+                                placeholder="Nombre visible"
+                                style={{ background: T.surface, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '6px 10px', color: T.ink, fontSize: 14, fontFamily: 'inherit', fontWeight: 700, width: '100%', outline: 'none' }} />
                             ) : (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                {profiles.map(p => {
-                                  const isJefe = p.role === 'jefe'
-                                  return (
-                                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: T.paper, border: `1px solid ${isJefe ? T.purple : T.border}`, borderRadius: 8, padding: '8px 14px' }}>
-                                      <div>
-                                        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{p.display_name || p.email}</div>
-                                        <div style={{ fontSize: 11, color: T.muted }}>{p.email}</div>
-                                      </div>
-                                      <button onClick={() => toggleJefe(p.id, c.id)}
-                                        style={{ background: isJefe ? T.purpleLight : T.surface2, color: isJefe ? T.purple : T.muted, border: `1px solid ${isJefe ? T.purple : T.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                                        {isJefe ? '★ Jefe' : '☆ Hacer jefe'}
-                                      </button>
-                                    </div>
-                                  )
-                                })}
-                              </div>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{p.display_name || p.email}</div>
+                            )}
+                            <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{p.email}</div>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            {/* Badge activo/suspendido */}
+                            <span style={{ background: p.active ? T.accentLight : T.redLight, color: p.active ? T.accent : T.red, padding: '3px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700 }}>
+                              {p.active ? 'Activo' : 'Suspendido'}
+                            </span>
+
+                            {/* Toggle jefe */}
+                            <button onClick={() => toggleJefe(p.id, gestionCompanyId)}
+                              style={{ background: isJefe ? T.purpleLight : T.surface2, color: isJefe ? T.purple : T.muted, border: `1px solid ${isJefe ? T.purple : T.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                              {isJefe ? '★ Jefe' : '☆ Hacer jefe'}
+                            </button>
+
+                            {/* Suspender / Reactivar */}
+                            <button onClick={() => toggleActive(p.id, gestionCompanyId)}
+                              style={{ background: 'transparent', color: p.active ? T.red : T.accent, border: `1px solid ${p.active ? T.red : T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                              {p.active ? 'Suspender' : 'Reactivar'}
+                            </button>
+
+                            {/* Editar nombre */}
+                            {isEditing ? (<>
+                              <button onClick={() => saveEditProfile(p.id, gestionCompanyId)}
+                                style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                Guardar
+                              </button>
+                              <button onClick={() => setEditingProfileId(null)}
+                                style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 18 }}>✕</button>
+                            </>) : (
+                              <button onClick={() => { setEditingProfileId(p.id); setEditForm({ display_name: p.display_name || '' }) }}
+                                style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                Editar
+                              </button>
                             )}
                           </div>
-                        </td>
-                      </tr>
-                    )
-                  }
-
-                  // Fila de motivo de rechazo
-                  if (rejectId === c.id) {
-                    rows.push(
-                      <tr key={c.id + '-reject'} style={{ background: T.redLight }}>
-                        <td colSpan={7} style={{ padding: '14px 20px' }}>
-                          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                            <span style={{ fontSize: 13, color: T.red, fontWeight: 600, whiteSpace: 'nowrap' }}>Motivo del rechazo:</span>
-                            <input
-                              value={rejectReason}
-                              onChange={e => setRejectReason(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && confirmReject()}
-                              placeholder="Ej: CUIT no verificado, información incompleta..."
-                              autoFocus
-                              style={{ flex: 1, background: T.surface, border: `1px solid ${T.red}`, borderRadius: 6, padding: '8px 12px', color: T.ink, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
-                            />
-                            <button onClick={confirmReject} disabled={saving || !rejectReason.trim()}
-                              style={{ background: T.red, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: !rejectReason.trim() ? 0.5 : 1 }}>
-                              Confirmar
-                            </button>
-                            <button onClick={() => { setRejectId(null); setRejectReason('') }}
-                              style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 18 }}>✕</button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  }
-
-                  return rows
-                })}
-              </tbody>
-            </table>
-          </div>
-        ))}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })() : (
+            loading ? (
+              <div style={{ textAlign: 'center', color: T.muted, padding: 40 }}>Cargando empresas…</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+                {companies.filter(c => c.status === 'approved').map(c => (
+                  <div key={c.id}
+                    onClick={() => { setGestionCompanyId(c.id); loadCompanyProfiles(c.id) }}
+                    style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: '18px 20px', cursor: 'pointer', transition: 'border-color 0.15s' }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = T.accent}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = T.border}>
+                    <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{c.name}</div>
+                    <div style={{ fontSize: 11, color: T.orange, fontFamily: 'monospace', marginBottom: 6 }}>{c.cuit || '—'}</div>
+                    <div style={{ fontSize: 12, color: T.muted }}>{c.contact_person || '—'}</div>
+                  </div>
+                ))}
+                {companies.filter(c => c.status === 'approved').length === 0 && (
+                  <div style={{ color: T.muted, fontSize: 13 }}>No hay empresas activas aún.</div>
+                )}
+              </div>
+            )
+          )
+        )}
       </div>
     </div>
   )
