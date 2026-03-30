@@ -2338,7 +2338,7 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
 }
 
 // ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
-function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
+function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, cheques, setCheques, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
   const [tab, setTab] = useState("docs");
   const [filterType, setFilterType] = useState("all");
   const [searchDocNum, setSearchDocNum] = useState("");
@@ -2349,6 +2349,9 @@ function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, prod
   const [searchClientCuit, setSearchClientCuit] = useState("");
   const [newClient, setNewClient] = useState(null);
   const [ncForm, setNcForm] = useState({ codigo: "", name: "", cuit: "", direccion: "", email: "", phone: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" });
+  const [payingInv, setPayingInv] = useState(null);
+  const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "" });
+  const [viewingInv, setViewingInv] = useState(null);
 
   // ── IA Presupuesto rápido ────────────────────────────────────────────────
   const [showIAModal, setShowIAModal] = useState(false);
@@ -2509,8 +2512,23 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     return true;
   });
 
+  const openPayModal = (inv) => { setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: new Date().toISOString().slice(0,10), fechaVenc: "" }); };
+  const confirmPayVenta = () => {
+    if (!payingInv) return;
+    const pf = payForm;
+    if (pf.metodo === "cheque_propio" && (!pf.nroCheque || !pf.bancoEmisor || !pf.fechaPago || !pf.fechaVenc)) { alert("Completá todos los campos del cheque."); return; }
+    const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.referencia ? " — " + pf.referencia : "")) : ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor);
+    setSaleInvoices(prev => prev.map(i => i.id === payingInv.id ? { ...i, status: "cobrada", metodoPago: metodoPagoStr } : i));
+    if (companyId) supabase.from('sale_invoices').update({ status: 'cobrada', metodo_pago: metodoPagoStr }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    if (pf.metodo === "cheque_propio") {
+      const nc = { id: crypto.randomUUID(), tipo: "cobrar", numero: pf.nroCheque, fechaPago: pf.fechaPago, fechaVencimiento: pf.fechaVenc, monto: payingInv.total, emisor: payingInv.clientName, estado: "pendiente" };
+      setCheques(prev => [...prev, nc]);
+      if (companyId) supabase.from('cheques').insert({ id: nc.id, company_id: companyId, tipo: nc.tipo, numero: nc.numero, fecha_pago: nc.fechaPago, fecha_vencimiento: nc.fechaVencimiento, monto: nc.monto, emisor: nc.emisor, estado: nc.estado }).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    }
+    setPayingInv(null);
+  };
   const markCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "cobrada" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'cobrada' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
-  const unmarkCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'pendiente' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
+  const unmarkCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "pendiente", metodoPago: "" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'pendiente', metodo_pago: null }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
 
   const eliminarPresupuesto = (id) => {
     const tieneDocLinkeado = saleInvoices.some(i => i.originPresupuestoId === id);
@@ -2934,6 +2952,125 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
               )}
             </div>
           </div>
+          {/* Modal de forma de pago — Ventas */}
+          {payingInv && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 16, padding: 28, width: 480, maxWidth: "95vw" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Registrar cobro</div>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 20 }}>{docRef(payingInv)} — {payingInv.clientName} — <strong style={{ color: T.ink }}>{fmt(payingInv.total)}</strong></div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FORMA DE PAGO</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {[["efectivo","Efectivo"],["debito","Débito"],["credito","Crédito"],["transferencia","Transferencia"],["cheque_propio","Cheque propio"]].map(([v,l]) => (
+                      <button key={v} onClick={() => setPayForm(f => ({ ...f, metodo: v }))}
+                        style={{ padding: "10px 14px", borderRadius: 8, border: `1px solid ${payForm.metodo === v ? T.accent : T.border}`, background: payForm.metodo === v ? T.accentLight : T.surface, color: payForm.metodo === v ? T.accent : T.muted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {payForm.metodo === "transferencia" && (
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO / N° TRANSFERENCIA (opcional)</label>
+                    <input value={payForm.referencia} onChange={e => setPayForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Ej: Banco Galicia / TRF-00123456"
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                )}
+                {payForm.metodo === "cheque_propio" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>N° DE CHEQUE <span style={{ color: T.red }}>*</span></label>
+                      <input value={payForm.nroCheque} onChange={e => setPayForm(f => ({ ...f, nroCheque: e.target.value }))} placeholder="00001234"
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO EMISOR <span style={{ color: T.red }}>*</span></label>
+                      <input value={payForm.bancoEmisor} onChange={e => setPayForm(f => ({ ...f, bancoEmisor: e.target.value }))} placeholder="Banco Galicia"
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FECHA DE PAGO <span style={{ color: T.red }}>*</span></label>
+                      <input type="date" value={payForm.fechaPago} onChange={e => setPayForm(f => ({ ...f, fechaPago: e.target.value }))}
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FECHA DE VENCIMIENTO <span style={{ color: T.red }}>*</span></label>
+                      <input type="date" value={payForm.fechaVenc} onChange={e => setPayForm(f => ({ ...f, fechaVenc: e.target.value }))}
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ gridColumn: "span 2" }}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>MONTO</label>
+                      <div style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 13, fontFamily: "monospace" }}>{fmt(payingInv.total)} (cargado automáticamente)</div>
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+                  <Btn v="ghost" onClick={() => setPayingInv(null)}>Cancelar</Btn>
+                  <Btn onClick={confirmPayVenta}>Confirmar cobro</Btn>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de detalle — Ventas */}
+          {viewingInv && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 16, padding: 28, width: 700, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800, fontFamily: "monospace", color: T.blue }}>{docRef(viewingInv)}</div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 6 }}><Badge status={viewingInv.type} /><Badge status={viewingInv.status} /></div>
+                  </div>
+                  <button onClick={() => setViewingInv(null)} style={{ background: "none", border: "none", color: T.muted, fontSize: 20, cursor: "pointer" }}>✕</button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                  <div style={{ background: T.surface, borderRadius: 10, padding: 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 10 }}>CLIENTE</div>
+                    {[["Nombre", viewingInv.clientName], ["Fecha", viewingInv.date], ["Vencimiento", viewingInv.due || "—"], ["Vendedor", viewingInv.vendedor || "—"], ["Moneda", viewingInv.moneda || "ARS"]].map(([l,v]) => (
+                      <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                        <span style={{ color: T.muted }}>{l}</span><span style={{ fontWeight: 600 }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ background: T.surface, borderRadius: 10, padding: 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 10 }}>TOTALES</div>
+                    {[["Neto", fmt(viewingInv.totalNeto || 0)], ["IVA", fmt(viewingInv.totalIva || 0)], ["Total", fmt(viewingInv.total)]].map(([l,v]) => (
+                      <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                        <span style={{ color: T.muted }}>{l}</span><span style={{ fontWeight: l === "Total" ? 800 : 600, color: l === "Total" ? T.accent : T.ink }}>{v}</span>
+                      </div>
+                    ))}
+                    {viewingInv.metodoPago && (
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 4 }}>FORMA DE PAGO</div>
+                        <div style={{ fontSize: 13, color: T.accent, fontWeight: 600 }}>{viewingInv.metodoPago}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ background: T.surface, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 10 }}>ARTÍCULOS</div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr>{["Descripción","Cantidad","Precio unit.","Subtotal"].map(h => <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, borderBottom: `1px solid ${T.border}` }}>{h}</th>)}</tr></thead>
+                    <tbody>{(viewingInv.lines || []).map((l, i) => (
+                      <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                        <td style={{ padding: "9px 10px", fontSize: 13 }}>{l.name}</td>
+                        <td style={{ padding: "9px 10px", fontSize: 13, textAlign: "right" }}>{l.qty}</td>
+                        <td style={{ padding: "9px 10px", fontSize: 13, fontFamily: "monospace", textAlign: "right" }}>{fmt(l.unitPrice)}</td>
+                        <td style={{ padding: "9px 10px", fontSize: 13, fontFamily: "monospace", fontWeight: 700, textAlign: "right" }}>{fmt(l.subtotal)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+                {viewingInv.observaciones && (
+                  <div style={{ background: T.surface, borderRadius: 10, padding: 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 6 }}>OBSERVACIONES</div>
+                    <div style={{ fontSize: 13, color: T.ink }}>{viewingInv.observaciones}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr style={{ background: T.surface }}>{["Número", "Tipo", "Cliente", "Fecha", "Vence", "Total", "Estado", ""].map(h => <th key={h} style={{ padding: "11px 15px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}</tr></thead>
@@ -2948,7 +3085,8 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                   <td style={{ padding: "12px 15px" }}><Badge status={inv.status} /></td>
                   <td style={{ padding: "12px 15px" }}>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {inv.type === "factura" && inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => markCobrada(inv.id)}>Marcar cobrada</Btn>}
+                      <Btn sm v="ghost" onClick={() => setViewingInv(inv)}>👁 Ver</Btn>
+                      {inv.type === "factura" && inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => openPayModal(inv)}>Marcar cobrada</Btn>}
                       {inv.type === "factura" && inv.status === "cobrada" && <Btn sm v="ghost" onClick={() => unmarkCobrada(inv.id)}>↩ Revertir</Btn>}
                       <Btn sm v="ghost" onClick={() => generarPDFFactura(inv)}>📄 PDF</Btn>
                       <Btn sm v="ghost" onClick={() => onEditDoc(inv)}>✏ Editar</Btn>
@@ -4064,8 +4202,11 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
 }
 
 // ─── MODULE: COMPRAS ──────────────────────────────────────────────────────────
-function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase, ordenesCompra, setOrdenesCompra }) {
+function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase, ordenesCompra, setOrdenesCompra, cheques, setCheques }) {
   const [tab, setTab] = useState("invoices");
+  const [payingInv, setPayingInv] = useState(null);
+  const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "" });
+  const [viewingInv, setViewingInv] = useState(null);
   const [showOCBuilder, setShowOCBuilder] = useState(false);
   const [showSupForm, setShowSupForm] = useState(false);
   const [supForm, setSupForm] = useState({ name: "", cuit: "", contact: "", email: "", phone: "", paymentDays: 30, bank: "", cbu: "", direccion: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" });
@@ -4179,8 +4320,23 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     return true;
   });
 
+  const openPayModalCompra = (inv) => { setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: new Date().toISOString().slice(0,10), fechaVenc: "" }); };
+  const confirmPayCompra = () => {
+    if (!payingInv) return;
+    const pf = payForm;
+    if (pf.metodo === "cheque_propio" && (!pf.nroCheque || !pf.bancoEmisor || !pf.fechaPago || !pf.fechaVenc)) { alert("Completá todos los campos del cheque."); return; }
+    const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.referencia ? " — " + pf.referencia : "")) : ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor);
+    setPurchaseInvoices(prev => prev.map(i => i.id === payingInv.id ? { ...i, status: "pagada", metodoPago: metodoPagoStr } : i));
+    if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada', metodo_pago: metodoPagoStr }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    if (pf.metodo === "cheque_propio") {
+      const nc = { id: crypto.randomUUID(), tipo: "pagar", numero: pf.nroCheque, fechaPago: pf.fechaPago, fechaVencimiento: pf.fechaVenc, monto: payingInv.total, emisor: payingInv.supplierName, estado: "pendiente" };
+      setCheques(prev => [...prev, nc]);
+      if (companyId) supabase.from('cheques').insert({ id: nc.id, company_id: companyId, tipo: nc.tipo, numero: nc.numero, fecha_pago: nc.fechaPago, fecha_vencimiento: nc.fechaVencimiento, monto: nc.monto, emisor: nc.emisor, estado: nc.estado }).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    }
+    setPayingInv(null);
+  };
   const markPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pagada" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
-  const unmarkPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pendiente" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pendiente' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
+  const unmarkPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pendiente", metodoPago: "" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pendiente', metodo_pago: null }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
 
   const handleSaveOC = ({ supplierId, supplierName, observaciones, lines, total }) => {
     const id = crypto.randomUUID();
@@ -4254,6 +4410,127 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
               )}
             </div>
           </div>
+          {/* Modal forma de pago — Compras */}
+          {payingInv && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 16, padding: 28, width: 480, maxWidth: "95vw" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Registrar pago</div>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 20 }}>{docRef(payingInv)} — {payingInv.supplierName} — <strong style={{ color: T.ink }}>{fmt(payingInv.total)}</strong></div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FORMA DE PAGO</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {[["efectivo","Efectivo"],["debito","Débito"],["credito","Crédito"],["transferencia","Transferencia"],["cheque_propio","Cheque propio"]].map(([v,l]) => (
+                      <button key={v} onClick={() => setPayForm(f => ({ ...f, metodo: v }))}
+                        style={{ padding: "10px 14px", borderRadius: 8, border: `1px solid ${payForm.metodo === v ? T.accent : T.border}`, background: payForm.metodo === v ? T.accentLight : T.surface, color: payForm.metodo === v ? T.accent : T.muted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {payForm.metodo === "transferencia" && (
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO / N° TRANSFERENCIA (opcional)</label>
+                    <input value={payForm.referencia} onChange={e => setPayForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Ej: Banco Galicia / TRF-00123456"
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                )}
+                {payForm.metodo === "cheque_propio" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>N° DE CHEQUE <span style={{ color: T.red }}>*</span></label>
+                      <input value={payForm.nroCheque} onChange={e => setPayForm(f => ({ ...f, nroCheque: e.target.value }))} placeholder="00001234"
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO EMISOR <span style={{ color: T.red }}>*</span></label>
+                      <input value={payForm.bancoEmisor} onChange={e => setPayForm(f => ({ ...f, bancoEmisor: e.target.value }))} placeholder="Banco Galicia"
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FECHA DE PAGO <span style={{ color: T.red }}>*</span></label>
+                      <input type="date" value={payForm.fechaPago} onChange={e => setPayForm(f => ({ ...f, fechaPago: e.target.value }))}
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FECHA DE VENCIMIENTO <span style={{ color: T.red }}>*</span></label>
+                      <input type="date" value={payForm.fechaVenc} onChange={e => setPayForm(f => ({ ...f, fechaVenc: e.target.value }))}
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ gridColumn: "span 2" }}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>MONTO</label>
+                      <div style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 13, fontFamily: "monospace" }}>{fmt(payingInv.total)} (cargado automáticamente)</div>
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+                  <Btn v="ghost" onClick={() => setPayingInv(null)}>Cancelar</Btn>
+                  <Btn onClick={confirmPayCompra}>Confirmar pago</Btn>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal detalle — Compras */}
+          {viewingInv && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 16, padding: 28, width: 700, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800, fontFamily: "monospace", color: T.orange }}>{docRef(viewingInv)}</div>
+                    {viewingInv.nroFactura && <div style={{ fontFamily: "monospace", fontSize: 13, color: T.muted, marginTop: 2 }}>{viewingInv.nroFactura}</div>}
+                    <div style={{ marginTop: 6 }}><Badge status={viewingInv.status} /></div>
+                  </div>
+                  <button onClick={() => setViewingInv(null)} style={{ background: "none", border: "none", color: T.muted, fontSize: 20, cursor: "pointer" }}>✕</button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                  <div style={{ background: T.surface, borderRadius: 10, padding: 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 10 }}>PROVEEDOR</div>
+                    {[["Nombre", viewingInv.supplierName], ["Fecha", viewingInv.date], ["Vencimiento", viewingInv.dueDate || "—"]].map(([l,v]) => (
+                      <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                        <span style={{ color: T.muted }}>{l}</span><span style={{ fontWeight: 600 }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ background: T.surface, borderRadius: 10, padding: 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 10 }}>TOTALES</div>
+                    {[["Neto", fmt(viewingInv.totalNeto || 0)], ["IVA", fmt(viewingInv.totalIva || 0)], ["Total", fmt(viewingInv.total)]].map(([l,v]) => (
+                      <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                        <span style={{ color: T.muted }}>{l}</span><span style={{ fontWeight: l === "Total" ? 800 : 600, color: l === "Total" ? T.accent : T.ink }}>{v}</span>
+                      </div>
+                    ))}
+                    {viewingInv.metodoPago && (
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 4 }}>FORMA DE PAGO</div>
+                        <div style={{ fontSize: 13, color: T.accent, fontWeight: 600 }}>{viewingInv.metodoPago}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ background: T.surface, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 10 }}>ARTÍCULOS</div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr>{["Descripción","Cód. proveedor","Cantidad","Precio unit.","Subtotal"].map(h => <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8, borderBottom: `1px solid ${T.border}` }}>{h}</th>)}</tr></thead>
+                    <tbody>{(viewingInv.lines || []).map((l, i) => (
+                      <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                        <td style={{ padding: "9px 10px", fontSize: 13 }}>{l.name}</td>
+                        <td style={{ padding: "9px 10px", fontSize: 12, fontFamily: "monospace", color: T.muted }}>{l.supplierCode || "—"}</td>
+                        <td style={{ padding: "9px 10px", fontSize: 13, textAlign: "right" }}>{l.qty}</td>
+                        <td style={{ padding: "9px 10px", fontSize: 13, fontFamily: "monospace", textAlign: "right" }}>{fmt(l.unitPrice)}</td>
+                        <td style={{ padding: "9px 10px", fontSize: 13, fontFamily: "monospace", fontWeight: 700, textAlign: "right" }}>{fmt(l.qty * l.unitPrice)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+                {viewingInv.observaciones && (
+                  <div style={{ background: T.surface, borderRadius: 10, padding: 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 6 }}>OBSERVACIONES</div>
+                    <div style={{ fontSize: 13, color: T.ink }}>{viewingInv.observaciones}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr style={{ background: T.surface }}>{["Número", "Proveedor", "Fecha", "Vencimiento", "Total", "Estado", ""].map(h => <th key={h} style={{ padding: "11px 15px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
@@ -4269,8 +4546,11 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                   <td style={{ padding: "12px 15px", fontSize: 14, fontWeight: 800 }}>{fmt(inv.total)}</td>
                   <td style={{ padding: "12px 15px" }}><Badge status={inv.status} /></td>
                   <td style={{ padding: "12px 15px" }}>
-                    {inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => markPagada(inv.id)}>Marcar pagada</Btn>}
-                    {inv.status === "pagada" && <Btn sm v="ghost" onClick={() => unmarkPagada(inv.id)}>↩ Revertir a pendiente</Btn>}
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <Btn sm v="ghost" onClick={() => setViewingInv(inv)}>👁 Ver</Btn>
+                      {inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => openPayModalCompra(inv)}>Marcar pagada</Btn>}
+                      {inv.status === "pagada" && <Btn sm v="ghost" onClick={() => unmarkPagada(inv.id)}>↩ Revertir a pendiente</Btn>}
+                    </div>
                   </td>
                 </tr>
               ))}</tbody>
@@ -8950,7 +9230,7 @@ export default function App({ session, profile, onLogout }) {
         <ReadOnlyCtx.Provider value={false}>
         <div>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
-        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile}
+        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile} cheques={cheques} setCheques={setCheques}
           onNewFactura={() => openDoc("factura")}
           onNewRemito={() => openDoc("remito")}
           onNewPresupuesto={() => openDoc("presupuesto")}
@@ -8958,7 +9238,7 @@ export default function App({ session, profile, onLogout }) {
           onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" })}
         />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
-        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} />}
+        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} cheques={cheques} setCheques={setCheques} />}
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} cajas={cajas} cajaMovimientos={cajaMovimientos} />}
