@@ -134,9 +134,28 @@ function AdminPanel({ profile, onLogout }) {
 
   const approveUser = async (id) => {
     setSaving(true)
-    const { error } = await supabase.rpc('approve_user_request', { p_request_id: id })
-    if (error) alert('Error al aprobar: ' + error.message)
-    else setUserRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
+    const req = userRequests.find(r => r.id === id)
+    if (!req) { setSaving(false); return }
+    try {
+      const res = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          request_id: req.id,
+          email: req.email,
+          password: req.password,
+          company_id: req.company_id,
+          company_name: req.company_name,
+          role: req.role,
+          display_name: req.display_name
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) alert('Error al aprobar: ' + data.error)
+      else setUserRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
+    } catch (e) {
+      alert('Error al aprobar: ' + e.message)
+    }
     setSaving(false)
   }
 
