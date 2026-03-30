@@ -37,6 +37,9 @@ function AdminPanel({ profile, onLogout }) {
   const [editingProfileId, setEditingProfileId] = useState(null)
   const [editForm, setEditForm] = useState({})
   const [expandedId, setExpandedId] = useState(null)
+  const [changingPasswordId, setChangingPasswordId] = useState(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [showPasswords, setShowPasswords] = useState({})
 
   useEffect(() => { loadCompanies() }, [])
   useEffect(() => { if (tab === 'usuarios') loadUserRequests() }, [tab])
@@ -71,8 +74,26 @@ function AdminPanel({ profile, onLogout }) {
   }
 
   const loadCompanyProfiles = async (companyId) => {
-    const { data } = await supabase.from('profiles').select('*').eq('company_id', companyId)
-    if (data) setCompanyProfiles(prev => ({ ...prev, [companyId]: data }))
+    const [{ data: profs }, { data: reqs }] = await Promise.all([
+      supabase.from('profiles').select('*').eq('company_id', companyId),
+      supabase.from('user_requests').select('email, password').eq('company_id', companyId).eq('status', 'approved')
+    ])
+    const pwMap = {}
+    if (reqs) reqs.forEach(r => { if (r.email) pwMap[r.email] = r.password })
+    const merged = (profs || []).map(p => ({ ...p, _password: p.email ? (pwMap[p.email] || null) : null }))
+    setCompanyProfiles(prev => ({ ...prev, [companyId]: merged }))
+  }
+
+  const changePassword = async (profileId, companyId) => {
+    if (!newPassword.trim()) return
+    const { error } = await supabase.rpc('admin_change_password', { p_user_id: profileId, p_new_password: newPassword.trim() })
+    if (error) { alert('Error al cambiar contraseña: ' + error.message); return }
+    // update stored password in local state
+    setCompanyProfiles(prev => ({
+      ...prev,
+      [companyId]: prev[companyId].map(p => p.id === profileId ? { ...p, _password: newPassword.trim() } : p)
+    }))
+    setChangingPasswordId(null); setNewPassword('')
   }
 
   const toggleJefe = async (profileId, companyId) => {
@@ -426,52 +447,94 @@ function AdminPanel({ profile, onLogout }) {
                     {profiles.map(p => {
                       const isJefe = p.role === 'jefe'
                       const isEditing = editingProfileId === p.id
+                      const isChangingPw = changingPasswordId === p.id
+                      const displayName = p.display_name || (isJefe ? co?.contact_person : null) || '(sin nombre)'
+                      const showPw = showPasswords[p.id]
                       return (
-                        <div key={p.id} style={{ background: T.paper, border: `1px solid ${isJefe ? T.purple : T.border}`, borderRadius: 12, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-                          <div style={{ flex: 1, minWidth: 160 }}>
-                            {isEditing ? (
-                              <input value={editForm.display_name || ''} onChange={e => setEditForm(f => ({ ...f, display_name: e.target.value }))}
-                                placeholder="Nombre visible"
-                                style={{ background: T.surface, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '6px 10px', color: T.ink, fontSize: 14, fontFamily: 'inherit', fontWeight: 700, width: '100%', outline: 'none' }} />
-                            ) : (
-                              <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{p.display_name || p.email}</div>
-                            )}
-                            <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{p.email}</div>
+                        <div key={p.id} style={{ background: T.paper, border: `1px solid ${isJefe ? T.purple : T.border}`, borderRadius: 12, padding: '16px 20px' }}>
+                          {/* Fila principal */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                            {/* Info usuario */}
+                            <div style={{ flex: 1, minWidth: 200 }}>
+                              {isEditing ? (
+                                <input value={editForm.display_name || ''} onChange={e => setEditForm(f => ({ ...f, display_name: e.target.value }))}
+                                  placeholder="Nombre visible"
+                                  style={{ background: T.surface, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '6px 10px', color: T.ink, fontSize: 14, fontFamily: 'inherit', fontWeight: 700, width: '100%', outline: 'none' }} />
+                              ) : (
+                                <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{displayName}</div>
+                              )}
+                              <div style={{ fontSize: 11, color: T.blue, marginTop: 2 }}>{p.email || '—'}</div>
+                              {/* Contraseña */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                                <span style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.5 }}>CONTRASEÑA:</span>
+                                {p._password ? (<>
+                                  <span style={{ fontFamily: 'monospace', fontSize: 12, color: T.ink, letterSpacing: showPw ? 0 : 2 }}>
+                                    {showPw ? p._password : '••••••••'}
+                                  </span>
+                                  <button onClick={() => setShowPasswords(s => ({ ...s, [p.id]: !s[p.id] }))}
+                                    style={{ background: 'transparent', border: 'none', color: T.muted, fontSize: 11, cursor: 'pointer', padding: '0 4px', fontFamily: 'inherit' }}>
+                                    {showPw ? 'Ocultar' : 'Ver'}
+                                  </button>
+                                </>) : (
+                                  <span style={{ fontSize: 11, color: T.faint }}>no disponible</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Acciones */}
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{ background: p.active ? T.accentLight : T.redLight, color: p.active ? T.accent : T.red, padding: '3px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700 }}>
+                                {p.active ? 'Activo' : 'Suspendido'}
+                              </span>
+                              <button onClick={() => toggleJefe(p.id, gestionCompanyId)}
+                                style={{ background: isJefe ? T.purpleLight : T.surface2, color: isJefe ? T.purple : T.muted, border: `1px solid ${isJefe ? T.purple : T.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                                {isJefe ? '★ Jefe' : '☆ Hacer jefe'}
+                              </button>
+                              <button onClick={() => toggleActive(p.id, gestionCompanyId)}
+                                style={{ background: 'transparent', color: p.active ? T.red : T.accent, border: `1px solid ${p.active ? T.red : T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                                {p.active ? 'Suspender' : 'Reactivar'}
+                              </button>
+                              <button onClick={() => { setChangingPasswordId(isChangingPw ? null : p.id); setNewPassword('') }}
+                                style={{ background: T.blueLight, color: T.blue, border: `1px solid ${T.blue}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                                🔑 Contraseña
+                              </button>
+                              {isEditing ? (<>
+                                <button onClick={() => saveEditProfile(p.id, gestionCompanyId)}
+                                  style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  Guardar
+                                </button>
+                                <button onClick={() => setEditingProfileId(null)}
+                                  style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 18 }}>✕</button>
+                              </>) : (
+                                <button onClick={() => { setEditingProfileId(p.id); setEditForm({ display_name: p.display_name || '' }) }}
+                                  style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  Editar
+                                </button>
+                              )}
+                            </div>
                           </div>
 
-                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                            {/* Badge activo/suspendido */}
-                            <span style={{ background: p.active ? T.accentLight : T.redLight, color: p.active ? T.accent : T.red, padding: '3px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700 }}>
-                              {p.active ? 'Activo' : 'Suspendido'}
-                            </span>
-
-                            {/* Toggle jefe */}
-                            <button onClick={() => toggleJefe(p.id, gestionCompanyId)}
-                              style={{ background: isJefe ? T.purpleLight : T.surface2, color: isJefe ? T.purple : T.muted, border: `1px solid ${isJefe ? T.purple : T.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                              {isJefe ? '★ Jefe' : '☆ Hacer jefe'}
-                            </button>
-
-                            {/* Suspender / Reactivar */}
-                            <button onClick={() => toggleActive(p.id, gestionCompanyId)}
-                              style={{ background: 'transparent', color: p.active ? T.red : T.accent, border: `1px solid ${p.active ? T.red : T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                              {p.active ? 'Suspender' : 'Reactivar'}
-                            </button>
-
-                            {/* Editar nombre */}
-                            {isEditing ? (<>
-                              <button onClick={() => saveEditProfile(p.id, gestionCompanyId)}
-                                style={{ background: T.accentLight, color: T.accent, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                Guardar
+                          {/* Panel cambio de contraseña */}
+                          {isChangingPw && (
+                            <div style={{ marginTop: 12, padding: '12px 16px', background: T.blueLight, borderRadius: 8, border: `1px solid ${T.blue}`, display: 'flex', gap: 10, alignItems: 'center' }}>
+                              <span style={{ fontSize: 12, color: T.blue, fontWeight: 600, whiteSpace: 'nowrap' }}>Nueva contraseña:</span>
+                              <input
+                                value={newPassword}
+                                onChange={e => setNewPassword(e.target.value)}
+                                placeholder="Ingresá la nueva contraseña..."
+                                autoFocus
+                                style={{ flex: 1, background: T.surface, border: `1px solid ${T.blue}`, borderRadius: 6, padding: '7px 12px', color: T.ink, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
+                              />
+                              <button
+                                onClick={() => { if (window.confirm(`¿Confirmas cambiar la contraseña de ${displayName}?`)) changePassword(p.id, gestionCompanyId) }}
+                                disabled={!newPassword.trim()}
+                                style={{ background: T.blue, color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: !newPassword.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                                Confirmar cambio
                               </button>
-                              <button onClick={() => setEditingProfileId(null)}
+                              <button onClick={() => { setChangingPasswordId(null); setNewPassword('') }}
                                 style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 18 }}>✕</button>
-                            </>) : (
-                              <button onClick={() => { setEditingProfileId(p.id); setEditForm({ display_name: p.display_name || '' }) }}
-                                style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                Editar
-                              </button>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
                       )
                     })}
