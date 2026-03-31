@@ -4364,8 +4364,8 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.referencia ? " — " + pf.referencia : "")) : pf.metodo === "cheque_propio" ? ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor) : ("Cheque de tercero N°" + pf.nroCheque + " — " + pf.bancoEmisor + " — Emisor: " + pf.emisorCheque + " — Endosado: " + pf.fechaEndoso);
     setPurchaseInvoices(prev => prev.map(i => i.id === payingInv.id ? { ...i, status: "pagada", metodoPago: metodoPagoStr } : i));
     if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada', metodo_pago: metodoPagoStr }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
-    if (pf.metodo === "cheque_propio" || pf.metodo === "cheque_tercero") {
-      const nc = { id: crypto.randomUUID(), tipo: "pagar", numero: pf.nroCheque, fechaPago: pf.fechaPago, fechaVencimiento: pf.fechaVenc, monto: payingInv.total, emisor: pf.metodo === "cheque_tercero" ? pf.emisorCheque : payingInv.supplierName, estado: "pendiente" };
+    if (pf.metodo === "cheque_propio") {
+      const nc = { id: crypto.randomUUID(), tipo: "pagar", numero: pf.nroCheque, fechaPago: pf.fechaPago, fechaVencimiento: pf.fechaVenc, monto: payingInv.total, emisor: "", estado: "pendiente" };
       setCheques(prev => [...prev, nc]);
       if (companyId) supabase.from('cheques').insert({ id: nc.id, company_id: companyId, tipo: nc.tipo, numero: nc.numero, fecha_pago: nc.fechaPago, fecha_vencimiento: nc.fechaVencimiento, monto: nc.monto, emisor: nc.emisor, estado: nc.estado }).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
@@ -8741,14 +8741,14 @@ function ChequesModule({ cheques, setCheques, companyId }) {
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr style={{ background: T.surface }}>
-                {["N° Cheque","Emisor","Fecha pago","Vencimiento","Monto","Estado","",""].map(h => <th key={h} style={{ padding: "11px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}
+                {(tab === "cobrar" ? ["N° Cheque","Emisor","Fecha pago","Vencimiento","Monto","Estado","",""] : ["N° Cheque","Fecha pago","Vencimiento","Monto","Estado","",""]).map(h => <th key={h} style={{ padding: "11px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}
               </tr></thead>
               <tbody>{listaCheques.sort((a,b) => a.fechaPago.localeCompare(b.fechaPago)).map(c => {
                 const vencido = c.estado === "pendiente" && c.fechaVencimiento < today;
                 return (
                   <tr key={c.id} style={{ borderTop: `1px solid ${T.border}`, background: vencido ? `${T.red}08` : "transparent" }}>
                     <td style={{ padding: "10px 14px", fontFamily: "monospace", color: T.blue, fontWeight: 700 }}>{c.numero || "—"}</td>
-                    <td style={{ padding: "10px 14px", fontSize: 13 }}>{c.emisor || "—"}</td>
+                    {tab === "cobrar" && <td style={{ padding: "10px 14px", fontSize: 13 }}>{c.emisor || "—"}</td>}
                     <td style={{ padding: "10px 14px", fontSize: 13, color: T.muted }}>{c.fechaPago}</td>
                     <td style={{ padding: "10px 14px", fontSize: 13, color: vencido ? T.red : T.muted }}>{c.fechaVencimiento || "—"}</td>
                     <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 800, color: tab === "cobrar" ? T.accent : T.orange }}>{fmt(c.monto)}</td>
@@ -8797,7 +8797,7 @@ function ChequesModule({ cheques, setCheques, companyId }) {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
             <Input label="N° DE CHEQUE" value={formNumero} onChange={setFormNumero} placeholder="ej: 12345678" />
-            <Input label="EMISOR" value={formEmisor} onChange={setFormEmisor} placeholder="Nombre del emisor" />
+            {formTipo === "cobrar" && <Input label="EMISOR" value={formEmisor} onChange={setFormEmisor} placeholder="Nombre del emisor" />}
             <Input label="FECHA DE PAGO" type="date" value={formFechaPago} onChange={setFormFechaPago} />
             <Input label="FECHA VENCIMIENTO" type="date" value={formFechaVenc} onChange={setFormFechaVenc} />
             <Input label="MONTO ($)" type="number" value={formMonto} onChange={v => setFormMonto(parseFloat(v)||0)} />
