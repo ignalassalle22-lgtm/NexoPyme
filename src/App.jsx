@@ -164,7 +164,7 @@ const mapEmployee = r => ({
   email: r.email || '', estado: r.estado || 'activo',
 });
 const mapPriceList = r => ({ id: r.id, label: r.label });
-const mapCaja = r => ({ id: r.id, date: r.date, turno: r.turno || null, montoInicial: r.monto_inicial ?? 0, estado: r.estado || 'abierta' });
+const mapCaja = r => ({ id: r.id, date: String(r.date || '').slice(0, 10), turno: r.turno || null, montoInicial: r.monto_inicial ?? 0, estado: r.estado || 'abierta' });
 const mapCajaMovimiento = r => ({ id: r.id, cajaId: r.caja_id, tipo: r.tipo, monto: r.monto ?? 0, fecha: r.fecha, hora: r.hora || '—', motivo: r.motivo || '', empleadoId: r.empleado_id || null, observaciones: r.observaciones || '', origen: r.origen || 'manual', origenId: r.origen_id || null });
 
 // ─── DB WRITERS (App → DB) ─────────────────────────────────────────────────
@@ -2527,7 +2527,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
       if (companyId) supabase.from('cheques').insert({ id: nc.id, company_id: companyId, tipo: nc.tipo, numero: nc.numero, fecha_pago: nc.fechaPago, fecha_vencimiento: nc.fechaVencimiento, monto: nc.monto, emisor: nc.emisor, estado: nc.estado }).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
     if (pf.metodo === "efectivo") {
-      const cajasDelDia = (cajas || []).filter(c => c.date === pf.fechaPago);
+      const cajasDelDia = (cajas || []).filter(c => String(c.date).slice(0,10) === pf.fechaPago);
       const caja = cajasDelDia.find(c => c.estado === "abierta") || cajasDelDia[cajasDelDia.length - 1];
       if (caja) {
         const mov = { id: crypto.randomUUID(), cajaId: caja.id, tipo: "ingreso", monto: payingInv.total, fecha: pf.fechaPago, hora: new Date().toTimeString().slice(0,5), motivo: "Cobro " + (payingInv.ref || "") + " — " + payingInv.clientName, empleadoId: null, observaciones: "", origen: "venta", origenId: payingInv.id };
@@ -2999,6 +2999,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                     <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FECHA DE COBRO</label>
                     <input type="date" value={payForm.fechaPago} onChange={e => setPayForm(f => ({ ...f, fechaPago: e.target.value }))}
                       style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    {(() => { const hay = (cajas || []).some(c => String(c.date).slice(0,10) === payForm.fechaPago); return hay ? <div style={{ fontSize: 11, color: T.accent, marginTop: 4 }}>✓ Se registrará en la caja de ese día</div> : <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Sin caja abierta para esa fecha — no se registrará movimiento</div>; })()}
                   </div>
                 )}
                 {(payForm.metodo === "cheque_propio" || payForm.metodo === "cheque_tercero") && (
@@ -4395,7 +4396,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
       if (companyId) supabase.from('cheques').insert({ id: nc.id, company_id: companyId, tipo: nc.tipo, numero: nc.numero, fecha_pago: nc.fechaPago, fecha_vencimiento: nc.fechaVencimiento, monto: nc.monto, emisor: nc.emisor, estado: nc.estado }).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
     if (pf.metodo === "efectivo") {
-      const cajasDelDia = (cajas || []).filter(c => c.date === pf.fechaPago);
+      const cajasDelDia = (cajas || []).filter(c => String(c.date).slice(0,10) === pf.fechaPago);
       const caja = cajasDelDia.find(c => c.estado === "abierta") || cajasDelDia[cajasDelDia.length - 1];
       if (caja) {
         const mov = { id: crypto.randomUUID(), cajaId: caja.id, tipo: "egreso", monto: payingInv.total, fecha: pf.fechaPago, hora: new Date().toTimeString().slice(0,5), motivo: "Pago " + (payingInv.ref || "") + " — " + payingInv.supplierName, empleadoId: null, observaciones: "", origen: "compra", origenId: payingInv.id };
@@ -4517,6 +4518,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                     <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FECHA DE PAGO</label>
                     <input type="date" value={payForm.fechaPago} onChange={e => setPayForm(f => ({ ...f, fechaPago: e.target.value }))}
                       style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    {(() => { const hay = (cajas || []).some(c => String(c.date).slice(0,10) === payForm.fechaPago); return hay ? <div style={{ fontSize: 11, color: T.accent, marginTop: 4 }}>✓ Se registrará en la caja de ese día</div> : <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Sin caja abierta para esa fecha — no se registrará movimiento</div>; })()}
                   </div>
                 )}
                 {(payForm.metodo === "cheque_propio" || payForm.metodo === "cheque_tercero") && (
