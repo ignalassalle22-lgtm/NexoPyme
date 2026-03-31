@@ -8422,6 +8422,7 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
             ) : (
               <Btn v="ghost" onClick={() => { setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "abierta" } : c)); if (companyId) supabase.from('cajas').update({ estado: 'abierta' }).eq('id', selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); }}>Reabrir caja</Btn>
             )}
+            <Btn v="danger" onClick={() => { if (window.confirm(`¿Eliminar la caja ${selectedCaja.id} y todos sus movimientos? Esta acción no se puede deshacer.`)) { setCajaMovimientos(prev => prev.filter(m => m.cajaId !== selectedCaja.id)); setCajas(prev => prev.filter(c => c.id !== selectedCaja.id)); setSelectedCajaId(null); if (companyId) { supabase.from('caja_movimientos').delete().eq('caja_id', selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); supabase.from('cajas').delete().eq('id', selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); } } }}>Eliminar caja</Btn>
           </div>
         </div>
 
@@ -8447,7 +8448,7 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr style={{ background: T.surface }}>
-                {["N°", "Tipo", "Motivo", "Monto", "Fecha / Hora", "Origen", "Obs."].map(h => (
+                {["N°", "Tipo", "Motivo", "Monto", "Fecha / Hora", "Origen", "Obs.", ""].map(h => (
                   <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
                 ))}
               </tr></thead>
@@ -8470,6 +8471,11 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
                       <td style={{ padding: "12px 16px", fontSize: 12, color: T.muted }}>{m.fecha}<br />{m.hora !== "—" ? m.hora : ""}</td>
                       <td style={{ padding: "12px 16px", fontSize: 12, color: m.origenId ? T.blue : T.muted, fontFamily: "monospace" }}>{m.origenId || "Manual"}</td>
                       <td style={{ padding: "12px 16px", fontSize: 12, color: T.muted, maxWidth: 160 }}>{m.observaciones || "—"}</td>
+                      <td style={{ padding: "12px 16px" }}>
+                        {!m.isAuto && estaAbierta && (
+                          <button onClick={() => { if (window.confirm("¿Eliminar este movimiento? Esta acción no se puede deshacer.")) { setCajaMovimientos(prev => prev.filter(x => x.id !== m.id)); if (companyId) supabase.from('caja_movimientos').delete().eq('id', m.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); } }} style={{ background: "none", border: "none", color: T.muted, fontSize: 16, cursor: "pointer", padding: "2px 6px", borderRadius: 4 }} title="Eliminar movimiento">×</button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
