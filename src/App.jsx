@@ -155,6 +155,7 @@ const mapPurchaseInvoice = r => ({
   supplierName: r.supplier_name, date: r.date, dueDate: r.due_date,
   total: r.total ?? 0, totalNeto: r.total_neto, totalIva: r.total_iva,
   status: r.status, lines: typeof r.lines === 'string' ? JSON.parse(r.lines) : (r.lines || []),
+  metodoPago: r.metodo_pago || '',
 });
 const mapEmployee = r => ({
   id: r.id, legajo: r.legajo || '', nombre: r.nombre, apellido: r.apellido,
@@ -4380,7 +4381,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     return true;
   });
 
-  const openPayModalCompra = (inv) => { const today = new Date().toISOString().slice(0,10); setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: inv.date || today, fechaVenc: "", emisorCheque: "", fechaEndoso: today }); };
+  const openPayModalCompra = (inv) => { const today = new Date().toISOString().slice(0,10); setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: (inv.date || today).slice(0,10), fechaVenc: "", emisorCheque: "", fechaEndoso: today }); };
   const confirmPayCompra = () => {
     if (!payingInv) return;
     const pf = payForm;
