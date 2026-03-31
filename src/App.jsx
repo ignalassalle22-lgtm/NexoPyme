@@ -2538,7 +2538,15 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     setPayingInv(null);
   };
   const markCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "cobrada" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'cobrada' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
-  const unmarkCobrada = (id) => { setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "pendiente", metodoPago: "" } : i)); if (companyId) supabase.from('sale_invoices').update({ status: 'pendiente', metodo_pago: null }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
+  const unmarkCobrada = (id) => {
+    setSaleInvoices(saleInvoices.map(i => i.id === id ? { ...i, status: "pendiente", metodoPago: "" } : i));
+    if (companyId) supabase.from('sale_invoices').update({ status: 'pendiente', metodo_pago: null }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    const mov = cajaMovimientos.find(m => m.origenId === id && m.origen === "venta");
+    if (mov) {
+      setCajaMovimientos(prev => prev.filter(m => m.id !== mov.id));
+      if (companyId) supabase.from('caja_movimientos').delete().eq('id', mov.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    }
+  };
 
   const eliminarPresupuesto = (id) => {
     const tieneDocLinkeado = saleInvoices.some(i => i.originPresupuestoId === id);
@@ -4379,7 +4387,8 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     if (pf.metodo === "cheque_tercero" && (!pf.emisorCheque || !pf.fechaEndoso)) { alert("Completá el emisor y la fecha de endoso."); return; }
     const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.referencia ? " — " + pf.referencia : "")) : pf.metodo === "cheque_propio" ? ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor) : ("Cheque de tercero N°" + pf.nroCheque + " — " + pf.bancoEmisor + " — Emisor: " + pf.emisorCheque + " — Endosado: " + pf.fechaEndoso);
     setPurchaseInvoices(prev => prev.map(i => i.id === payingInv.id ? { ...i, status: "pagada", metodoPago: metodoPagoStr } : i));
-    if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada', metodo_pago: metodoPagoStr }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada' }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    if (companyId) supabase.from('purchase_invoices').update({ metodo_pago: metodoPagoStr }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB metodo_pago Error:", r.error.message) });
     if (pf.metodo === "cheque_propio") {
       const nc = { id: crypto.randomUUID(), tipo: "pagar", numero: pf.nroCheque, fechaPago: pf.fechaPago, fechaVencimiento: pf.fechaVenc, monto: payingInv.total, emisor: "", estado: "pendiente" };
       setCheques(prev => [...prev, nc]);
@@ -4397,7 +4406,15 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     setPayingInv(null);
   };
   const markPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pagada" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
-  const unmarkPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pendiente", metodoPago: "" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pendiente', metodo_pago: null }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
+  const unmarkPagada = (id) => {
+    setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pendiente", metodoPago: "" } : i));
+    if (companyId) supabase.from('purchase_invoices').update({ status: 'pendiente', metodo_pago: null }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    const mov = cajaMovimientos.find(m => m.origenId === id && m.origen === "compra");
+    if (mov) {
+      setCajaMovimientos(prev => prev.filter(m => m.id !== mov.id));
+      if (companyId) supabase.from('caja_movimientos').delete().eq('id', mov.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    }
+  };
 
   const handleSaveOC = ({ supplierId, supplierName, observaciones, lines, total }) => {
     const id = crypto.randomUUID();
