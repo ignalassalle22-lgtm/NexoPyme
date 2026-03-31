@@ -4400,7 +4400,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
       const cajasDelDia = (cajas || []).filter(c => String(c.date).slice(0,10) === pf.fechaPago);
       const caja = cajasDelDia.find(c => c.estado === "abierta") || cajasDelDia[cajasDelDia.length - 1];
       if (caja) {
-        const mov = { id: crypto.randomUUID(), cajaId: caja.id, tipo: "egreso", monto: payingInv.total, fecha: pf.fechaPago, hora: new Date().toTimeString().slice(0,5), motivo: "Pago " + (payingInv.ref || "") + " — " + payingInv.supplierName, empleadoId: null, observaciones: "", origen: "compra", origenId: payingInv.id };
+        const mov = { id: crypto.randomUUID(), cajaId: caja.id, tipo: "gasto", monto: payingInv.total, fecha: pf.fechaPago, hora: new Date().toTimeString().slice(0,5), motivo: "Pago " + (payingInv.ref || "") + " — " + payingInv.supplierName, empleadoId: null, observaciones: "", origen: "compra", origenId: payingInv.id };
         setCajaMovimientos(prev => [...prev, mov]);
         if (companyId) supabase.from('caja_movimientos').insert(cajaMovimientoToDb(mov, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
       }
@@ -8325,7 +8325,7 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
   };
 
   const guardarMovimiento = (cajaId) => {
-    const mov = { id: crypto.randomUUID(), cajaId, tipo: movTipo, monto: parseFloat(movMonto) || 0, fecha: movFecha, hora: movHora, motivo: movMotivo, empleadoId: movEmpleado || null, observaciones: movObs, origen: "manual", origenId: null };
+    const mov = { id: crypto.randomUUID(), cajaId, tipo: movTipo, monto: parseFloat(movMonto) || 0, fecha: selectedCaja ? selectedCaja.date : hoy, hora: movHora, motivo: movMotivo, empleadoId: movEmpleado || null, observaciones: movObs, origen: "manual", origenId: null };
     setCajaMovimientos(prev => [...prev, mov]);
     if (companyId) supabase.from('caja_movimientos').insert(cajaMovimientoToDb(mov, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
     setShowMovModal(false);
@@ -8389,10 +8389,7 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
                 </div>
               </div>
               <Input label="MOTIVO" value={movMotivo} onChange={setMovMotivo} placeholder="ej: Compra de materiales de limpieza" />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <Input label="FECHA" type="date" value={movFecha} onChange={setMovFecha} />
-                <Input label="HORA" type="time" value={movHora} onChange={setMovHora} />
-              </div>
+              <Input label="HORA" type="time" value={movHora} onChange={setMovHora} />
               <div>
                 <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>OBSERVACIONES (opcional)</label>
                 <textarea value={movObs} onChange={e => setMovObs(e.target.value)} rows={2} style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
