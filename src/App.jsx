@@ -2338,7 +2338,7 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
 }
 
 // ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
-function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, cheques, setCheques, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
+function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, cheques, setCheques, cajas, cajaMovimientos, setCajaMovimientos, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
   const [tab, setTab] = useState("docs");
   const [filterType, setFilterType] = useState("all");
   const [searchDocNum, setSearchDocNum] = useState("");
@@ -2525,6 +2525,15 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
       const nc = { id: crypto.randomUUID(), tipo: "cobrar", numero: pf.nroCheque, fechaPago: pf.fechaPago, fechaVencimiento: pf.fechaVenc, monto: payingInv.total, emisor: pf.metodo === "cheque_tercero" ? pf.emisorCheque : payingInv.clientName, estado: "pendiente" };
       setCheques(prev => [...prev, nc]);
       if (companyId) supabase.from('cheques').insert({ id: nc.id, company_id: companyId, tipo: nc.tipo, numero: nc.numero, fecha_pago: nc.fechaPago, fecha_vencimiento: nc.fechaVencimiento, monto: nc.monto, emisor: nc.emisor, estado: nc.estado }).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    }
+    if (pf.metodo === "efectivo") {
+      const cajasDelDia = (cajas || []).filter(c => c.date === pf.fechaPago);
+      const caja = cajasDelDia.find(c => c.estado === "abierta") || cajasDelDia[cajasDelDia.length - 1];
+      if (caja) {
+        const mov = { id: crypto.randomUUID(), cajaId: caja.id, tipo: "ingreso", monto: payingInv.total, fecha: pf.fechaPago, hora: new Date().toTimeString().slice(0,5), motivo: "Cobro " + (payingInv.ref || "") + " — " + payingInv.clientName, empleadoId: null, observaciones: "", origen: "venta", origenId: payingInv.id };
+        setCajaMovimientos(prev => [...prev, mov]);
+        if (companyId) supabase.from('caja_movimientos').insert(cajaMovimientoToDb(mov, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+      }
     }
     setPayingInv(null);
   };
@@ -2974,6 +2983,13 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                   <div style={{ marginBottom: 16 }}>
                     <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO / N° TRANSFERENCIA (opcional)</label>
                     <input value={payForm.referencia} onChange={e => setPayForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Ej: Banco Galicia / TRF-00123456"
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                )}
+                {payForm.metodo === "efectivo" && (
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FECHA DE COBRO</label>
+                    <input type="date" value={payForm.fechaPago} onChange={e => setPayForm(f => ({ ...f, fechaPago: e.target.value }))}
                       style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
                   </div>
                 )}
@@ -4237,7 +4253,7 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
 }
 
 // ─── MODULE: COMPRAS ──────────────────────────────────────────────────────────
-function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase, ordenesCompra, setOrdenesCompra, cheques, setCheques }) {
+function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase, ordenesCompra, setOrdenesCompra, cheques, setCheques, cajas, cajaMovimientos, setCajaMovimientos }) {
   const [tab, setTab] = useState("invoices");
   const [payingInv, setPayingInv] = useState(null);
   const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
@@ -4369,6 +4385,15 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
       setCheques(prev => [...prev, nc]);
       if (companyId) supabase.from('cheques').insert({ id: nc.id, company_id: companyId, tipo: nc.tipo, numero: nc.numero, fecha_pago: nc.fechaPago, fecha_vencimiento: nc.fechaVencimiento, monto: nc.monto, emisor: nc.emisor, estado: nc.estado }).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
+    if (pf.metodo === "efectivo") {
+      const cajasDelDia = (cajas || []).filter(c => c.date === pf.fechaPago);
+      const caja = cajasDelDia.find(c => c.estado === "abierta") || cajasDelDia[cajasDelDia.length - 1];
+      if (caja) {
+        const mov = { id: crypto.randomUUID(), cajaId: caja.id, tipo: "egreso", monto: payingInv.total, fecha: pf.fechaPago, hora: new Date().toTimeString().slice(0,5), motivo: "Pago " + (payingInv.ref || "") + " — " + payingInv.supplierName, empleadoId: null, observaciones: "", origen: "compra", origenId: payingInv.id };
+        setCajaMovimientos(prev => [...prev, mov]);
+        if (companyId) supabase.from('caja_movimientos').insert(cajaMovimientoToDb(mov, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+      }
+    }
     setPayingInv(null);
   };
   const markPagada = (id) => { setPurchaseInvoices(purchaseInvoices.map(i => i.id === id ? { ...i, status: "pagada" } : i)); if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada' }).eq('id', id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }); };
@@ -4467,6 +4492,13 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                   <div style={{ marginBottom: 16 }}>
                     <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO / N° TRANSFERENCIA (opcional)</label>
                     <input value={payForm.referencia} onChange={e => setPayForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Ej: Banco Galicia / TRF-00123456"
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                )}
+                {payForm.metodo === "efectivo" && (
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FECHA DE PAGO</label>
+                    <input type="date" value={payForm.fechaPago} onChange={e => setPayForm(f => ({ ...f, fechaPago: e.target.value }))}
                       style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
                   </div>
                 )}
@@ -9298,7 +9330,7 @@ export default function App({ session, profile, onLogout }) {
         <ReadOnlyCtx.Provider value={false}>
         <div>
         {module === "hub" && <HubModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} onQuickAction={handleQuickAction} tipoCambio={tipoCambio} setTipoCambio={setTipoCambio} />}
-        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile} cheques={cheques} setCheques={setCheques}
+        {module === "ventas" && <VentasModule saleInvoices={saleInvoices} setSaleInvoices={setSaleInvoices} clients={clients} setClients={setClients} products={products} setProducts={setProducts} vendedores={vendedores} setVendedores={setVendedores} companyId={companyId} profile={profile} cheques={cheques} setCheques={setCheques} cajas={cajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos}
           onNewFactura={() => openDoc("factura")}
           onNewRemito={() => openDoc("remito")}
           onNewPresupuesto={() => openDoc("presupuesto")}
@@ -9306,7 +9338,7 @@ export default function App({ session, profile, onLogout }) {
           onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" })}
         />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
-        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} cheques={cheques} setCheques={setCheques} />}
+        {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} cheques={cheques} setCheques={setCheques} cajas={cajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} />}
         {module === "inventario" && <InventarioModule products={products} setProducts={setProducts} clients={clients} suppliers={suppliers} priceLists={priceLists} companyId={companyId} />}
         {module === "logistica" && <LogisticaModule clients={clients} suppliers={suppliers} />}
         {module === "reportes" && <ReportesModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} clients={clients} suppliers={suppliers} cajas={cajas} cajaMovimientos={cajaMovimientos} />}
