@@ -145,7 +145,7 @@ const mapSaleInvoice = r => ({
   id: r.id, ref: r.ref, nroFactura: r.nro_factura, type: r.type,
   clientId: r.client_id, clientName: r.client_name, date: r.date,
   due: r.due, total: r.total ?? 0, totalNeto: r.total_neto,
-  totalIva: r.total_iva, status: r.status, lines: r.lines || [],
+  totalIva: r.total_iva, status: r.status, lines: typeof r.lines === 'string' ? JSON.parse(r.lines) : (r.lines || []),
   originPresupuestoId: r.origin_presupuesto_id, originRemitoIds: r.origin_remito_ids,
   modificaStock: r.modifica_stock, observaciones: r.observaciones,
   moneda: r.moneda || 'ARS', vendedor: r.vendedor || '', metodoPago: r.metodo_pago || '',
@@ -154,7 +154,7 @@ const mapPurchaseInvoice = r => ({
   id: r.id, ref: r.ref, nroFactura: r.nro_factura, supplierId: r.supplier_id,
   supplierName: r.supplier_name, date: r.date, dueDate: r.due_date,
   total: r.total ?? 0, totalNeto: r.total_neto, totalIva: r.total_iva,
-  status: r.status, lines: r.lines || [],
+  status: r.status, lines: typeof r.lines === 'string' ? JSON.parse(r.lines) : (r.lines || []),
 });
 const mapEmployee = r => ({
   id: r.id, legajo: r.legajo || '', nombre: r.nombre, apellido: r.apellido,
@@ -2350,7 +2350,7 @@ function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, prod
   const [newClient, setNewClient] = useState(null);
   const [ncForm, setNcForm] = useState({ codigo: "", name: "", cuit: "", direccion: "", email: "", phone: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" });
   const [payingInv, setPayingInv] = useState(null);
-  const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "" });
+  const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
   const [viewingInv, setViewingInv] = useState(null);
 
   // ── IA Presupuesto rápido ────────────────────────────────────────────────
@@ -2512,16 +2512,17 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     return true;
   });
 
-  const openPayModal = (inv) => { setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: new Date().toISOString().slice(0,10), fechaVenc: "" }); };
+  const openPayModal = (inv) => { setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: new Date().toISOString().slice(0,10), fechaVenc: "", emisorCheque: inv.clientName || "", fechaEndoso: new Date().toISOString().slice(0,10) }); };
   const confirmPayVenta = () => {
     if (!payingInv) return;
     const pf = payForm;
-    if (pf.metodo === "cheque_propio" && (!pf.nroCheque || !pf.bancoEmisor || !pf.fechaPago || !pf.fechaVenc)) { alert("Completá todos los campos del cheque."); return; }
-    const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.referencia ? " — " + pf.referencia : "")) : ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor);
+    if ((pf.metodo === "cheque_propio" || pf.metodo === "cheque_tercero") && (!pf.nroCheque || !pf.bancoEmisor || !pf.fechaPago || !pf.fechaVenc)) { alert("Completá todos los campos del cheque."); return; }
+    if (pf.metodo === "cheque_tercero" && (!pf.emisorCheque || !pf.fechaEndoso)) { alert("Completá el emisor y la fecha de endoso."); return; }
+    const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.referencia ? " — " + pf.referencia : "")) : pf.metodo === "cheque_propio" ? ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor) : ("Cheque de tercero N°" + pf.nroCheque + " — " + pf.bancoEmisor + " — Emisor: " + pf.emisorCheque + " — Endosado: " + pf.fechaEndoso);
     setSaleInvoices(prev => prev.map(i => i.id === payingInv.id ? { ...i, status: "cobrada", metodoPago: metodoPagoStr } : i));
     if (companyId) supabase.from('sale_invoices').update({ status: 'cobrada', metodo_pago: metodoPagoStr }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
-    if (pf.metodo === "cheque_propio") {
-      const nc = { id: crypto.randomUUID(), tipo: "cobrar", numero: pf.nroCheque, fechaPago: pf.fechaPago, fechaVencimiento: pf.fechaVenc, monto: payingInv.total, emisor: payingInv.clientName, estado: "pendiente" };
+    if (pf.metodo === "cheque_propio" || pf.metodo === "cheque_tercero") {
+      const nc = { id: crypto.randomUUID(), tipo: "cobrar", numero: pf.nroCheque, fechaPago: pf.fechaPago, fechaVencimiento: pf.fechaVenc, monto: payingInv.total, emisor: pf.metodo === "cheque_tercero" ? pf.emisorCheque : payingInv.clientName, estado: "pendiente" };
       setCheques(prev => [...prev, nc]);
       if (companyId) supabase.from('cheques').insert({ id: nc.id, company_id: companyId, tipo: nc.tipo, numero: nc.numero, fecha_pago: nc.fechaPago, fecha_vencimiento: nc.fechaVencimiento, monto: nc.monto, emisor: nc.emisor, estado: nc.estado }).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
@@ -2961,7 +2962,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FORMA DE PAGO</label>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    {[["efectivo","Efectivo"],["debito","Débito"],["credito","Crédito"],["transferencia","Transferencia"],["cheque_propio","Cheque propio"]].map(([v,l]) => (
+                    {[["efectivo","Efectivo"],["debito","Débito"],["credito","Crédito"],["transferencia","Transferencia"],["cheque_propio","Cheque propio"],["cheque_tercero","Cheque de tercero"]].map(([v,l]) => (
                       <button key={v} onClick={() => setPayForm(f => ({ ...f, metodo: v }))}
                         style={{ padding: "10px 14px", borderRadius: 8, border: `1px solid ${payForm.metodo === v ? T.accent : T.border}`, background: payForm.metodo === v ? T.accentLight : T.surface, color: payForm.metodo === v ? T.accent : T.muted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                         {l}
@@ -2976,7 +2977,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                       style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
                   </div>
                 )}
-                {payForm.metodo === "cheque_propio" && (
+                {(payForm.metodo === "cheque_propio" || payForm.metodo === "cheque_tercero") && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>N° DE CHEQUE <span style={{ color: T.red }}>*</span></label>
@@ -2998,6 +2999,18 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                       <input type="date" value={payForm.fechaVenc} onChange={e => setPayForm(f => ({ ...f, fechaVenc: e.target.value }))}
                         style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
                     </div>
+                    {payForm.metodo === "cheque_tercero" && (<>
+                      <div style={{ gridColumn: "span 2" }}>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>EMISOR DEL CHEQUE <span style={{ color: T.red }}>*</span></label>
+                        <input value={payForm.emisorCheque} onChange={e => setPayForm(f => ({ ...f, emisorCheque: e.target.value }))} placeholder="Razón social del emisor original"
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                      <div style={{ gridColumn: "span 2" }}>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FECHA DE ENDOSO <span style={{ color: T.red }}>*</span></label>
+                        <input type="date" value={payForm.fechaEndoso} onChange={e => setPayForm(f => ({ ...f, fechaEndoso: e.target.value }))}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                    </>)}
                     <div style={{ gridColumn: "span 2" }}>
                       <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>MONTO</label>
                       <div style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 13, fontFamily: "monospace" }}>{fmt(payingInv.total)} (cargado automáticamente)</div>
@@ -4205,7 +4218,7 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
 function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase, ordenesCompra, setOrdenesCompra, cheques, setCheques }) {
   const [tab, setTab] = useState("invoices");
   const [payingInv, setPayingInv] = useState(null);
-  const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "" });
+  const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
   const [viewingInv, setViewingInv] = useState(null);
   const [showOCBuilder, setShowOCBuilder] = useState(false);
   const [showSupForm, setShowSupForm] = useState(false);
@@ -4320,16 +4333,17 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     return true;
   });
 
-  const openPayModalCompra = (inv) => { setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: new Date().toISOString().slice(0,10), fechaVenc: "" }); };
+  const openPayModalCompra = (inv) => { setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: new Date().toISOString().slice(0,10), fechaVenc: "", emisorCheque: "", fechaEndoso: new Date().toISOString().slice(0,10) }); };
   const confirmPayCompra = () => {
     if (!payingInv) return;
     const pf = payForm;
-    if (pf.metodo === "cheque_propio" && (!pf.nroCheque || !pf.bancoEmisor || !pf.fechaPago || !pf.fechaVenc)) { alert("Completá todos los campos del cheque."); return; }
-    const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.referencia ? " — " + pf.referencia : "")) : ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor);
+    if ((pf.metodo === "cheque_propio" || pf.metodo === "cheque_tercero") && (!pf.nroCheque || !pf.bancoEmisor || !pf.fechaPago || !pf.fechaVenc)) { alert("Completá todos los campos del cheque."); return; }
+    if (pf.metodo === "cheque_tercero" && (!pf.emisorCheque || !pf.fechaEndoso)) { alert("Completá el emisor y la fecha de endoso."); return; }
+    const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.referencia ? " — " + pf.referencia : "")) : pf.metodo === "cheque_propio" ? ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor) : ("Cheque de tercero N°" + pf.nroCheque + " — " + pf.bancoEmisor + " — Emisor: " + pf.emisorCheque + " — Endosado: " + pf.fechaEndoso);
     setPurchaseInvoices(prev => prev.map(i => i.id === payingInv.id ? { ...i, status: "pagada", metodoPago: metodoPagoStr } : i));
     if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada', metodo_pago: metodoPagoStr }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
-    if (pf.metodo === "cheque_propio") {
-      const nc = { id: crypto.randomUUID(), tipo: "pagar", numero: pf.nroCheque, fechaPago: pf.fechaPago, fechaVencimiento: pf.fechaVenc, monto: payingInv.total, emisor: payingInv.supplierName, estado: "pendiente" };
+    if (pf.metodo === "cheque_propio" || pf.metodo === "cheque_tercero") {
+      const nc = { id: crypto.randomUUID(), tipo: "pagar", numero: pf.nroCheque, fechaPago: pf.fechaPago, fechaVencimiento: pf.fechaVenc, monto: payingInv.total, emisor: pf.metodo === "cheque_tercero" ? pf.emisorCheque : payingInv.supplierName, estado: "pendiente" };
       setCheques(prev => [...prev, nc]);
       if (companyId) supabase.from('cheques').insert({ id: nc.id, company_id: companyId, tipo: nc.tipo, numero: nc.numero, fecha_pago: nc.fechaPago, fecha_vencimiento: nc.fechaVencimiento, monto: nc.monto, emisor: nc.emisor, estado: nc.estado }).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
@@ -4419,7 +4433,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FORMA DE PAGO</label>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    {[["efectivo","Efectivo"],["debito","Débito"],["credito","Crédito"],["transferencia","Transferencia"],["cheque_propio","Cheque propio"]].map(([v,l]) => (
+                    {[["efectivo","Efectivo"],["debito","Débito"],["credito","Crédito"],["transferencia","Transferencia"],["cheque_propio","Cheque propio"],["cheque_tercero","Cheque de tercero"]].map(([v,l]) => (
                       <button key={v} onClick={() => setPayForm(f => ({ ...f, metodo: v }))}
                         style={{ padding: "10px 14px", borderRadius: 8, border: `1px solid ${payForm.metodo === v ? T.accent : T.border}`, background: payForm.metodo === v ? T.accentLight : T.surface, color: payForm.metodo === v ? T.accent : T.muted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                         {l}
@@ -4434,7 +4448,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                       style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
                   </div>
                 )}
-                {payForm.metodo === "cheque_propio" && (
+                {(payForm.metodo === "cheque_propio" || payForm.metodo === "cheque_tercero") && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>N° DE CHEQUE <span style={{ color: T.red }}>*</span></label>
@@ -4456,6 +4470,18 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                       <input type="date" value={payForm.fechaVenc} onChange={e => setPayForm(f => ({ ...f, fechaVenc: e.target.value }))}
                         style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
                     </div>
+                    {payForm.metodo === "cheque_tercero" && (<>
+                      <div style={{ gridColumn: "span 2" }}>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>EMISOR DEL CHEQUE <span style={{ color: T.red }}>*</span></label>
+                        <input value={payForm.emisorCheque} onChange={e => setPayForm(f => ({ ...f, emisorCheque: e.target.value }))} placeholder="Razón social del emisor original"
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                      <div style={{ gridColumn: "span 2" }}>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>FECHA DE ENDOSO <span style={{ color: T.red }}>*</span></label>
+                        <input type="date" value={payForm.fechaEndoso} onChange={e => setPayForm(f => ({ ...f, fechaEndoso: e.target.value }))}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                    </>)}
                     <div style={{ gridColumn: "span 2" }}>
                       <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>MONTO</label>
                       <div style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 13, fontFamily: "monospace" }}>{fmt(payingInv.total)} (cargado automáticamente)</div>
