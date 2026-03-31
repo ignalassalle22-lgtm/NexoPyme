@@ -3052,10 +3052,32 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                         <span style={{ color: T.muted }}>{l}</span><span style={{ fontWeight: l === "Total" ? 800 : 600, color: l === "Total" ? T.accent : T.ink }}>{v}</span>
                       </div>
                     ))}
-                    {viewingInv.metodoPago && (
+                    {viewingInv.type === "factura" && (
                       <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 4 }}>FORMA DE PAGO</div>
-                        <div style={{ fontSize: 13, color: T.accent, fontWeight: 600 }}>{viewingInv.metodoPago}</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 6 }}>FORMA DE PAGO</div>
+                        {viewingInv.status !== "cobrada" ? (
+                          <div style={{ fontSize: 13, color: T.muted, fontStyle: "italic" }}>Aún no cobrado</div>
+                        ) : (() => {
+                          const mp = viewingInv.metodoPago || ""
+                          const row = (l, v) => <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}><span style={{ color: T.muted }}>{l}</span><span style={{ fontWeight: 600 }}>{v}</span></div>
+                          if (mp === "Efectivo") return <div style={{ fontSize: 13, color: T.accent, fontWeight: 700 }}>✓ Cobrado en efectivo</div>
+                          if (mp === "Tarjeta de débito") return <div style={{ fontSize: 13, color: T.accent, fontWeight: 700 }}>✓ Cobrado con tarjeta de débito</div>
+                          if (mp === "Tarjeta de crédito") return <div style={{ fontSize: 13, color: T.accent, fontWeight: 700 }}>✓ Cobrado con tarjeta de crédito</div>
+                          if (mp.startsWith("Transferencia")) {
+                            const ref = mp.includes(" — ") ? mp.split(" — ").slice(1).join(" — ") : null
+                            return <>{row("Método", "Transferencia")}{ref && row("Referencia", ref)}</>
+                          }
+                          if (mp.startsWith("Cheque propio")) {
+                            const nro = mp.replace("Cheque propio N°", "").split(" — ")[0]
+                            const banco = mp.split(" — ")[1] || ""
+                            return <>{row("Tipo", "Cheque propio")}{row("N° cheque", nro)}{row("Banco", banco)}</>
+                          }
+                          if (mp.startsWith("Cheque de tercero")) {
+                            const parts = mp.replace("Cheque de tercero N°", "").split(" — ")
+                            return <>{row("Tipo", "Cheque de tercero")}{row("N° cheque", parts[0] || "")}{row("Banco", parts[1] || "")}{parts[2] && row("Emisor", parts[2].replace("Emisor: ", ""))}{parts[3] && row("Fecha de endoso", parts[3].replace("Endosado: ", ""))}</>
+                          }
+                          return <div style={{ fontSize: 13, color: T.accent, fontWeight: 600 }}>{mp}</div>
+                        })()}
                       </div>
                     )}
                   </div>
@@ -4524,12 +4546,32 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                         <span style={{ color: T.muted }}>{l}</span><span style={{ fontWeight: l === "Total" ? 800 : 600, color: l === "Total" ? T.accent : T.ink }}>{v}</span>
                       </div>
                     ))}
-                    {viewingInv.metodoPago && (
-                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 4 }}>FORMA DE PAGO</div>
-                        <div style={{ fontSize: 13, color: T.accent, fontWeight: 600 }}>{viewingInv.metodoPago}</div>
-                      </div>
-                    )}
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 6 }}>FORMA DE PAGO</div>
+                      {viewingInv.status !== "pagada" ? (
+                        <div style={{ fontSize: 13, color: T.muted, fontStyle: "italic" }}>Aún no pagado</div>
+                      ) : (() => {
+                        const mp = viewingInv.metodoPago || ""
+                        const row = (l, v) => <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}><span style={{ color: T.muted }}>{l}</span><span style={{ fontWeight: 600 }}>{v}</span></div>
+                        if (mp === "Efectivo") return <div style={{ fontSize: 13, color: T.accent, fontWeight: 700 }}>✓ Pagado en efectivo</div>
+                        if (mp === "Tarjeta de débito") return <div style={{ fontSize: 13, color: T.accent, fontWeight: 700 }}>✓ Pagado con tarjeta de débito</div>
+                        if (mp === "Tarjeta de crédito") return <div style={{ fontSize: 13, color: T.accent, fontWeight: 700 }}>✓ Pagado con tarjeta de crédito</div>
+                        if (mp.startsWith("Transferencia")) {
+                          const ref = mp.includes(" — ") ? mp.split(" — ").slice(1).join(" — ") : null
+                          return <>{row("Método", "Transferencia")}{ref && row("Referencia", ref)}</>
+                        }
+                        if (mp.startsWith("Cheque propio")) {
+                          const nro = mp.replace("Cheque propio N°", "").split(" — ")[0]
+                          const banco = mp.split(" — ")[1] || ""
+                          return <>{row("Tipo", "Cheque propio")}{row("N° cheque", nro)}{row("Banco", banco)}</>
+                        }
+                        if (mp.startsWith("Cheque de tercero")) {
+                          const parts = mp.replace("Cheque de tercero N°", "").split(" — ")
+                          return <>{row("Tipo", "Cheque de tercero")}{row("N° cheque", parts[0] || "")}{row("Banco", parts[1] || "")}{parts[2] && row("Emisor", parts[2].replace("Emisor: ", ""))}{parts[3] && row("Fecha de endoso", parts[3].replace("Endosado: ", ""))}</>
+                        }
+                        return <div style={{ fontSize: 13, color: T.accent, fontWeight: 600 }}>{mp}</div>
+                      })()}
+                    </div>
                   </div>
                 </div>
                 <div style={{ background: T.surface, borderRadius: 10, padding: 16, marginBottom: 16 }}>
