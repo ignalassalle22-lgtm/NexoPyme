@@ -2512,7 +2512,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     return true;
   });
 
-  const openPayModal = (inv) => { setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: new Date().toISOString().slice(0,10), fechaVenc: "", emisorCheque: inv.clientName || "", fechaEndoso: new Date().toISOString().slice(0,10) }); };
+  const openPayModal = (inv) => { const today = new Date().toISOString().slice(0,10); setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: inv.date || today, fechaVenc: "", emisorCheque: inv.clientName || "", fechaEndoso: today }); };
   const confirmPayVenta = () => {
     if (!payingInv) return;
     const pf = payForm;
@@ -4380,7 +4380,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     return true;
   });
 
-  const openPayModalCompra = (inv) => { setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: new Date().toISOString().slice(0,10), fechaVenc: "", emisorCheque: "", fechaEndoso: new Date().toISOString().slice(0,10) }); };
+  const openPayModalCompra = (inv) => { const today = new Date().toISOString().slice(0,10); setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: inv.date || today, fechaVenc: "", emisorCheque: "", fechaEndoso: today }); };
   const confirmPayCompra = () => {
     if (!payingInv) return;
     const pf = payForm;
