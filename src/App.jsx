@@ -1340,46 +1340,21 @@ function OrdenCompraBuilder({ suppliers, products, onSave, onClose }) {
         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginBottom: 18 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>AGREGAR ARTÍCULO</div>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-            <div style={{ flex: 3, position: "relative" }}>
+            <div style={{ flex: 3 }}>
               <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>DESCRIPCIÓN</label>
               <input
                 value={nombre}
                 onChange={e => {
                   const v = e.target.value;
                   setNombre(v);
-                  if (v.length >= 1) {
-                    const q = v.toLowerCase();
-                    setSuggestions((products || []).filter(p => p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q)).slice(0, 8));
-                  } else {
-                    setSuggestions([]);
-                  }
+                  const q = v.trim().toLowerCase();
+                  setSuggestions(q.length >= 1
+                    ? (products || []).filter(p => p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q)).slice(0, 8)
+                    : []);
                 }}
-                onBlur={() => setTimeout(() => setSuggestions([]), 150)}
                 placeholder="Nombre del producto o servicio..."
                 style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
               />
-              {suggestions.length > 0 && (
-                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: T.paper, border: `1px solid ${T.border}`, borderRadius: 8, zIndex: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", maxHeight: 220, overflowY: "auto" }}>
-                  {suggestions.map(p => (
-                    <div key={p.id}
-                      onMouseDown={() => {
-                        setNombre(p.name);
-                        if (p.cost > 0) setPrecioNeto(String(p.cost));
-                        if (p.iva) setIva(p.iva);
-                        setSuggestions([]);
-                      }}
-                      style={{ padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                      onMouseEnter={e => e.currentTarget.style.background = T.surface}
-                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{p.name}</div>
-                        <div style={{ fontSize: 11, color: T.muted }}>{p.sku}{p.category ? ` · ${p.category}` : ""}</div>
-                      </div>
-                      {p.cost > 0 && <div style={{ fontSize: 12, color: T.accent, fontWeight: 700 }}>${Number(p.cost).toLocaleString("es-AR")}</div>}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
             <div style={{ flex: 0.6 }}>
               <Input label="CANT." type="number" value={qty} onChange={v => setQty(parseInt(v) || 1)} />
@@ -1392,6 +1367,23 @@ function OrdenCompraBuilder({ suppliers, products, onSave, onClose }) {
             </div>
             <Btn onClick={addLine} disabled={!nombre.trim()}>Agregar</Btn>
           </div>
+          {suggestions.length > 0 && (
+            <div style={{ marginTop: 8, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+              {suggestions.map(p => (
+                <div key={p.id}
+                  onClick={() => { setNombre(p.name); if (p.cost > 0) setPrecioNeto(String(p.cost)); if (p.iva) setIva(p.iva); setSuggestions([]); }}
+                  style={{ padding: "10px 14px", cursor: "pointer", background: T.paper, borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                  onMouseEnter={e => e.currentTarget.style.background = T.surface}
+                  onMouseLeave={e => e.currentTarget.style.background = T.paper}>
+                  <div>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{p.name}</span>
+                    <span style={{ fontSize: 11, color: T.muted, marginLeft: 8 }}>{p.sku}{p.category ? ` · ${p.category}` : ""}</span>
+                  </div>
+                  {p.cost > 0 && <span style={{ fontSize: 12, color: T.accent, fontWeight: 700 }}>Costo: ${Number(p.cost).toLocaleString("es-AR")}</span>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
