@@ -4319,12 +4319,12 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
   const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
   const [viewingInv, setViewingInv] = useState(null);
   const [editingPurchaseInv, setEditingPurchaseInv] = useState(null);
+  const [editingOC, setEditingOC] = useState(null);
+  const [editingSup, setEditingSup] = useState(null);
 
-  const openEditPurchase = (inv) => setEditingPurchaseInv({ ...inv });
-
+  // ── Facturas compra: edit / delete ────────────────────────────────────────
   const saveEditPurchase = () => {
     const e = editingPurchaseInv;
-    if (!window.confirm(`¿Guardar los cambios en ${e.ref}?`)) return;
     setPurchaseInvoices(prev => prev.map(i => i.id === e.id ? e : i));
     if (companyId) supabase.from('purchase_invoices').update({
       nro_factura: e.nroFactura || null,
@@ -4336,9 +4336,34 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
   };
 
   const deletePurchaseInv = (inv) => {
-    if (!window.confirm(`¿Eliminar la factura ${inv.ref}? Esta acción no se puede deshacer.`)) return;
+    if (!window.confirm(`¿Eliminar la factura ${inv.ref}?\nEsta acción no se puede deshacer.`)) return;
     setPurchaseInvoices(prev => prev.filter(i => i.id !== inv.id));
     if (companyId) supabase.from('purchase_invoices').delete().eq('id', inv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
+  };
+
+  // ── OC: edit / delete ─────────────────────────────────────────────────────
+  const saveEditOC = () => {
+    const e = editingOC;
+    setOrdenesCompra(prev => prev.map(o => o.id === e.id ? e : o));
+    if (companyId) supabase.from('ordenes_compra').update({
+      date: e.date,
+      observaciones: e.observaciones || null,
+    }).eq('id', e.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
+    setEditingOC(null);
+  };
+
+  // ── Proveedores: edit / delete ────────────────────────────────────────────
+  const saveEditSup = () => {
+    const e = editingSup;
+    setSuppliers(prev => prev.map(s => s.id === e.id ? e : s));
+    if (companyId) supabase.from('suppliers').update(supplierToDb(e, companyId)).eq('id', e.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
+    setEditingSup(null);
+  };
+
+  const deleteSup = (s) => {
+    if (!window.confirm(`¿Eliminar el proveedor "${s.name}"?\nEsta acción no se puede deshacer.`)) return;
+    setSuppliers(prev => prev.filter(x => x.id !== s.id));
+    if (companyId) supabase.from('suppliers').delete().eq('id', s.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
   };
 
   const [showOCBuilder, setShowOCBuilder] = useState(false);
@@ -4644,6 +4669,48 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
           )}
 
           {/* Modal detalle — Compras */}
+          {editingOC && (
+            <Modal title={`Editar OC · ${editingOC.ref}`} onClose={() => setEditingOC(null)}>
+              <div style={{ display: "grid", gap: 14 }}>
+                <Input label="FECHA" type="date" value={(editingOC.date || "").slice(0,10)} onChange={v => setEditingOC(o => ({...o, date: v}))} />
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>OBSERVACIONES</label>
+                  <textarea value={editingOC.observaciones || ""} onChange={e => setEditingOC(o => ({...o, observaciones: e.target.value}))} rows={3} style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                  <Btn v="ghost" onClick={() => setEditingOC(null)}>Cancelar</Btn>
+                  <Btn onClick={saveEditOC}>Guardar cambios</Btn>
+                </div>
+              </div>
+            </Modal>
+          )}
+
+          {editingSup && (
+            <Modal title={`Editar proveedor · ${editingSup.name}`} onClose={() => setEditingSup(null)}>
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  {[["name","NOMBRE"], ["cuit","CUIT"], ["contact","CONTACTO"], ["email","EMAIL"], ["phone","TELÉFONO"], ["bank","BANCO"]].map(([k, l]) => (
+                    <Input key={k} label={l} value={editingSup[k] || ""} onChange={v => setEditingSup(s => ({...s, [k]: v}))} />
+                  ))}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <Input label="DÍAS DE PAGO" type="number" value={editingSup.paymentDays || 0} onChange={v => setEditingSup(s => ({...s, paymentDays: parseInt(v) || 0}))} />
+                  <Input label="CBU" value={editingSup.cbu || ""} onChange={v => setEditingSup(s => ({...s, cbu: v}))} mono />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 }}>
+                  <Input label="DIRECCIÓN" value={editingSup.direccion || ""} onChange={v => setEditingSup(s => ({...s, direccion: v}))} />
+                  <Input label="ABRE" type="time" value={editingSup.horarioAbre || ""} onChange={v => setEditingSup(s => ({...s, horarioAbre: v}))} />
+                  <Input label="CIERRA" type="time" value={editingSup.horarioCierra || ""} onChange={v => setEditingSup(s => ({...s, horarioCierra: v}))} />
+                  <Input label="DÍAS" value={editingSup.diasDisponibles || ""} onChange={v => setEditingSup(s => ({...s, diasDisponibles: v}))} />
+                </div>
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                  <Btn v="ghost" onClick={() => setEditingSup(null)}>Cancelar</Btn>
+                  <Btn onClick={saveEditSup}>Guardar cambios</Btn>
+                </div>
+              </div>
+            </Modal>
+          )}
+
           {editingPurchaseInv && (
             <Modal title={`Editar · ${editingPurchaseInv.ref}`} onClose={() => setEditingPurchaseInv(null)}>
               <div style={{ display: "grid", gap: 14 }}>
@@ -4744,9 +4811,9 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
             </div>
           )}
 
-          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr style={{ background: T.surface }}>{["Número", "Proveedor", "Fecha", "Vencimiento", "Total", "Estado", ""].map(h => <th key={h} style={{ padding: "11px 15px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+              <thead><tr style={{ background: T.surface }}>{["Número", "Proveedor", "Fecha", "Vencimiento", "Total", "Estado", "Acciones"].map(h => <th key={h} style={{ padding: "11px 15px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700 }}>{h}</th>)}</tr></thead>
               <tbody>{filteredInvoices.map(inv => (
                 <tr key={inv.id} style={{ borderTop: `1px solid ${T.border}` }}>
                   <td style={{ padding: "12px 15px" }}>
@@ -4808,11 +4875,15 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
             {filteredSuppliers.map(s => {
               const pending = purchaseInvoices.filter(i => i.supplierId === s.id && i.status === "pendiente").reduce((sum, i) => sum + i.total, 0);
               return (
-                <div key={s.id} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12, alignItems: "center" }}>
+                <div key={s.id} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 12, alignItems: "center" }}>
                   <div><div style={{ fontSize: 14, fontWeight: 700 }}>{s.name}</div><div style={{ fontSize: 12, color: T.muted }}>CUIT: {s.cuit} · {s.contact}</div></div>
                   <div style={{ fontSize: 12, color: T.muted }}>{s.paymentDays === 0 ? "Contado" : `${s.paymentDays} días`}</div>
                   <div style={{ fontSize: 12 }}>{s.productCodes.length} producto(s)</div>
                   <div style={{ fontWeight: 700, color: pending > 0 ? T.orange : T.muted, textAlign: "right" }}>{pending > 0 ? fmt(pending) : "Sin deuda"}</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Btn sm v="ghost" onClick={() => setEditingSup({ ...s })}>✏ Editar</Btn>
+                    <Btn sm v="danger" onClick={() => deleteSup(s)}>Eliminar</Btn>
+                  </div>
                 </div>
               );
             })}
@@ -4848,9 +4919,12 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                   <td style={{ padding: "12px 15px", fontSize: 13, fontWeight: 600 }}>{oc.supplierName}</td>
                   <td style={{ padding: "12px 15px", fontSize: 12, color: T.muted }}>{oc.date}</td>
                   <td style={{ padding: "12px 15px", fontSize: 14, fontWeight: 800 }}>{fmt(oc.total)}</td>
-                  <td style={{ padding: "12px 15px", display: "flex", gap: 8, alignItems: "center" }}>
-                    <Btn sm v="ghost" onClick={() => imprimirOC(oc)}>⬡ PDF</Btn>
-                    <button onClick={() => eliminarOC(oc.id)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14 }} title="Eliminar">✕</button>
+                  <td style={{ padding: "12px 15px" }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <Btn sm v="ghost" onClick={() => imprimirOC(oc)}>⬡ PDF</Btn>
+                      <Btn sm v="ghost" onClick={() => setEditingOC({ ...oc })}>✏ Editar</Btn>
+                      <Btn sm v="danger" onClick={() => { if (window.confirm(`¿Eliminar la orden ${oc.ref}?\nEsta acción no se puede deshacer.`)) eliminarOC(oc.id); }}>Eliminar</Btn>
+                    </div>
                   </td>
                 </tr>
               ))}</tbody>
