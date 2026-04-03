@@ -5170,8 +5170,23 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <Btn v="ghost" onClick={() => setEditingProduct(null)}>Cancelar</Btn>
             <Btn disabled={!editingProduct.name || !editingProduct.sku} onClick={() => {
-              setProducts(prev => prev.map(p => p.id === editingProduct.id ? editingProduct : p));
               if (companyId) supabase.from('products').upsert(productToDb(editingProduct, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+              setProducts(prev => {
+                const updated = prev.map(p => p.id === editingProduct.id ? editingProduct : p);
+                return updated.map(p => {
+                  if (!p.esCompuesto || !p.componentes.some(c => c.productId === editingProduct.id)) return p;
+                  const newPrices = {};
+                  Object.keys(p.prices || {}).forEach(plId => {
+                    newPrices[plId] = p.componentes.reduce((sum, c) => {
+                      const comp = updated.find(x => x.id === c.productId);
+                      return sum + (comp?.prices?.[plId] || 0) * (c.qty || 1);
+                    }, 0);
+                  });
+                  const recalc = { ...p, prices: newPrices };
+                  if (companyId) supabase.from('products').upsert(productToDb(recalc, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
+                  return recalc;
+                });
+              });
               setEditingProduct(null);
             }}>Guardar cambios</Btn>
           </div>
