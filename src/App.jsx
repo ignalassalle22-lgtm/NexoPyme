@@ -5514,6 +5514,10 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
                       style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface2, color: T.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
                       Editar
                     </button>
+                    <button onClick={() => { if (window.confirm(`¿Eliminar "${p.name}"? Esta acción no se puede deshacer.`)) { setProducts(prev => prev.filter(x => x.id !== p.id)); if (companyId) supabase.from('products').delete().eq('id', p.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); } }}
+                      style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${T.red}40`, background: T.redLight, color: T.red, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                      Eliminar
+                    </button>
                   </div>
                 </td>
               </tr>
