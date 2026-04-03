@@ -149,6 +149,9 @@ const mapSaleInvoice = r => ({
   originPresupuestoId: r.origin_presupuesto_id, originRemitoIds: r.origin_remito_ids,
   modificaStock: r.modifica_stock, observaciones: r.observaciones,
   moneda: r.moneda || 'ARS', vendedor: r.vendedor || '', metodoPago: r.metodo_pago || '',
+  tipoComprobante: r.tipo_comprobante || 'B',
+  clientCuit: r.client_cuit || '',
+  cae: r.cae || '', caeVto: r.cae_vto || '', arcaNumero: r.arca_numero || null,
 });
 const mapPurchaseInvoice = r => ({
   id: r.id, ref: r.ref, nroFactura: r.nro_factura, supplierId: r.supplier_id,
@@ -2514,6 +2517,42 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
   });
 
   const openPayModal = (inv) => { const today = new Date().toISOString().slice(0,10); setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: today, fechaVenc: "", emisorCheque: inv.clientName || "", fechaEndoso: today }); };
+
+  const [arcaLoading, setArcaLoading] = useState(null); // invoice id en proceso
+  const emitirARCA = async (inv) => {
+    if (!companyId) return alert("Sin empresa configurada.");
+    setArcaLoading(inv.id);
+    try {
+      // 1. Obtener / refrescar token
+      const tokRes = await fetch("/api/arca-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company_id: companyId })
+      });
+      const tokData = await tokRes.json();
+      if (!tokRes.ok) { alert("Error ARCA (token): " + tokData.error); return; }
+
+      // 2. Emitir comprobante
+      const emitRes = await fetch("/api/arca-emitir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company_id: companyId, invoice_id: inv.id })
+      });
+      const emitData = await emitRes.json();
+      if (!emitRes.ok) { alert("Error ARCA: " + emitData.error); return; }
+
+      // 3. Actualizar estado local
+      setSaleInvoices(prev => prev.map(i => i.id === inv.id
+        ? { ...i, cae: emitData.cae, caeVto: emitData.caeVto, arcaNumero: emitData.numero }
+        : i
+      ));
+      alert(`✓ CAE obtenido: ${emitData.cae}\nVence: ${emitData.caeVto}`);
+    } catch (e) {
+      alert("Error inesperado: " + e.message);
+    } finally {
+      setArcaLoading(null);
+    }
+  };
   const confirmPayVenta = () => {
     if (!payingInv) return;
     const pf = payForm;
@@ -3078,6 +3117,15 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                         <span style={{ color: T.muted }}>{l}</span><span style={{ fontWeight: l === "Total" ? 800 : 600, color: l === "Total" ? T.accent : T.ink }}>{v}</span>
                       </div>
                     ))}
+                    {viewingInv.type === "factura" && viewingInv.cae && (
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 6 }}>COMPROBANTE ARCA</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span style={{ color: T.muted }}>Tipo</span><span style={{ fontWeight: 700 }}>Factura {viewingInv.tipoComprobante || "B"}</span></div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span style={{ color: T.muted }}>Número</span><span style={{ fontFamily: "monospace", fontWeight: 700 }}>{String(viewingInv.arcaNumero || "").padStart(8, "0")}</span></div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span style={{ color: T.muted }}>CAE</span><span style={{ fontFamily: "monospace", fontSize: 11 }}>{viewingInv.cae}</span></div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span style={{ color: T.muted }}>Venc. CAE</span><span style={{ fontWeight: 600 }}>{viewingInv.caeVto}</span></div>
+                      </div>
+                    )}
                     {viewingInv.type === "factura" && (
                       <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
                         <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 6 }}>FORMA DE PAGO</div>
@@ -3149,6 +3197,8 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                       <Btn sm v="ghost" onClick={() => setViewingInv(inv)}>👁 Ver</Btn>
                       {inv.type === "factura" && inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => openPayModal(inv)}>Marcar cobrada</Btn>}
                       {inv.type === "factura" && inv.status === "cobrada" && <Btn sm v="ghost" onClick={() => unmarkCobrada(inv.id)}>↩ Revertir</Btn>}
+                      {inv.type === "factura" && !inv.cae && <Btn sm v="ghost" onClick={() => emitirARCA(inv)} disabled={arcaLoading === inv.id}>{arcaLoading === inv.id ? "Enviando..." : "🏛 Emitir ARCA"}</Btn>}
+                      {inv.type === "factura" && inv.cae && <span style={{ fontSize: 10, color: T.accent, fontWeight: 700, padding: "3px 8px", border: `1px solid ${T.accent}40`, borderRadius: 6 }}>✓ CAE</span>}
                       <Btn sm v="ghost" onClick={() => generarPDFFactura(inv)}>📄 PDF</Btn>
                       <Btn sm v="ghost" onClick={() => onEditDoc(inv)}>✏ Editar</Btn>
                       {inv.type === "presupuesto" && (() => {
@@ -9092,6 +9142,120 @@ function UsuariosModule({ companyId, profile }) {
   );
 }
 
+// ─── ARCA CONFIG MODULE ────────────────────────────────────────────────────────
+function ArcaConfigModule({ companyId }) {
+  const [cfg, setCfg] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [form, setForm] = useState({ cuit: "", ptoVta: "", ambiente: "homologacion", cert: "", key: "" });
+
+  useEffect(() => {
+    if (!companyId) return;
+    fetch(`/api/arca-config?company_id=${companyId}`)
+      .then(r => r.json())
+      .then(d => {
+        setCfg(d);
+        setForm(f => ({ ...f, cuit: d.cuit || "", ptoVta: d.ptoVta || "", ambiente: d.ambiente || "homologacion" }));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [companyId]);
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    const body = { company_id: companyId, cuit: form.cuit, pto_venta: form.ptoVta, ambiente: form.ambiente };
+    if (form.cert.trim()) body.cert = form.cert.trim();
+    if (form.key.trim())  body.key  = form.key.trim();
+    const res  = await fetch("/api/arca-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await res.json();
+    setSaving(false);
+    if (res.ok) { setMsg({ ok: true, text: "Configuración guardada." }); setForm(f => ({ ...f, cert: "", key: "" })); fetch(`/api/arca-config?company_id=${companyId}`).then(r => r.json()).then(setCfg); }
+    else setMsg({ ok: false, text: data.error });
+  };
+
+  const testToken = async () => {
+    setSaving(true); setMsg(null);
+    const res  = await fetch("/api/arca-token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company_id: companyId }) });
+    const data = await res.json();
+    setSaving(false);
+    if (res.ok) setMsg({ ok: true, text: "✓ Token WSAA obtenido correctamente. Conexión con ARCA funcionando." });
+    else setMsg({ ok: false, text: "Error WSAA: " + data.error });
+  };
+
+  if (loading) return <div style={{ padding: 40, textAlign: "center", color: T.muted }}>Cargando...</div>;
+
+  return (
+    <div style={{ maxWidth: 640, margin: "0 auto" }}>
+      <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginBottom: 6 }}>Configuración ARCA</div>
+      <div style={{ fontSize: 13, color: T.muted, marginBottom: 24 }}>Integrá tu empresa con ARCA (ex-AFIP) para emitir comprobantes electrónicos.</div>
+
+      {msg && (
+        <div style={{ background: msg.ok ? T.accentLight : T.redLight, border: `1px solid ${msg.ok ? T.accent : T.red}40`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: msg.ok ? T.accent : T.red }}>
+          {msg.text}
+        </div>
+      )}
+
+      <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24, display: "grid", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Input label="CUIT EMPRESA (sin guiones)" value={form.cuit} onChange={v => setForm(f => ({...f, cuit: v}))} placeholder="20123456789" />
+          <Input label="PUNTO DE VENTA" type="number" value={form.ptoVta} onChange={v => setForm(f => ({...f, ptoVta: v}))} placeholder="1" />
+        </div>
+        <div>
+          <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 8, letterSpacing: 1 }}>AMBIENTE</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[["homologacion", "Homologación (pruebas)"], ["produccion", "Producción"]].map(([val, lbl]) => (
+              <button key={val} onClick={() => setForm(f => ({...f, ambiente: val}))}
+                style={{ flex: 1, padding: "10px", borderRadius: 8, border: `2px solid ${form.ambiente === val ? T.accent : T.border}`, background: form.ambiente === val ? T.accentLight : T.surface, color: form.ambiente === val ? T.accent : T.muted, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Certificado digital</div>
+          <div style={{ fontSize: 11, color: T.muted, marginBottom: 12 }}>
+            {cfg?.tieneCert ? "✓ Ya hay un certificado cargado. Pegá uno nuevo solo si querés reemplazarlo." : "Todavía no hay certificado. Pegá el contenido del archivo .crt que te dio ARCA."}
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>CERTIFICADO (.crt — PEM)</label>
+            <textarea value={form.cert} onChange={e => setForm(f => ({...f, cert: e.target.value}))} rows={4}
+              placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
+              style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 11, fontFamily: "monospace", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>CLAVE PRIVADA (.key — PEM)</label>
+            <textarea value={form.key} onChange={e => setForm(f => ({...f, key: e.target.value}))} rows={4}
+              placeholder={"-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"}
+              style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 11, fontFamily: "monospace", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+          </div>
+        </div>
+
+        {cfg?.tokenExp && (
+          <div style={{ fontSize: 12, color: T.muted, background: T.surface, borderRadius: 8, padding: "8px 12px" }}>
+            Token WSAA vigente hasta: <strong>{new Date(cfg.tokenExp).toLocaleString("es-AR")}</strong>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          {cfg?.tieneCert && <Btn v="ghost" onClick={testToken} disabled={saving}>Probar conexión WSAA</Btn>}
+          <Btn onClick={save} disabled={saving}>{saving ? "Guardando..." : "Guardar configuración"}</Btn>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 20, background: T.surface, borderRadius: 10, padding: 16, fontSize: 12, color: T.muted, lineHeight: 1.7 }}>
+        <strong style={{ color: T.ink }}>Pasos para configurar:</strong><br/>
+        1. Generá el par de claves con OpenSSL: <code style={{ background: T.paper, padding: "1px 6px", borderRadius: 4 }}>openssl req -x509 -newkey rsa:2048 -keyout privada.key -out cert.crt -days 730 -nodes</code><br/>
+        2. Subí el <code style={{ background: T.paper, padding: "1px 6px", borderRadius: 4 }}>cert.crt</code> al portal de ARCA → Administración de Certificados Digitales.<br/>
+        3. Registrá el certificado para el servicio <strong>wsfe</strong>.<br/>
+        4. Pegá el contenido de ambos archivos acá y guardá.<br/>
+        5. Usá "Probar conexión WSAA" para verificar que todo funciona.
+      </div>
+    </div>
+  );
+}
+
 const NAV = [
   { id: "hub",        label: "Inicio",     icon: "⬡" },
   { id: "ventas",     label: "Ventas",     icon: "◈" },
@@ -9138,7 +9302,7 @@ export default function App({ session, profile, onLogout }) {
   const userPerms = profile?.permissions || {};
   const visibleNav = [
     ...NAV.filter(n => isJefe || (userPerms[n.id] && userPerms[n.id] !== 'none')),
-    ...(isJefe ? [{ id: "usuarios", label: "Usuarios", icon: "👤" }] : []),
+    ...(isJefe ? [{ id: "usuarios", label: "Usuarios", icon: "👤" }, { id: "arca", label: "ARCA", icon: "🏛" }] : []),
   ];
 
   const nextId = (prefix) => { const n = idCounter + 1; setIdCounter(n); return `${prefix}-${String(n).padStart(4, "0")}`; };
@@ -9388,6 +9552,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
         {module === "usuarios" && isJefe && <UsuariosModule companyId={companyId} profile={profile} />}
+        {module === "arca" && isJefe && <ArcaConfigModule companyId={companyId} />}
         </div>
         </ReadOnlyCtx.Provider>
       </div>
