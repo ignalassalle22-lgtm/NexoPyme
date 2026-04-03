@@ -4318,6 +4318,29 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
   const [payingInv, setPayingInv] = useState(null);
   const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
   const [viewingInv, setViewingInv] = useState(null);
+  const [editingPurchaseInv, setEditingPurchaseInv] = useState(null);
+
+  const openEditPurchase = (inv) => setEditingPurchaseInv({ ...inv });
+
+  const saveEditPurchase = () => {
+    const e = editingPurchaseInv;
+    if (!window.confirm(`¿Guardar los cambios en ${e.ref}?`)) return;
+    setPurchaseInvoices(prev => prev.map(i => i.id === e.id ? e : i));
+    if (companyId) supabase.from('purchase_invoices').update({
+      nro_factura: e.nroFactura || null,
+      date: e.date,
+      due_date: e.dueDate || null,
+      observaciones: e.observaciones || null,
+    }).eq('id', e.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
+    setEditingPurchaseInv(null);
+  };
+
+  const deletePurchaseInv = (inv) => {
+    if (!window.confirm(`¿Eliminar la factura ${inv.ref}? Esta acción no se puede deshacer.`)) return;
+    setPurchaseInvoices(prev => prev.filter(i => i.id !== inv.id));
+    if (companyId) supabase.from('purchase_invoices').delete().eq('id', inv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) });
+  };
+
   const [showOCBuilder, setShowOCBuilder] = useState(false);
   const [showSupForm, setShowSupForm] = useState(false);
   const [supForm, setSupForm] = useState({ name: "", cuit: "", contact: "", email: "", phone: "", paymentDays: 30, bank: "", cbu: "", direccion: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" });
@@ -4621,6 +4644,26 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
           )}
 
           {/* Modal detalle — Compras */}
+          {editingPurchaseInv && (
+            <Modal title={`Editar · ${editingPurchaseInv.ref}`} onClose={() => setEditingPurchaseInv(null)}>
+              <div style={{ display: "grid", gap: 14 }}>
+                <Input label="N° FACTURA PROVEEDOR" value={editingPurchaseInv.nroFactura || ""} onChange={v => setEditingPurchaseInv(p => ({...p, nroFactura: v}))} placeholder="ej: 0001-00012345" />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <Input label="FECHA" type="date" value={(editingPurchaseInv.date || "").slice(0,10)} onChange={v => setEditingPurchaseInv(p => ({...p, date: v}))} />
+                  <Input label="VENCIMIENTO" type="date" value={(editingPurchaseInv.dueDate || "").slice(0,10)} onChange={v => setEditingPurchaseInv(p => ({...p, dueDate: v}))} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>OBSERVACIONES</label>
+                  <textarea value={editingPurchaseInv.observaciones || ""} onChange={e => setEditingPurchaseInv(p => ({...p, observaciones: e.target.value}))} rows={3} style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                  <Btn v="ghost" onClick={() => setEditingPurchaseInv(null)}>Cancelar</Btn>
+                  <Btn onClick={saveEditPurchase}>Guardar cambios</Btn>
+                </div>
+              </div>
+            </Modal>
+          )}
+
           {viewingInv && (
             <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 16, padding: 28, width: 700, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
@@ -4720,6 +4763,8 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                       <Btn sm v="ghost" onClick={() => setViewingInv(inv)}>👁 Ver</Btn>
                       {inv.status === "pendiente" && <Btn sm v="ghost" onClick={() => openPayModalCompra(inv)}>Marcar pagada</Btn>}
                       {inv.status === "pagada" && <Btn sm v="ghost" onClick={() => unmarkPagada(inv.id)}>↩ Revertir a pendiente</Btn>}
+                      <Btn sm v="ghost" onClick={() => openEditPurchase(inv)}>✏ Editar</Btn>
+                      <Btn sm v="danger" onClick={() => deletePurchaseInv(inv)}>Eliminar</Btn>
                     </div>
                   </td>
                 </tr>
