@@ -964,7 +964,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
               <Input label="CÓDIGO (interno o del cliente)" value={codeInput} onChange={handleCodeChange} placeholder="ej: VIDAL-PLA20 o PIN-001" mono />
             </div>
             <div style={{ flex: 0.6 }}>
-              <Input label="CANTIDAD" type="number" value={qtyInput} onChange={v => setQtyInput(parseInt(v) || 1)} />
+              <Input label="CANTIDAD" type="number" value={qtyInput} onChange={v => setQtyInput(parseFloat(v) || 1)} />
             </div>
             <div style={{ flex: 1 }}>
               <div>
@@ -1080,8 +1080,8 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
                     <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>IVA {l.iva}%{l.listPrice && l.unitPrice !== l.listPrice ? <span style={{ color: T.yellow }}> · precio especial</span> : ""}</div>
                   </td>
                   <td style={{ padding: "11px 14px" }}>
-                    <input type="number" min="1" value={l.qty}
-                      onChange={e => updateLineQty(i, parseInt(e.target.value) || 1)}
+                    <input type="number" min="0.01" step="any" value={l.qty}
+                      onChange={e => updateLineQty(i, parseFloat(e.target.value) || 1)}
                       style={{ width: 56, padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", textAlign: "center" }} />
                   </td>
                   <td style={{ padding: "11px 14px" }}>
@@ -1357,7 +1357,7 @@ function OrdenCompraBuilder({ suppliers, products, onSave, onClose }) {
               />
             </div>
             <div style={{ flex: 0.6 }}>
-              <Input label="CANT." type="number" value={qty} onChange={v => setQty(parseInt(v) || 1)} />
+              <Input label="CANT." type="number" value={qty} onChange={v => setQty(parseFloat(v) || 1)} />
             </div>
             <div style={{ flex: 1 }}>
               <Input label="PRECIO UNIT. S/IVA" type="number" value={precioNeto} onChange={setPrecioNeto} placeholder="0" />
@@ -1580,7 +1580,7 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
               <Input label="CÓDIGO PROVEEDOR, SKU O DESCRIPCIÓN" value={codeInput} onChange={handleCodeChange} mono placeholder="Buscá por código o nombre..." />
             </div>
             <div style={{ flex: 0.6 }}>
-              <Input label="CANTIDAD" type="number" value={qtyInput} onChange={v => setQtyInput(parseInt(v) || 1)} />
+              <Input label="CANTIDAD" type="number" value={qtyInput} onChange={v => setQtyInput(parseFloat(v) || 1)} />
             </div>
             <div style={{ flex: 1 }}>
               <div>
@@ -1657,7 +1657,7 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
                     <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>IVA {l.iva}%</div>
                   </td>
                   <td style={{ padding: "11px 13px" }}>
-                    <input type="number" min="1" value={l.qty} onChange={e => updateLineQty(i, parseInt(e.target.value) || 1)}
+                    <input type="number" min="0.01" step="any" value={l.qty} onChange={e => updateLineQty(i, parseFloat(e.target.value) || 1)}
                       style={{ width: 56, padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", textAlign: "center" }} />
                   </td>
                   <td style={{ padding: "11px 13px" }}>
@@ -2941,7 +2941,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                             <div style={{ fontSize: 11, fontFamily: "monospace", color: T.accent }}>{l.sku}</div>
                           </td>
                           <td style={{ padding: "10px 12px" }}>
-                            <input type="number" value={l.qty} onChange={e => setIaResult(r => ({...r, lines: r.lines.map((x,j) => j===i?{...x,qty:parseInt(e.target.value)||1}:x)}))}
+                            <input type="number" value={l.qty} onChange={e => setIaResult(r => ({...r, lines: r.lines.map((x,j) => j===i?{...x,qty:parseFloat(e.target.value)||1}:x)}))}
                               style={{ width: 60, padding: "5px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
                           </td>
                           <td style={{ padding: "10px 12px" }}>
@@ -5098,7 +5098,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
   }), [products, search]);
 
   const doAdjust = () => {
-    const qty = parseInt(adjustQty) || 0;
+    const qty = parseFloat(adjustQty) || 0;
     const newStock = Math.max(0, adjustType === "add" ? adjustProd.stock + qty : adjustProd.stock - qty);
     setProducts(products.map(p => p.id === adjustProd.id ? { ...p, stock: newStock } : p));
     if (companyId) supabase.from('products').update({ stock: newStock }).eq('id', adjustProd.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
@@ -5188,8 +5188,8 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
         const ivaRaw = parseFloat(String(row[4] || "21").replace(",", "."));
         const iva = [21, 10.5].includes(ivaRaw) ? ivaRaw : 21;
         const tracksStock = String(row[5] || "P").trim().toUpperCase() !== "S";
-        const stockInit = tracksStock ? (parseInt(row[6]) || 0) : 0;
-        const minStock = tracksStock ? (parseInt(row[7]) || 0) : 0;
+        const stockInit = tracksStock ? (parseFloat(row[6]) || 0) : 0;
+        const minStock = tracksStock ? (parseFloat(row[7]) || 0) : 0;
         const cost = parseFloat(String(row[8] || "0").replace(",", ".")) || 0;
         const priceArs = parseFloat(String(row[9] || "0").replace(",", ".")) || 0;
         const priceUsd = parseFloat(String(row[10] || "0").replace(",", ".")) || 0;
@@ -5445,7 +5445,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
           </div>
           {adjustQty > 0 && (
             <div style={{ background: T.surface, borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: T.muted }}>
-              Nuevo stock: <strong style={{ color: T.ink }}>{Math.max(0, adjustType === "add" ? adjustProd.stock + parseInt(adjustQty) : adjustProd.stock - parseInt(adjustQty))} {adjustProd.unit}s</strong>
+              Nuevo stock: <strong style={{ color: T.ink }}>{Math.max(0, adjustType === "add" ? adjustProd.stock + parseFloat(adjustQty) : adjustProd.stock - parseFloat(adjustQty))} {adjustProd.unit}s</strong>
             </div>
           )}
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -5541,7 +5541,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
                             <td style={{ padding: "8px 12px", fontSize: 13 }}>{prod?.name || "?"}</td>
                             <td style={{ padding: "8px 12px" }}>
                               <input type="number" min="1" value={comp.qty}
-                                onChange={e => setForm(f => ({ ...f, componentes: f.componentes.map((c, i) => i === idx ? { ...c, qty: parseInt(e.target.value)||1 } : c) }))}
+                                onChange={e => setForm(f => ({ ...f, componentes: f.componentes.map((c, i) => i === idx ? { ...c, qty: parseFloat(e.target.value)||1 } : c) }))}
                                 style={{ width: 70, padding: "4px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
                             </td>
                             <td style={{ padding: "8px 12px", fontSize: 13, color: T.muted }}>{fmt((prod?.prices?.lista_a || 0) * comp.qty)}</td>
