@@ -5149,7 +5149,30 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
   const [dupConfirm, setDupConfirm] = useState(null); // { pending: [...], ccRows: [...] }
   const [editingProduct, setEditingProduct] = useState(null); // producto a editar
 
-  const downloadTemplate = () => { /* usa el xlsx externo */ };
+  const downloadTemplate = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Hoja 1: Productos
+    const prodData = [
+      ["SKU", "Nombre", "Categoría", "Unidad", "IVA (%)", "Sin stock (S/N)", "Stock inicial", "Stock mínimo", "Costo (ARS)", "Precio Lista A (ARS)", "Precio Lista A (USD)"],
+      ["PROD-001", "Ejemplo Producto", "General", "unidad", 21, "N", 10, 2, 1500, 2500, 0],
+      ["PROD-002", "Ejemplo Servicio", "Servicios", "hora", 21, "S", 0, 0, 0, 5000, 0],
+    ];
+    const wsProd = XLSX.utils.aoa_to_sheet(prodData);
+    wsProd["!cols"] = [10,30,16,10,10,16,14,14,14,20,20].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, wsProd, "Productos");
+
+    // Hoja 2: Códigos clientes
+    const ccData = [
+      ["SKU producto", "Código o nombre del cliente", "Código personalizado", "Precio fijo (opcional)", "Descuento % (opcional)"],
+      ["PROD-001", "cliente-ejemplo", "PROV-X-001", "", ""],
+    ];
+    const wsCC = XLSX.utils.aoa_to_sheet(ccData);
+    wsCC["!cols"] = [14,26,22,20,22].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, wsCC, "Codigos clientes");
+
+    XLSX.writeFile(wb, "plantilla_inventario.xlsx");
+  };
 
   const applyImport = (prodRows, ccRows, skipSkus) => {
     let created = 0; let updated = 0; let skipped = 0;
@@ -5260,7 +5283,9 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <a href="https://cdn.example.com" style={{ display: "none" }}>.</a>
+          <button onClick={downloadTemplate} style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${T.accent}40`, background: T.accentLight, color: T.accent, fontSize: 12, cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit" }}>
+            ⬇ Plantilla Excel
+          </button>
           <label style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${T.blue}40`, background: T.blueLight, color: T.blue, fontSize: 12, cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
             📥 Importar masivo
             <input type="file" accept=".xlsx,.xls,.csv" onChange={handleBulkImport} style={{ display: "none" }} />
