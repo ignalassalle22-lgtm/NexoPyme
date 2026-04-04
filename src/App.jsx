@@ -9578,6 +9578,7 @@ export default function App({ session, profile, onLogout }) {
     // Las facturas desde remito NO descuentan stock (el remito ya lo hizo)
     const vieneDeRemito = docType === "factura" && originRemitoIds?.length > 0;
     const debeDescontarStock = !vieneDeRemito && (docType === "factura" || (docType === "presupuesto" && modificaStock) || docType === "remito");
+    console.log("[handleSaveDoc]", { docType, originRemitoIds, vieneDeRemito, debeDescontarStock });
 
     if (editingId) {
       // Editing existing doc: revert old stock, apply new stock
