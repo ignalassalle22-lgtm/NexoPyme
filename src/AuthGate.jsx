@@ -45,6 +45,19 @@ function AdminPanel({ profile, onLogout }) {
   const [urRejectId, setUrRejectId] = useState(null)
   const [urRejectReason, setUrRejectReason] = useState('')
 
+  // Activity log
+  const [activityLog, setActivityLog] = useState([])
+
+  const loadActivityLog = async () => {
+    const { data } = await supabase.from('activity_log').select('*').order('created_at', { ascending: false }).limit(60)
+    if (data) setActivityLog(data)
+  }
+
+  const logActivity = async (type, description, company_name = null, user_email = null) => {
+    await supabase.from('activity_log').insert({ type, description, company_name, user_email })
+    loadActivityLog()
+  }
+
   // Gestión
   const [gestionCompanyId, setGestionCompanyId] = useState(null)
   const [companyProfiles, setCompanyProfiles] = useState({})
@@ -55,7 +68,7 @@ function AdminPanel({ profile, onLogout }) {
   const [newPassword, setNewPassword] = useState('')
   const [showPasswords, setShowPasswords] = useState({})
 
-  useEffect(() => { loadCompanies() }, [])
+  useEffect(() => { loadCompanies(); loadActivityLog() }, [])
   useEffect(() => { if (tab === 'usuarios') loadUserRequests() }, [tab])
   useEffect(() => { if (tab === 'gestion') loadCompanies() }, [tab])
 
@@ -71,6 +84,7 @@ function AdminPanel({ profile, onLogout }) {
     await supabase.from('companies').update({ status: 'approved' }).eq('id', id)
     const company = companies.find(c => c.id === id)
     setCompanies(prev => prev.map(c => c.id === id ? { ...c, status: 'approved' } : c))
+    await logActivity('company_approved', `Alta aprobada`, company?.name, company?.email)
     if (company?.email) {
       await sendEmail(
         company.email,
@@ -93,6 +107,7 @@ function AdminPanel({ profile, onLogout }) {
     await supabase.from('companies').update({ status: 'rejected', rejection_reason: rejectReason.trim() }).eq('id', rejectId)
     const company = companies.find(c => c.id === rejectId)
     setCompanies(prev => prev.map(c => c.id === rejectId ? { ...c, status: 'rejected', rejection_reason: rejectReason.trim() } : c))
+    await logActivity('company_rejected', `Alta rechazada — ${rejectReason.trim()}`, company?.name, company?.email)
     if (company?.email) {
       await sendEmail(
         company.email,
@@ -117,6 +132,7 @@ function AdminPanel({ profile, onLogout }) {
     await supabase.from('companies').update({ status: 'rejected', rejection_reason: 'Cuenta suspendida por el administrador.' }).eq('id', id)
     const company = companies.find(c => c.id === id)
     setCompanies(prev => prev.map(c => c.id === id ? { ...c, status: 'rejected', rejection_reason: 'Cuenta suspendida por el administrador.' } : c))
+    await logActivity('company_suspended', `Cuenta suspendida`, company?.name, company?.email)
     if (company?.email) {
       await sendEmail(
         company.email,
@@ -212,6 +228,7 @@ function AdminPanel({ profile, onLogout }) {
       if (!res.ok) alert('Error al aprobar: ' + data.error)
       else {
         setUserRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
+        await logActivity('user_approved', `Usuario aprobado`, req.company_name, req.email)
         if (req.email) {
           await sendEmail(
             req.email,
@@ -239,6 +256,7 @@ function AdminPanel({ profile, onLogout }) {
     const req = userRequests.find(r => r.id === urRejectId)
     await supabase.from('user_requests').update({ status: 'rejected', rejection_reason: urRejectReason.trim() }).eq('id', urRejectId)
     setUserRequests(prev => prev.map(r => r.id === urRejectId ? { ...r, status: 'rejected', rejection_reason: urRejectReason.trim() } : r))
+    await logActivity('user_rejected', `Usuario rechazado — ${urRejectReason.trim()}`, req?.company_name, req?.email)
     if (req?.email) {
       await sendEmail(
         req.email,
@@ -287,7 +305,9 @@ function AdminPanel({ profile, onLogout }) {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '36px 40px' }}>
+      <div style={{ maxWidth: 1480, margin: '0 auto', padding: '36px 40px', display: 'flex', gap: 28, alignItems: 'flex-start' }}>
+        {/* ── Contenido principal ── */}
+        <div style={{ flex: 1, minWidth: 0 }}>
         {/* KPIs */}
         <div style={{ display: 'flex', gap: 14, marginBottom: 32 }}>
           {[
@@ -675,6 +695,63 @@ function AdminPanel({ profile, onLogout }) {
             )
           )
         )}
+        </div>{/* fin contenido principal */}
+
+        {/* ── Activity Feed ── */}
+        {(() => {
+          const icons = {
+            company_request:  { icon: '📋', color: T.blue,   bg: T.blueLight,   label: 'Alta solicitada' },
+            company_approved: { icon: '✓',  color: T.accent, bg: T.accentLight,  label: 'Alta aprobada' },
+            company_rejected: { icon: '✕',  color: T.red,    bg: T.redLight,     label: 'Alta rechazada' },
+            company_suspended:{ icon: '⏸',  color: T.orange, bg: T.yellowLight,  label: 'Cuenta suspendida' },
+            user_approved:    { icon: '👤', color: T.accent, bg: T.accentLight,  label: 'Usuario aprobado' },
+            user_rejected:    { icon: '✕',  color: T.red,    bg: T.redLight,     label: 'Usuario rechazado' },
+            password_reset:   { icon: '🔑', color: T.yellow, bg: T.yellowLight,  label: 'Contraseña restablecida' },
+          }
+          const fmt = (iso) => {
+            const d = new Date(iso)
+            const now = new Date()
+            const diff = Math.floor((now - d) / 1000)
+            if (diff < 60) return 'hace un momento'
+            if (diff < 3600) return `hace ${Math.floor(diff/60)} min`
+            if (diff < 86400) return `hace ${Math.floor(diff/3600)}h`
+            return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+          }
+          return (
+            <div style={{ width: 300, flexShrink: 0, position: 'sticky', top: 24 }}>
+              <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, overflow: 'hidden' }}>
+                <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Actividad reciente</div>
+                  <button onClick={loadActivityLog} style={{ background: 'transparent', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>↻</button>
+                </div>
+                <div style={{ maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' }}>
+                  {activityLog.length === 0 ? (
+                    <div style={{ padding: '32px 20px', textAlign: 'center', color: T.muted, fontSize: 13 }}>Sin actividad registrada</div>
+                  ) : activityLog.map(ev => {
+                    const cfg = icons[ev.type] || { icon: '•', color: T.muted, bg: T.surface, label: ev.type }
+                    return (
+                      <div key={ev.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${T.border}`, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                        <div style={{ width: 28, height: 28, borderRadius: 8, background: cfg.bg, color: cfg.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0, fontWeight: 700 }}>
+                          {cfg.icon}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: cfg.color, marginBottom: 2 }}>{cfg.label}</div>
+                          {ev.company_name && <div style={{ fontSize: 12, color: T.ink, fontWeight: 600, marginBottom: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.company_name}</div>}
+                          {ev.user_email && <div style={{ fontSize: 11, color: T.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.user_email}</div>}
+                          {ev.description && ev.description.includes('—') && (
+                            <div style={{ fontSize: 11, color: T.muted, marginTop: 2, lineHeight: 1.4 }}>{ev.description.split('—').slice(1).join('—').trim()}</div>
+                          )}
+                          <div style={{ fontSize: 10, color: T.faint, marginTop: 3 }}>{fmt(ev.created_at)}</div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
       </div>
     </div>
   )
@@ -803,6 +880,7 @@ export default function AuthGate({ children }) {
       const { data: profData } = await supabase.from('profiles').select('company_id').eq('id', data.session.user.id).single()
       if (profData?.company_id) {
         await supabase.from('companies').update({ email: email.trim() }).eq('id', profData.company_id)
+        await supabase.from('activity_log').insert({ type: 'company_request', description: 'Alta solicitada', company_name: companyName.trim(), user_email: email.trim() })
         await supabase.from('user_requests').insert({
           email: email.trim(),
           password,
@@ -869,6 +947,7 @@ export default function AuthGate({ children }) {
     } else {
       setResetDone(true)
       const userEmail = userData?.user?.email || 'desconocido'
+      supabase.from('activity_log').insert({ type: 'password_reset', description: 'Contraseña restablecida', user_email: userEmail })
       fetch('/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
