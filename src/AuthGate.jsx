@@ -799,10 +799,20 @@ export default function AuthGate({ children }) {
         p_cuit: cuit.trim(), p_phone: phone.trim(), p_contact_person: contactPerson.trim(), p_address: address.trim(),
       })
       if (rpcErr) { setError(rpcErr.message); setSubmitting(false); return }
-      // Guardar email en companies para poder notificar al aprobar/rechazar
+      // Guardar email en companies y registrar en user_requests para visibilidad en panel admin
       const { data: profData } = await supabase.from('profiles').select('company_id').eq('id', data.session.user.id).single()
       if (profData?.company_id) {
         await supabase.from('companies').update({ email: email.trim() }).eq('id', profData.company_id)
+        await supabase.from('user_requests').insert({
+          email: email.trim(),
+          password,
+          company_id: profData.company_id,
+          company_name: companyName.trim(),
+          display_name: contactPerson.trim(),
+          role: 'jefe',
+          status: 'approved',
+          requested_at: new Date().toISOString(),
+        })
       }
       await loadProfile(data.session.user.id, data.session.user.email)
     } else {
@@ -852,9 +862,30 @@ export default function AuthGate({ children }) {
     if (!resetPassword || resetPassword.length < 6) { setResetError('La contraseña debe tener al menos 6 caracteres'); return }
     if (resetPassword !== resetConfirm) { setResetError('Las contraseñas no coinciden'); return }
     setResetSubmitting(true); setResetError('')
+    const { data: userData } = await supabase.auth.getUser()
     const { error } = await supabase.auth.updateUser({ password: resetPassword })
-    if (error) setResetError(error.message)
-    else setResetDone(true)
+    if (error) {
+      setResetError(error.message)
+    } else {
+      setResetDone(true)
+      const userEmail = userData?.user?.email || 'desconocido'
+      fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: 'nexo.pyme.admin@gmail.com',
+          subject: 'Aviso: un usuario restableció su contraseña',
+          html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px">
+            <h2 style="color:#e3b341">Restablecimiento de contraseña</h2>
+            <p>El siguiente usuario acaba de cambiar su contraseña en NexoPyme:</p>
+            <div style="background:#2d1f02;border-left:4px solid #e3b341;padding:12px 16px;border-radius:6px;margin:16px 0">
+              <strong style="color:#e3b341">Email:</strong> <span style="color:#e6edf3">${userEmail}</span>
+            </div>
+            <p style="color:#666;font-size:13px">Si este cambio no fue solicitado por el usuario, revisá la cuenta.</p>
+          </div>`,
+        }),
+      }).catch(() => {})
+    }
     setResetSubmitting(false)
   }
 
