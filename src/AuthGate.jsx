@@ -13,6 +13,20 @@ const T = {
   purple: "#a371f7", purpleLight: "#1e1240",
 }
 
+// ─── EMAIL HELPER ─────────────────────────────────────────────────────────────
+async function sendEmail(to, subject, html) {
+  if (!to) return
+  try {
+    await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, subject, html }),
+    })
+  } catch (e) {
+    console.error('[sendEmail] error:', e)
+  }
+}
+
 // ─── ADMIN PANEL ──────────────────────────────────────────────────────────────
 function AdminPanel({ profile, onLogout }) {
   const [tab, setTab] = useState('empresas')
@@ -55,7 +69,21 @@ function AdminPanel({ profile, onLogout }) {
   const approve = async (id) => {
     setSaving(true)
     await supabase.from('companies').update({ status: 'approved' }).eq('id', id)
+    const company = companies.find(c => c.id === id)
     setCompanies(prev => prev.map(c => c.id === id ? { ...c, status: 'approved' } : c))
+    if (company?.email) {
+      await sendEmail(
+        company.email,
+        '¡Tu cuenta en NexoPyme fue aprobada!',
+        `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px">
+          <h2 style="color:#2ea043">¡Cuenta aprobada!</h2>
+          <p>Hola <strong>${company.contact_person || company.name}</strong>,</p>
+          <p>Tu empresa <strong>${company.name}</strong> fue aprobada en NexoPyme. Ya podés ingresar con tu email y contraseña.</p>
+          <a href="https://nexopyme.vercel.app" style="display:inline-block;margin-top:16px;background:#2ea043;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">Ingresar a NexoPyme →</a>
+          <p style="margin-top:24px;color:#666;font-size:13px">Si tenés alguna consulta, respondé este email.</p>
+        </div>`
+      )
+    }
     setSaving(false)
   }
 
@@ -63,7 +91,24 @@ function AdminPanel({ profile, onLogout }) {
     if (!rejectReason.trim()) return
     setSaving(true)
     await supabase.from('companies').update({ status: 'rejected', rejection_reason: rejectReason.trim() }).eq('id', rejectId)
+    const company = companies.find(c => c.id === rejectId)
     setCompanies(prev => prev.map(c => c.id === rejectId ? { ...c, status: 'rejected', rejection_reason: rejectReason.trim() } : c))
+    if (company?.email) {
+      await sendEmail(
+        company.email,
+        'Solicitud de acceso a NexoPyme',
+        `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px">
+          <h2 style="color:#f85149">Solicitud no aprobada</h2>
+          <p>Hola <strong>${company.contact_person || company.name}</strong>,</p>
+          <p>Lamentablemente la solicitud de acceso para <strong>${company.name}</strong> no fue aprobada en esta oportunidad.</p>
+          <div style="background:#2d0f0e;border-left:4px solid #f85149;padding:12px 16px;border-radius:6px;margin:16px 0">
+            <strong style="color:#f85149">Motivo:</strong><br/>
+            <span style="color:#e6edf3">${rejectReason.trim()}</span>
+          </div>
+          <p style="color:#666;font-size:13px">Si creés que hay un error o querés más información, respondé este email.</p>
+        </div>`
+      )
+    }
     setRejectId(null); setRejectReason(''); setSaving(false)
   }
 
@@ -152,7 +197,23 @@ function AdminPanel({ profile, onLogout }) {
       })
       const data = await res.json()
       if (!res.ok) alert('Error al aprobar: ' + data.error)
-      else setUserRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
+      else {
+        setUserRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
+        if (req.email) {
+          await sendEmail(
+            req.email,
+            '¡Tu usuario en NexoPyme fue habilitado!',
+            `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px">
+              <h2 style="color:#2ea043">¡Usuario habilitado!</h2>
+              <p>Hola <strong>${req.display_name || req.email}</strong>,</p>
+              <p>Tu usuario fue habilitado en NexoPyme para la empresa <strong>${req.company_name || ''}</strong>.</p>
+              <p style="margin:8px 0"><strong>Email:</strong> ${req.email}</p>
+              <a href="https://nexopyme.vercel.app" style="display:inline-block;margin-top:16px;background:#2ea043;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">Ingresar a NexoPyme →</a>
+              <p style="margin-top:24px;color:#666;font-size:13px">Si tenés alguna consulta, respondé este email.</p>
+            </div>`
+          )
+        }
+      }
     } catch (e) {
       alert('Error al aprobar: ' + e.message)
     }
@@ -162,8 +223,25 @@ function AdminPanel({ profile, onLogout }) {
   const confirmRejectUser = async () => {
     if (!urRejectReason.trim()) return
     setSaving(true)
+    const req = userRequests.find(r => r.id === urRejectId)
     await supabase.from('user_requests').update({ status: 'rejected', rejection_reason: urRejectReason.trim() }).eq('id', urRejectId)
     setUserRequests(prev => prev.map(r => r.id === urRejectId ? { ...r, status: 'rejected', rejection_reason: urRejectReason.trim() } : r))
+    if (req?.email) {
+      await sendEmail(
+        req.email,
+        'Solicitud de usuario en NexoPyme',
+        `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px">
+          <h2 style="color:#f85149">Solicitud no aprobada</h2>
+          <p>Hola <strong>${req.display_name || req.email}</strong>,</p>
+          <p>Tu solicitud de usuario para <strong>${req.company_name || 'la empresa'}</strong> no fue aprobada en esta oportunidad.</p>
+          <div style="background:#2d0f0e;border-left:4px solid #f85149;padding:12px 16px;border-radius:6px;margin:16px 0">
+            <strong style="color:#f85149">Motivo:</strong><br/>
+            <span style="color:#e6edf3">${urRejectReason.trim()}</span>
+          </div>
+          <p style="color:#666;font-size:13px">Si tenés alguna consulta, respondé este email.</p>
+        </div>`
+      )
+    }
     setUrRejectId(null); setUrRejectReason(''); setSaving(false)
   }
 
@@ -594,7 +672,7 @@ export default function AuthGate({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [mode, setMode] = useState('login') // 'login' | 'register' | 'setup'
+  const [mode, setMode] = useState('login') // 'login' | 'register' | 'setup' | 'forgot' | 'recovery'
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const profileLoaded = useRef(false)
@@ -602,6 +680,19 @@ export default function AuthGate({ children }) {
   // Login
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+
+  // Olvidé contraseña
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotSent, setForgotSent] = useState(false)
+  const [forgotError, setForgotError] = useState('')
+  const [forgotSubmitting, setForgotSubmitting] = useState(false)
+
+  // Resetear contraseña (flujo recovery)
+  const [resetPassword, setResetPassword] = useState('')
+  const [resetConfirm, setResetConfirm] = useState('')
+  const [resetError, setResetError] = useState('')
+  const [resetSubmitting, setResetSubmitting] = useState(false)
+  const [resetDone, setResetDone] = useState(false)
 
   // Registro / setup
   const [companyName, setCompanyName] = useState('')
@@ -622,6 +713,10 @@ export default function AuthGate({ children }) {
       if (event === 'SIGNED_OUT') {
         profileLoaded.current = false
         setSession(null); setProfile(null); setLoading(false); setMode('login')
+      } else if (event === 'PASSWORD_RECOVERY') {
+        setSession(session)
+        setMode('recovery')
+        setLoading(false)
       } else if (session && !profileLoaded.current) {
         setSession(session)
         await loadProfile(session.user.id, session.user.email)
@@ -685,6 +780,11 @@ export default function AuthGate({ children }) {
         p_cuit: cuit.trim(), p_phone: phone.trim(), p_contact_person: contactPerson.trim(), p_address: address.trim(),
       })
       if (rpcErr) { setError(rpcErr.message); setSubmitting(false); return }
+      // Guardar email en companies para poder notificar al aprobar/rechazar
+      const { data: profData } = await supabase.from('profiles').select('company_id').eq('id', data.session.user.id).single()
+      if (profData?.company_id) {
+        await supabase.from('companies').update({ email: email.trim() }).eq('id', profData.company_id)
+      }
       await loadProfile(data.session.user.id, data.session.user.email)
     } else {
       setError('Revisá tu email para confirmar la cuenta antes de continuar')
@@ -708,6 +808,29 @@ export default function AuthGate({ children }) {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     setEmail(''); setPassword(''); resetRegisterFields(); setError('')
+  }
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault()
+    if (!forgotEmail.trim()) { setForgotError('Ingresá tu email'); return }
+    setForgotSubmitting(true); setForgotError('')
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+      redirectTo: 'https://nexopyme.vercel.app',
+    })
+    if (error) setForgotError(error.message)
+    else setForgotSent(true)
+    setForgotSubmitting(false)
+  }
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault()
+    if (!resetPassword || resetPassword.length < 6) { setResetError('La contraseña debe tener al menos 6 caracteres'); return }
+    if (resetPassword !== resetConfirm) { setResetError('Las contraseñas no coinciden'); return }
+    setResetSubmitting(true); setResetError('')
+    const { error } = await supabase.auth.updateUser({ password: resetPassword })
+    if (error) setResetError(error.message)
+    else setResetDone(true)
+    setResetSubmitting(false)
   }
 
   const inputStyle = { width: '100%', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: '11px 14px', color: T.ink, fontSize: 14, outline: 'none', fontFamily: "'DM Sans','Segoe UI',sans-serif" }
@@ -822,6 +945,43 @@ export default function AuthGate({ children }) {
     )
   }
 
+  // ── Nueva contraseña (recovery link) ─────────────────────────────────────
+  if (mode === 'recovery') {
+    return (
+      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: T.bg, fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
+        <style>{globalStyles}</style>
+        <div style={{ width: 420, background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: '40px 36px' }}>
+          <div style={{ textAlign: 'center', marginBottom: 28 }}>
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 10 }}><span style={{ color: T.accent }}>Nexo</span>PyME</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: T.ink, marginBottom: 6 }}>Crear nueva contraseña</div>
+            <div style={{ fontSize: 13, color: T.muted }}>Ingresá tu nueva contraseña para continuar</div>
+          </div>
+          {resetDone ? (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ background: T.accentLight, color: T.accent, borderRadius: 10, padding: '16px', fontSize: 14, marginBottom: 24 }}>
+                ✓ Contraseña actualizada exitosamente
+              </div>
+              <button onClick={() => { setMode('login'); setResetPassword(''); setResetConfirm(''); setResetDone(false) }} style={btnStyle(false)}>
+                Ir al inicio de sesión
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleUpdatePassword}>
+              <label style={labelStyle}>NUEVA CONTRASEÑA</label>
+              <input type="password" style={{ ...inputStyle, marginBottom: 14 }} placeholder="Mínimo 6 caracteres" value={resetPassword} onChange={e => setResetPassword(e.target.value)} autoFocus />
+              <label style={labelStyle}>CONFIRMAR CONTRASEÑA</label>
+              <input type="password" style={{ ...inputStyle, marginBottom: 20 }} placeholder="Repetí la nueva contraseña" value={resetConfirm} onChange={e => setResetConfirm(e.target.value)} />
+              {resetError && <div style={{ background: T.redLight, color: T.red, borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{resetError}</div>}
+              <button type="submit" style={btnStyle(resetSubmitting)} disabled={resetSubmitting}>
+                {resetSubmitting ? 'Actualizando…' : 'Actualizar contraseña'}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   // ── Login / Registro ──────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', height: '100vh', background: T.bg, fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
@@ -857,7 +1017,12 @@ export default function AuthGate({ children }) {
               <label style={labelStyle}>EMAIL</label>
               <input type="email" style={{ ...inputStyle, marginBottom: 16 }} placeholder="tu@empresa.com" value={email} onChange={e => setEmail(e.target.value)} autoFocus />
               <label style={labelStyle}>CONTRASEÑA</label>
-              <input type="password" style={{ ...inputStyle, marginBottom: 24 }} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} />
+              <input type="password" style={{ ...inputStyle, marginBottom: 8 }} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} />
+              <div style={{ textAlign: 'right', marginBottom: 20 }}>
+                <button type="button" onClick={() => { setMode('forgot'); setForgotEmail(''); setForgotSent(false); setForgotError('') }} style={{ background: 'none', border: 'none', color: T.muted, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
               {error && <div style={{ background: T.redLight, color: T.red, borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{error}</div>}
               <button type="submit" style={btnStyle(submitting)} disabled={submitting}>{submitting ? 'Ingresando…' : 'Ingresar'}</button>
             </form>
@@ -865,6 +1030,39 @@ export default function AuthGate({ children }) {
               ¿No tenés cuenta?{' '}
               <button onClick={() => { setMode('register'); setError('') }} style={{ background: 'none', border: 'none', color: T.accent, fontWeight: 600, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>Solicitá el acceso</button>
             </div>
+          </>)}
+
+          {/* OLVIDÉ CONTRASEÑA */}
+          {mode === 'forgot' && (<>
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: T.ink, marginBottom: 8 }}>Recuperar contraseña</div>
+              <div style={{ fontSize: 14, color: T.muted }}>Ingresá el email asociado a tu cuenta y te enviaremos un link para restablecer tu contraseña.</div>
+            </div>
+            {forgotSent ? (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ background: T.accentLight, color: T.accent, borderRadius: 10, padding: '20px 16px', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
+                  ✓ Si el email existe, vas a recibir el link en los próximos minutos.<br/>
+                  <span style={{ fontSize: 12, opacity: 0.8 }}>Revisá también la carpeta de spam.</span>
+                </div>
+                <button onClick={() => { setMode('login'); setForgotEmail(''); setForgotSent(false) }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '9px 20px', color: T.muted, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Volver al inicio de sesión
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotPassword}>
+                <label style={labelStyle}>EMAIL DE TU CUENTA</label>
+                <input type="email" style={{ ...inputStyle, marginBottom: 20 }} placeholder="tu@empresa.com" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} autoFocus />
+                {forgotError && <div style={{ background: T.redLight, color: T.red, borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{forgotError}</div>}
+                <button type="submit" style={btnStyle(forgotSubmitting)} disabled={forgotSubmitting}>
+                  {forgotSubmitting ? 'Enviando…' : 'Enviar link de recuperación'}
+                </button>
+                <div style={{ marginTop: 16, textAlign: 'center' }}>
+                  <button type="button" onClick={() => { setMode('login'); setForgotEmail(''); setForgotError('') }} style={{ background: 'none', border: 'none', color: T.muted, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    ← Volver
+                  </button>
+                </div>
+              </form>
+            )}
           </>)}
 
           {/* REGISTRO */}
