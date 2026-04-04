@@ -719,8 +719,14 @@ export default function AuthGate({ children }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      if (session) loadProfile(session.user.id, session.user.email)
-      else setLoading(false)
+      if (session && window.location.hash.includes('type=recovery')) {
+        setMode('recovery')
+        setLoading(false)
+      } else if (session) {
+        loadProfile(session.user.id, session.user.email)
+      } else {
+        setLoading(false)
+      }
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
@@ -827,6 +833,12 @@ export default function AuthGate({ children }) {
     e.preventDefault()
     if (!forgotEmail.trim()) { setForgotError('Ingresá tu email'); return }
     setForgotSubmitting(true); setForgotError('')
+    const { data: exists, error: rpcErr } = await supabase.rpc('check_email_exists', { p_email: forgotEmail.trim() })
+    if (rpcErr || !exists) {
+      setForgotError('No encontramos una cuenta activa con ese email.')
+      setForgotSubmitting(false)
+      return
+    }
     const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
       redirectTo: 'https://nexopyme.vercel.app',
     })
@@ -862,6 +874,43 @@ export default function AuthGate({ children }) {
             <button onClick={() => window.location.reload()} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>Recargar</button>
           </>) : (
             <div style={{ color: T.muted, fontSize: 14 }}>Cargando…</div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Nueva contraseña (recovery link) ─────────────────────────────────────
+  if (mode === 'recovery') {
+    return (
+      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: T.bg, fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
+        <style>{globalStyles}</style>
+        <div style={{ width: 420, background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: '40px 36px' }}>
+          <div style={{ textAlign: 'center', marginBottom: 28 }}>
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 10 }}><span style={{ color: T.accent }}>Nexo</span>PyME</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: T.ink, marginBottom: 6 }}>Crear nueva contraseña</div>
+            <div style={{ fontSize: 13, color: T.muted }}>Ingresá tu nueva contraseña para continuar</div>
+          </div>
+          {resetDone ? (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ background: T.accentLight, color: T.accent, borderRadius: 10, padding: '16px', fontSize: 14, marginBottom: 24 }}>
+                ✓ Contraseña actualizada exitosamente
+              </div>
+              <button onClick={() => { setMode('login'); setResetPassword(''); setResetConfirm(''); setResetDone(false) }} style={btnStyle(false)}>
+                Ir al inicio de sesión
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleUpdatePassword}>
+              <label style={labelStyle}>NUEVA CONTRASEÑA</label>
+              <input type="password" style={{ ...inputStyle, marginBottom: 14 }} placeholder="Mínimo 6 caracteres" value={resetPassword} onChange={e => setResetPassword(e.target.value)} autoFocus />
+              <label style={labelStyle}>CONFIRMAR CONTRASEÑA</label>
+              <input type="password" style={{ ...inputStyle, marginBottom: 20 }} placeholder="Repetí la nueva contraseña" value={resetConfirm} onChange={e => setResetConfirm(e.target.value)} />
+              {resetError && <div style={{ background: T.redLight, color: T.red, borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{resetError}</div>}
+              <button type="submit" style={btnStyle(resetSubmitting)} disabled={resetSubmitting}>
+                {resetSubmitting ? 'Actualizando…' : 'Actualizar contraseña'}
+              </button>
+            </form>
           )}
         </div>
       </div>
@@ -953,43 +1002,6 @@ export default function AuthGate({ children }) {
           <div style={{ marginTop: 16, textAlign: 'center' }}>
             <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: T.muted, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Cerrar sesión</button>
           </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ── Nueva contraseña (recovery link) ─────────────────────────────────────
-  if (mode === 'recovery') {
-    return (
-      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: T.bg, fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
-        <style>{globalStyles}</style>
-        <div style={{ width: 420, background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: '40px 36px' }}>
-          <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 10 }}><span style={{ color: T.accent }}>Nexo</span>PyME</div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: T.ink, marginBottom: 6 }}>Crear nueva contraseña</div>
-            <div style={{ fontSize: 13, color: T.muted }}>Ingresá tu nueva contraseña para continuar</div>
-          </div>
-          {resetDone ? (
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ background: T.accentLight, color: T.accent, borderRadius: 10, padding: '16px', fontSize: 14, marginBottom: 24 }}>
-                ✓ Contraseña actualizada exitosamente
-              </div>
-              <button onClick={() => { setMode('login'); setResetPassword(''); setResetConfirm(''); setResetDone(false) }} style={btnStyle(false)}>
-                Ir al inicio de sesión
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleUpdatePassword}>
-              <label style={labelStyle}>NUEVA CONTRASEÑA</label>
-              <input type="password" style={{ ...inputStyle, marginBottom: 14 }} placeholder="Mínimo 6 caracteres" value={resetPassword} onChange={e => setResetPassword(e.target.value)} autoFocus />
-              <label style={labelStyle}>CONFIRMAR CONTRASEÑA</label>
-              <input type="password" style={{ ...inputStyle, marginBottom: 20 }} placeholder="Repetí la nueva contraseña" value={resetConfirm} onChange={e => setResetConfirm(e.target.value)} />
-              {resetError && <div style={{ background: T.redLight, color: T.red, borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 16 }}>{resetError}</div>}
-              <button type="submit" style={btnStyle(resetSubmitting)} disabled={resetSubmitting}>
-                {resetSubmitting ? 'Actualizando…' : 'Actualizar contraseña'}
-              </button>
-            </form>
-          )}
         </div>
       </div>
     )
