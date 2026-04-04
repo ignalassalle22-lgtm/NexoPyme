@@ -115,7 +115,20 @@ function AdminPanel({ profile, onLogout }) {
   const suspend = async (id) => {
     if (!window.confirm('¿Suspender esta cuenta? El usuario no podrá acceder hasta que la reactives.')) return
     await supabase.from('companies').update({ status: 'rejected', rejection_reason: 'Cuenta suspendida por el administrador.' }).eq('id', id)
+    const company = companies.find(c => c.id === id)
     setCompanies(prev => prev.map(c => c.id === id ? { ...c, status: 'rejected', rejection_reason: 'Cuenta suspendida por el administrador.' } : c))
+    if (company?.email) {
+      await sendEmail(
+        company.email,
+        'Tu cuenta en NexoPyme fue suspendida',
+        `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px">
+          <h2 style="color:#f85149">Cuenta suspendida</h2>
+          <p>Hola <strong>${company.contact_person || company.name}</strong>,</p>
+          <p>Tu cuenta de <strong>${company.name}</strong> en NexoPyme fue suspendida temporalmente por el administrador.</p>
+          <p style="color:#666;font-size:13px">Si creés que es un error o querés más información, respondé este email.</p>
+        </div>`
+      )
+    }
   }
 
   const loadCompanyProfiles = async (companyId) => {
