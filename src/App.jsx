@@ -270,11 +270,12 @@ const Btn = ({ children, onClick, v = "primary", sm, disabled, full }) => {
   return <button onClick={onClick} disabled={disabled} style={{ background: s.bg, color: s.color, border: s.border, borderRadius: 8, padding: sm ? "5px 12px" : "9px 18px", fontWeight: 700, fontSize: sm ? 11 : 13, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, fontFamily: "inherit", width: full ? "100%" : "auto" }}>{children}</button>;
 };
 
-function Input({ label, value, onChange, placeholder, mono, type = "text", small }) {
+function Input({ label, value, onChange, placeholder, mono, type = "text", small, step, min }) {
   return (
     <div>
       {label && <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>{label}</label>}
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        step={step} min={min}
         style={{ width: "100%", padding: small ? "7px 10px" : "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: small ? 12 : 13, fontFamily: mono ? "monospace" : "inherit", outline: "none" }} />
     </div>
   );
@@ -964,7 +965,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
               <Input label="CÓDIGO (interno o del cliente)" value={codeInput} onChange={handleCodeChange} placeholder="ej: VIDAL-PLA20 o PIN-001" mono />
             </div>
             <div style={{ flex: 0.6 }}>
-              <Input label="CANTIDAD" type="number" value={qtyInput} onChange={v => setQtyInput(parseFloat(v) || 1)} />
+              <Input label="CANTIDAD" type="number" step="any" min="0.01" value={qtyInput} onChange={v => setQtyInput(parseFloat(v) || 1)} />
             </div>
             <div style={{ flex: 1 }}>
               <div>
@@ -1357,7 +1358,7 @@ function OrdenCompraBuilder({ suppliers, products, onSave, onClose }) {
               />
             </div>
             <div style={{ flex: 0.6 }}>
-              <Input label="CANT." type="number" value={qty} onChange={v => setQty(parseFloat(v) || 1)} />
+              <Input label="CANT." type="number" step="any" min="0.01" value={qty} onChange={v => setQty(parseFloat(v) || 1)} />
             </div>
             <div style={{ flex: 1 }}>
               <Input label="PRECIO UNIT. S/IVA" type="number" value={precioNeto} onChange={setPrecioNeto} placeholder="0" />
@@ -1580,7 +1581,7 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
               <Input label="CÓDIGO PROVEEDOR, SKU O DESCRIPCIÓN" value={codeInput} onChange={handleCodeChange} mono placeholder="Buscá por código o nombre..." />
             </div>
             <div style={{ flex: 0.6 }}>
-              <Input label="CANTIDAD" type="number" value={qtyInput} onChange={v => setQtyInput(parseFloat(v) || 1)} />
+              <Input label="CANTIDAD" type="number" step="any" min="0.01" value={qtyInput} onChange={v => setQtyInput(parseFloat(v) || 1)} />
             </div>
             <div style={{ flex: 1 }}>
               <div>
@@ -5440,7 +5441,7 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
             ))}
           </div>
           <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
-            <Input label="CANTIDAD" type="number" value={adjustQty} onChange={setAdjustQty} />
+            <Input label="CANTIDAD" type="number" step="any" min="0" value={adjustQty} onChange={setAdjustQty} />
             <Input label="MOTIVO (opcional)" value={adjustNote} onChange={setAdjustNote} placeholder="ej: Devolución, merma, ajuste inventario..." />
           </div>
           {adjustQty > 0 && (
