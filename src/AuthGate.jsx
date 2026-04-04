@@ -827,18 +827,11 @@ export default function AuthGate({ children }) {
     e.preventDefault()
     if (!forgotEmail.trim()) { setForgotError('Ingresá tu email'); return }
     setForgotSubmitting(true); setForgotError('')
-    try {
-      const res = await fetch('/api/send-reset-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: forgotEmail.trim() }),
-      })
-      const data = await res.json()
-      if (!res.ok) setForgotError(data.error || 'Error al enviar el email')
-      else setForgotSent(true)
-    } catch (e) {
-      setForgotError('Error de conexión. Intentá de nuevo.')
-    }
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+      redirectTo: 'https://nexopyme.vercel.app',
+    })
+    if (error) setForgotError(error.message)
+    else setForgotSent(true)
     setForgotSubmitting(false)
   }
 
