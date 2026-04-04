@@ -585,7 +585,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
 
   const confirm = () => {
     // Check for items that would go negative (only when stock is actually modified)
-    const willModifyStock = docType === "factura" || docType === "remito" || (docType === "presupuesto" && modificaStock);
+    const willModifyStock = (docType === "factura" && !selectedRemitoIds?.length) || docType === "remito" || (docType === "presupuesto" && modificaStock);
     if (willModifyStock) {
       const negativeItems = lines
         .map(l => {
@@ -9575,7 +9575,9 @@ export default function App({ session, profile, onLogout }) {
   };
 
   const handleSaveDoc = ({ lines, total, totalNeto, totalIva, clientId, clientName, docType, originPresupuestoId, originRemitoIds, modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor = "", metodoPago = "", editingId, oldLines }) => {
-    const debeDescontarStock = docType === "factura" || (docType === "presupuesto" && modificaStock) || docType === "remito";
+    // Las facturas desde remito NO descuentan stock (el remito ya lo hizo)
+    const vieneDeRemito = docType === "factura" && originRemitoIds?.length > 0;
+    const debeDescontarStock = !vieneDeRemito && (docType === "factura" || (docType === "presupuesto" && modificaStock) || docType === "remito");
 
     if (editingId) {
       // Editing existing doc: revert old stock, apply new stock
