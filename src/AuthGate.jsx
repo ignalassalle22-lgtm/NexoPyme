@@ -794,9 +794,14 @@ export default function AuthGate({ children }) {
   const resetRegisterFields = () => { setCompanyName(''); setCuit(''); setPhone(''); setContactPerson(''); setAddress('') }
 
   useEffect(() => {
+    const isRecovery = () =>
+      window.location.hash.includes('type=recovery') ||
+      window.location.search.includes('type=recovery') ||
+      new URLSearchParams(window.location.hash.replace('#', '?')).get('type') === 'recovery'
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      if (session && window.location.hash.includes('type=recovery')) {
+      if (isRecovery()) {
         setMode('recovery')
         setLoading(false)
       } else if (session) {
@@ -809,7 +814,7 @@ export default function AuthGate({ children }) {
       if (event === 'SIGNED_OUT') {
         profileLoaded.current = false
         setSession(null); setProfile(null); setLoading(false); setMode('login')
-      } else if (event === 'PASSWORD_RECOVERY') {
+      } else if (event === 'PASSWORD_RECOVERY' || isRecovery()) {
         setSession(session)
         setMode('recovery')
         setLoading(false)
