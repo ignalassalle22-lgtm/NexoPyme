@@ -9563,45 +9563,139 @@ function POSJefeModule({ companyId }) {
         </div>
         {tickets.length === 0 ? (
           <div style={{ padding: "32px", textAlign: "center", color: T.muted, fontSize: 13 }}>Sin tickets para esta fecha</div>
-        ) : tickets.map(t => (
-          <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 20px", borderBottom: `1px solid ${T.border}`, opacity: t.estado === "anulado" ? 0.5 : 1 }}>
-            <div style={{ minWidth: 72 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: t.estado === "anulado" ? T.red : T.accent }}>{t.numero}</div>
-              <div style={{ fontSize: 10, color: T.muted }}>{new Date(t.created_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</div>
+        ) : tickets.map(t => {
+          const pagosT = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }];
+          const pagosLabel = pagosT.map(p => metodoLabel[p.metodo] || p.metodo).join(" + ");
+          return (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 20px", borderBottom: `1px solid ${T.border}`, opacity: t.estado === "anulado" ? 0.5 : 1 }}>
+              <div style={{ minWidth: 72 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.estado === "anulado" ? T.red : T.accent }}>{t.numero}</div>
+                <div style={{ fontSize: 10, color: T.muted }}>{new Date(t.created_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>
+                  {fmtAR(t.total)}
+                  {t.descuento > 0 && <span style={{ fontSize: 11, color: T.yellow, marginLeft: 6 }}>− {fmtAR(t.descuento)}</span>}
+                  {t.facturado && <span style={{ fontSize: 10, background: T.blueLight, color: T.blue, borderRadius: 4, padding: "1px 6px", marginLeft: 8, fontWeight: 700 }}>Facturado</span>}
+                </div>
+                <div style={{ fontSize: 11, color: T.muted }}>{pagosLabel} · {t.cajero_nombre} · {t.lines?.length || 0} ítem(s)</div>
+                {t.estado === "anulado" && <span style={{ fontSize: 11, color: T.red }}>ANULADO: {t.anulado_motivo}</span>}
+              </div>
+              <button onClick={() => setTicketDetalle(t)}
+                style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px 14px", color: T.ink, fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                Ver
+              </button>
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{fmtAR(t.total)}</div>
-              <div style={{ fontSize: 11, color: T.muted }}>{metodoLabel[t.metodo_pago] || t.metodo_pago} · {t.cajero_nombre} · {t.lines?.length || 0} ítem(s)</div>
-              {t.estado === "anulado" && <span style={{ fontSize: 11, color: T.red }}>ANULADO: {t.anulado_motivo}</span>}
-            </div>
-            <button onClick={() => setTicketDetalle(ticketDetalle?.id === t.id ? null : t)}
-              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px 12px", color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-              {ticketDetalle?.id === t.id ? "▲" : "▼"}
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Detalle de ticket expandido */}
-      {ticketDetalle && (
-        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", marginTop: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Detalle: {ticketDetalle.numero}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 100px 100px", gap: 1, background: T.border, borderRadius: 6, overflow: "hidden", marginBottom: 10 }}>
-            {["Producto", "Cant.", "Precio unit.", "Subtotal"].map(h => (
-              <div key={h} style={{ background: T.surface, padding: "7px 12px", fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.5 }}>{h.toUpperCase()}</div>
-            ))}
-            {(ticketDetalle.lines || []).map((l, i) => [
-              <div key={i+"n"} style={{ background: T.paper, padding: "9px 12px", fontSize: 13 }}>{l.nombre}</div>,
-              <div key={i+"q"} style={{ background: T.paper, padding: "9px 12px", fontSize: 13, color: T.muted }}>{l.qty}</div>,
-              <div key={i+"p"} style={{ background: T.paper, padding: "9px 12px", fontSize: 13 }}>{fmtAR(l.precio)}</div>,
-              <div key={i+"s"} style={{ background: T.paper, padding: "9px 12px", fontSize: 13, fontWeight: 700 }}>{fmtAR(l.precio * l.qty)}</div>,
-            ])}
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 15, fontWeight: 800, color: T.accent }}>
-            TOTAL: {fmtAR(ticketDetalle.total)}
-          </div>
-        </div>
-      )}
+      {/* Modal detalle de ticket */}
+      {ticketDetalle && (() => {
+        const td = ticketDetalle;
+        const lines = td.lines || [];
+        const pagosT = td.pagos?.length > 0 ? td.pagos : [{ metodo: td.metodo_pago, monto: td.total }];
+        const descuento = td.descuento || 0;
+        const totalBruto = (td.total || 0) + descuento;
+        // Calcular neto e IVA por línea
+        const ivaDesglose = {};
+        let netoTotal = 0;
+        let ivaTotal = 0;
+        const linesCalc = lines.map(l => {
+          const neto = Math.round((l.precio / (1 + (l.iva || 21) / 100)) * l.qty * 100) / 100;
+          const ivaImporte = Math.round((l.precio * l.qty - neto) * 100) / 100;
+          netoTotal += neto;
+          ivaTotal += ivaImporte;
+          if (!ivaDesglose[l.iva || 21]) ivaDesglose[l.iva || 21] = 0;
+          ivaDesglose[l.iva || 21] += ivaImporte;
+          return { ...l, neto, ivaImporte, subtotal: l.precio * l.qty };
+        });
+        return (
+          <Modal title={`Ticket ${td.numero}`} onClose={() => setTicketDetalle(null)} wide>
+            {/* Cabecera */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
+              {[
+                { label: "Fecha y hora", value: new Date(td.created_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }) },
+                { label: "Cajero", value: td.cajero_nombre || "—" },
+                { label: "Estado", value: td.estado === "anulado" ? "ANULADO" : td.facturado ? "Facturado" : "Emitido", color: td.estado === "anulado" ? T.red : td.facturado ? T.blue : T.accent },
+              ].map(f => (
+                <div key={f.label} style={{ background: T.surface, borderRadius: 8, padding: "10px 14px" }}>
+                  <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.5, marginBottom: 4 }}>{f.label.toUpperCase()}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: f.color || T.ink }}>{f.value}</div>
+                </div>
+              ))}
+            </div>
+            {td.estado === "anulado" && td.anulado_motivo && (
+              <div style={{ background: T.redLight, border: `1px solid ${T.red}40`, borderRadius: 8, padding: "8px 14px", fontSize: 12, color: T.red, marginBottom: 16 }}>Motivo de anulación: {td.anulado_motivo}</div>
+            )}
+
+            {/* Tabla de productos */}
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 8 }}>PRODUCTOS</div>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 100px 60px 90px 90px", background: T.surface, borderBottom: `1px solid ${T.border}` }}>
+                {["Producto", "Cant.", "Precio c/IVA", "IVA %", "Neto", "Subtotal"].map(h => (
+                  <div key={h} style={{ padding: "7px 12px", fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.5 }}>{h}</div>
+                ))}
+              </div>
+              {linesCalc.map((l, i) => (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 60px 100px 60px 90px 90px", borderBottom: i < linesCalc.length - 1 ? `1px solid ${T.border}` : "none", background: i % 2 === 0 ? T.paper : T.surface }}>
+                  <div style={{ padding: "9px 12px", fontSize: 13 }}>{l.nombre}</div>
+                  <div style={{ padding: "9px 12px", fontSize: 13, color: T.muted }}>{l.qty}</div>
+                  <div style={{ padding: "9px 12px", fontSize: 13 }}>{fmtAR(l.precio)}</div>
+                  <div style={{ padding: "9px 12px", fontSize: 13, color: T.muted }}>{l.iva || 21}%</div>
+                  <div style={{ padding: "9px 12px", fontSize: 13, color: T.muted }}>{fmtAR(l.neto)}</div>
+                  <div style={{ padding: "9px 12px", fontSize: 13, fontWeight: 700 }}>{fmtAR(l.subtotal)}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Totales */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+              {/* IVA desglose */}
+              <div style={{ background: T.surface, borderRadius: 8, padding: "12px 16px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 10 }}>IMPUESTOS</div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12, color: T.muted }}>
+                  <span>Neto gravado:</span><span>{fmtAR(netoTotal)}</span>
+                </div>
+                {Object.entries(ivaDesglose).map(([tasa, monto]) => (
+                  <div key={tasa} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12, color: T.muted }}>
+                    <span>IVA {tasa}%:</span><span>{fmtAR(monto)}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: T.muted, paddingTop: 6, borderTop: `1px solid ${T.border}`, marginTop: 4 }}>
+                  <span>Total IVA:</span><span>{fmtAR(ivaTotal)}</span>
+                </div>
+              </div>
+              {/* Total */}
+              <div style={{ background: T.surface, borderRadius: 8, padding: "12px 16px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 10 }}>RESUMEN</div>
+                {descuento > 0 && (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12, color: T.muted }}>
+                      <span>Subtotal:</span><span>{fmtAR(totalBruto)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12, color: T.yellow }}>
+                      <span>Descuento:</span><span>− {fmtAR(descuento)}</span>
+                    </div>
+                  </>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 18, fontWeight: 800, color: T.accent, paddingTop: 6, borderTop: `1px solid ${T.border}`, marginTop: 4 }}>
+                  <span>TOTAL</span><span>{fmtAR(td.total)}</span>
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 6 }}>PAGOS</div>
+                  {pagosT.map((p, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                      <span style={{ color: T.muted }}>{metodoLabel[p.metodo] || p.metodo}</span>
+                      <span style={{ fontWeight: 700 }}>{fmtAR(p.monto)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
     </div>
   );
 }
