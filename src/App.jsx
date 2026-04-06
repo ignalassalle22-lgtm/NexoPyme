@@ -9489,7 +9489,17 @@ function POSJefeModule({ companyId }) {
 
   const vigentes = tickets.filter(t => t.estado !== "anulado");
   const totalDia = vigentes.reduce((s, t) => s + (t.total || 0), 0);
-  const porMetodo = vigentes.reduce((acc, t) => { acc[t.metodo_pago] = (acc[t.metodo_pago] || 0) + t.total; return acc; }, {});
+  // Efectivo en caja: solo cobros con método efectivo
+  const totalEfectivo = vigentes.reduce((s, t) => {
+    const pg = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }];
+    return s + pg.filter(p => p.metodo === "efectivo").reduce((ss, p) => ss + (p.monto || 0), 0);
+  }, 0);
+  // Ventas por método usando array pagos[] (soporta pago dividido)
+  const porMetodo = vigentes.reduce((acc, t) => {
+    const pg = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }];
+    for (const p of pg) acc[p.metodo] = (acc[p.metodo] || 0) + (p.monto || 0);
+    return acc;
+  }, {});
   const fmtAR = (n) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(n || 0);
 
   const metodoLabel = { efectivo: "Efectivo", debito: "Débito", credito: "Crédito", transferencia: "Transf.", qr: "QR/MP", cuenta_corriente: "Cta. cte." };
@@ -9511,18 +9521,23 @@ function POSJefeModule({ companyId }) {
       </div>
 
       {/* KPIs del día */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
         {[
-          { label: "Total del día", value: fmtAR(totalDia), color: T.accent },
-          { label: "Tickets emitidos", value: vigentes.length, color: T.ink },
-          { label: "Ticket promedio", value: vigentes.length ? fmtAR(totalDia / vigentes.length) : "—", color: T.ink },
-          { label: "Anulados", value: tickets.filter(t => t.estado === "anulado").length, color: T.red },
+          { label: "Ventas del día", value: fmtAR(totalDia), color: T.blue, border: T.blue },
+          { label: "Efectivo en caja", value: fmtAR(totalEfectivo), color: T.accent, border: T.accent },
+          { label: "Tickets emitidos", value: vigentes.length, color: T.ink, border: T.border },
+          { label: "Ticket promedio", value: vigentes.length ? fmtAR(totalDia / vigentes.length) : "—", color: T.ink, border: T.border },
+          { label: "Anulados", value: tickets.filter(t => t.estado === "anulado").length, color: T.red, border: T.border },
         ].map(k => (
-          <div key={k.label} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px" }}>
+          <div key={k.label} style={{ background: T.paper, border: `1px solid ${k.border}`, borderRadius: 12, padding: "18px 20px" }}>
             <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>{k.label.toUpperCase()}</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{k.value}</div>
           </div>
         ))}
+      </div>
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 14px", marginBottom: 20, fontSize: 11, color: T.muted }}>
+        💡 <strong style={{ color: T.ink }}>Ventas del día</strong> = total de todos los tickets (todos los métodos) ·{" "}
+        <strong style={{ color: T.ink }}>Efectivo en caja</strong> = solo cobros en efectivo (lo que debería haber físicamente en la caja)
       </div>
 
       {/* Por método de pago */}

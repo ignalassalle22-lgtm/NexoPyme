@@ -318,10 +318,12 @@ export default function POSApp({ profile, onLogout }) {
     const { data, error } = await supabase.from('pos_tickets').insert(ticketData).select().single()
     if (error) { alert('Error al guardar ticket: ' + error.message); return }
 
-    // Movimiento en caja (efectivo solamente)
+    // Movimiento en caja: solo registra efectivo (lo demás no está en caja física)
     const montoEfectivo = pagosFinales.filter(p => p.metodo === 'efectivo').reduce((s, p) => s + p.monto, 0)
-    const newMov = { company_id: companyId, caja_id: cajaActual.id, tipo: 'venta', concepto: `Ticket ${numero}`, monto: ticketData.total }
-    await supabase.from('pos_caja_movimientos').insert(newMov)
+    const newMov = montoEfectivo > 0
+      ? { company_id: companyId, caja_id: cajaActual.id, tipo: 'venta', concepto: `Ticket ${numero}`, monto: montoEfectivo }
+      : null
+    if (newMov) await supabase.from('pos_caja_movimientos').insert(newMov)
 
     // Descontar stock
     for (const linea of lineas) {
@@ -334,7 +336,7 @@ export default function POSApp({ profile, onLogout }) {
     }
 
     setTickets(prev => [data, ...prev])
-    setMovimientos(prev => [...prev, { ...newMov, created_at: new Date().toISOString() }])
+    if (newMov) setMovimientos(prev => [...prev, { ...newMov, created_at: new Date().toISOString() }])
     setTicketConfirmado(data)
     resetTicket()
     if (searchRef.current) searchRef.current.focus()
@@ -399,9 +401,15 @@ export default function POSApp({ profile, onLogout }) {
       }
     }
     if (cajaActual) {
-      const mov = { company_id: companyId, caja_id: cajaActual.id, tipo: 'anulacion', concepto: `Anulación ${anulando.numero}`, monto: anulando.total }
-      await supabase.from('pos_caja_movimientos').insert(mov)
-      setMovimientos(prev => [...prev, { ...mov, created_at: new Date().toISOString() }])
+      const pagosAnulado = anulando.pagos?.length > 0
+        ? anulando.pagos
+        : [{ metodo: anulando.metodo_pago, monto: anulando.total }]
+      const efectivoAnulado = pagosAnulado.filter(p => p.metodo === 'efectivo').reduce((s, p) => s + (p.monto || 0), 0)
+      if (efectivoAnulado > 0) {
+        const mov = { company_id: companyId, caja_id: cajaActual.id, tipo: 'anulacion', concepto: `Anulación ${anulando.numero}`, monto: efectivoAnulado }
+        await supabase.from('pos_caja_movimientos').insert(mov)
+        setMovimientos(prev => [...prev, { ...mov, created_at: new Date().toISOString() }])
+      }
     }
     setTickets(prev => prev.map(t => t.id === anulando.id ? { ...t, estado: 'anulado', anulado_motivo: anulandoMotivo } : t))
     setAnulando(null); setAnulandoMotivo('')
@@ -419,7 +427,12 @@ export default function POSApp({ profile, onLogout }) {
     XLSX.writeFile(wb, `stock_pos_${todayStr()}.xlsx`)
   }
 
-  // ── Caja balance ─────────────────────────────────────────────────
+  // ── Ventas del turno (todos los métodos, de tickets directamente) ─
+  const ventasTurno = tickets
+    .filter(t => t.caja_id === cajaActual?.id && t.estado !== 'anulado')
+    .reduce((s, t) => s + (t.total || 0), 0)
+
+  // ── Efectivo en caja (movimientos: solo efectivo de ventas + manuales) ──
   const cajaBalance = movimientos.reduce((acc, m) => {
     if (['ingreso', 'venta', 'apertura'].includes(m.tipo)) return acc + (m.monto || 0)
     if (['egreso', 'anulacion'].includes(m.tipo)) return acc - Math.abs(m.monto || 0)
@@ -675,12 +688,16 @@ export default function POSApp({ profile, onLogout }) {
             {tickets.length > 0 && (() => {
               const vigentes = tickets.filter(t => t.estado !== 'anulado')
               const totalDia = vigentes.reduce((s, t) => s + (t.total || 0), 0)
+              const efectivoDia = vigentes.reduce((s, t) => {
+                const pg = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }]
+                return s + pg.filter(p => p.metodo === 'efectivo').reduce((ss, p) => ss + (p.monto || 0), 0)
+              }, 0)
               return (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20, maxWidth: 600 }}>
-                  {[{ label: 'Tickets emitidos', value: vigentes.length }, { label: 'Anulados', value: tickets.filter(t => t.estado === 'anulado').length }, { label: 'Total del día', value: fmt(totalDia), accent: true }].map(s => (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20, maxWidth: 780 }}>
+                  {[{ label: 'Tickets emitidos', value: vigentes.length }, { label: 'Anulados', value: tickets.filter(t => t.estado === 'anulado').length }, { label: 'Ventas del día', value: fmt(totalDia), color: T.blue }, { label: 'Efectivo cobrado', value: fmt(efectivoDia), accent: true }].map(s => (
                     <div key={s.label} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px' }}>
                       <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.5, marginBottom: 5 }}>{s.label.toUpperCase()}</div>
-                      <div style={{ fontSize: 17, fontWeight: 800, color: s.accent ? T.accent : T.ink }}>{s.value}</div>
+                      <div style={{ fontSize: 17, fontWeight: 800, color: s.accent ? T.accent : s.color || T.ink }}>{s.value}</div>
                     </div>
                   ))}
                 </div>
@@ -733,16 +750,17 @@ export default function POSApp({ profile, onLogout }) {
             </div>
             {cajaActual ? (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
                   {[
                     { label: 'Caja', value: cajaActual.nombre ? `${cajaActual.nombre} · ${cajaActual.turno}` : cajaActual.turno },
                     { label: 'Cajero', value: cajaActual.cajero_nombre || '—' },
                     { label: 'Apertura', value: new Date(cajaActual.abierta_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) },
-                    { label: 'Balance actual', value: fmt(cajaBalance), accent: true },
+                    { label: 'Ventas del turno', value: fmt(ventasTurno), color: T.blue },
+                    { label: 'Efectivo en caja', value: fmt(cajaBalance), accent: true },
                   ].map(s => (
-                    <div key={s.label} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px' }}>
+                    <div key={s.label} style={{ background: T.paper, border: `1px solid ${s.accent ? T.accent : s.color ? T.blue : T.border}`, borderRadius: 10, padding: '14px 16px' }}>
                       <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.5, marginBottom: 5 }}>{s.label.toUpperCase()}</div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: s.accent ? T.accent : T.ink }}>{s.value}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: s.accent ? T.accent : s.color || T.ink }}>{s.value}</div>
                     </div>
                   ))}
                 </div>
@@ -839,14 +857,18 @@ export default function POSApp({ profile, onLogout }) {
         <Modal title="Cerrar caja" onClose={() => setShowCerrarCaja(false)}>
           <div style={{ background: T.surface, borderRadius: 8, padding: '12px', marginBottom: 16, fontSize: 13 }}>
             {[
-              ['Ventas del turno', fmt(movimientos.filter(m => m.tipo === 'venta').reduce((s, m) => s + (m.monto || 0), 0))],
               ['Tickets emitidos', tickets.filter(t => t.caja_id === cajaActual?.id && t.estado !== 'anulado').length],
-              ['Balance calculado', fmt(cajaBalance)],
+              ['Ventas totales (todos los métodos)', fmt(ventasTurno)],
+              ['Efectivo en caja (calculado)', fmt(cajaBalance)],
             ].map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                <span style={{ color: T.muted }}>{label}:</span><span style={{ fontWeight: 700 }}>{value}</span>
+                <span style={{ color: T.muted }}>{label}:</span>
+                <span style={{ fontWeight: 700, color: label.includes('Efectivo') ? T.accent : T.ink }}>{value}</span>
               </div>
             ))}
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}`, fontSize: 11, color: T.muted }}>
+              El monto a contar y registrar es solo el efectivo en caja física.
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
