@@ -6242,18 +6242,21 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
       <div>
         <PageHeader title="Operativos" subtitle="Cobros, pagos y stock crítico" color={T.yellow} onPDF={pdfOperativos} onExcel={excelOperativos} />
 
-        <div style={{ background: `${T.yellow}12`, border: `1px solid ${T.yellow}40`, borderRadius: 12, padding: "16px 20px", marginBottom: 24, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.yellow, marginBottom: 4 }}>Cobros pendientes</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Facturas de venta emitidas aún no cobradas. Las resaltadas en amarillo vencen dentro de los próximos 7 días.</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.orange, marginBottom: 4 }}>Pagos pendientes</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Órdenes de compra registradas que todavía no fueron pagadas al proveedor. El vencimiento surge de la condición pactada con cada proveedor.</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.red, marginBottom: 4 }}>Stock crítico</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Productos con stock actual ≤ mínimo configurado en Inventario. El faltante se calcula como: mínimo − stock actual. Permite anticipar reposiciones.</div>
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${T.yellow}`, borderRadius: 10, padding: "16px 20px", marginBottom: 24 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.yellow, letterSpacing: 1, marginBottom: 12 }}>¿QUÉ MUESTRA ESTE REPORTE?</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Cobros pendientes</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Facturas de venta emitidas que aún no fueron cobradas. Las marcadas en amarillo vencen en los próximos 7 días y requieren seguimiento urgente.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Pagos pendientes</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Órdenes de compra que todavía no fueron pagadas al proveedor. El vencimiento surge de la condición pactada al registrar cada OC.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Stock crítico</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Productos con stock actual ≤ mínimo configurado en Inventario. El faltante = mínimo − stock actual. Sirve para anticipar reposiciones antes de quedarse sin mercadería.</div>
+            </div>
           </div>
         </div>
 
@@ -6381,22 +6384,25 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
         <PageHeader title="Tácticos" subtitle={`Período: ${from} al ${to}`} color={T.blue} onPDF={pdfTacticos} onExcel={excelTacticos}
           extraFilters={<div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}><DateInputs /></div>} />
 
-        <div style={{ background: `${T.blue}12`, border: `1px solid ${T.blue}40`, borderRadius: 12, padding: "16px 20px", marginBottom: 24, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 20 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, marginBottom: 4 }}>Ventas del período</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Total facturado con IVA en el rango de fechas. Incluye todas las facturas de venta emitidas, independientemente de si fueron cobradas.</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.orange, marginBottom: 4 }}>Compras del período</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Total de órdenes de compra registradas en el período, sin importar el estado de pago. Refleja el gasto en mercadería y materiales.</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.blue, marginBottom: 4 }}>Ranking de clientes</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Clientes ordenados de mayor a menor por total facturado en el período. Se suman todos los importes de sus facturas con IVA.</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.purple, marginBottom: 4 }}>Ranking de productos</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Productos por ingresos generados. La ganancia individual = ingresos − (último precio de compra × unidades vendidas).</div>
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${T.blue}`, borderRadius: 10, padding: "16px 20px", marginBottom: 24 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.blue, letterSpacing: 1, marginBottom: 12 }}>¿QUÉ MUESTRA ESTE REPORTE?</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 20 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Ventas del período</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Total facturado con IVA en el rango seleccionado. Incluye todas las facturas emitidas, sin importar si ya fueron cobradas.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Compras del período</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Total de órdenes de compra registradas en el período, sin importar el estado de pago. Refleja el gasto en mercadería.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Ranking de clientes</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Clientes ordenados de mayor a menor por total facturado en el período. Se suman todos los importes de sus facturas con IVA.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Ranking de productos</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Productos ordenados por ingresos generados. Ganancia = ingresos − (último precio de compra × unidades vendidas).</div>
+            </div>
           </div>
         </div>
 
@@ -6515,22 +6521,25 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
         <PageHeader title="Estratégicos" subtitle={`Período: ${from} al ${to}`} color={T.purple} onPDF={pdfEstrategicos} onExcel={excelEstrategicos}
           extraFilters={<div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}><DateInputs /></div>} />
 
-        <div style={{ background: `${T.purple}12`, border: `1px solid ${T.purple}40`, borderRadius: 12, padding: "16px 20px", marginBottom: 24, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 20 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, marginBottom: 4 }}>Ventas brutas</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Total facturado con IVA en el período. Es el ingreso bruto antes de descontar cualquier costo.</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.orange, marginBottom: 4 }}>Costo de compras</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Total de órdenes de compra del período. Refleja cuánto se gastó en mercadería, no necesariamente lo que se vendió.</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.purple, marginBottom: 4 }}>Rentabilidad mensual</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Costo de ventas = último precio de compra × unidades vendidas. Ganancia bruta = ventas − costo de ventas. Margen = ganancia / ventas × 100.</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.blue, marginBottom: 4 }}>Análisis ABC (Pareto)</div>
-            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Clasifica productos por ingresos acumulados: <strong style={{ color: T.accent }}>A</strong> = top 80% de ingresos, <strong style={{ color: T.blue }}>B</strong> = 80–95%, <strong style={{ color: T.muted }}>C</strong> = el resto. Sirve para enfocar esfuerzos en lo más rentable.</div>
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `4px solid ${T.purple}`, borderRadius: 10, padding: "16px 20px", marginBottom: 24 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.purple, letterSpacing: 1, marginBottom: 12 }}>¿QUÉ MUESTRA ESTE REPORTE?</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 20 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Ventas brutas</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Total facturado con IVA en el período. Es el ingreso bruto antes de descontar cualquier costo.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Costo de compras</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Total de OC del período. Cuánto se gastó en mercadería, no necesariamente lo que se vendió ese mes.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Rentabilidad mensual</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Costo de ventas = último precio de compra × unidades vendidas. Ganancia bruta = ventas − costo de ventas. Margen % = ganancia / ventas × 100.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Análisis ABC</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Clasifica productos por Pareto: A = top 80% de ingresos (los más rentables), B = 80–95%, C = el resto. Ayuda a enfocar esfuerzos en los productos que más aportan.</div>
+            </div>
           </div>
         </div>
 
@@ -6707,21 +6716,16 @@ function LogisticaModule({ clients, suppliers }) {
   // ── Optimización con IA ────────────────────────────────────────────────────
   const optimizeRoute = async () => {
     if (stops.length < 2) return;
-    const apiKey = localStorage.getItem("nexo_api_key") || "";
-    if (!apiKey.trim()) {
-      setOptimizeError("Para usar esta función necesitás configurar tu API Key de Anthropic en el módulo Compras (ajustes de IA).");
-      return;
-    }
     setIsOptimizing(true);
     setOptimizeError("");
     try {
       const res = await fetch("/api/claude-optimize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stops, routeStart, apiKey }),
+        body: JSON.stringify({ stops, routeStart }),
       });
       const data = await res.json();
-      if (data.error) { setOptimizeError(`Error de IA: ${data.error}`); setIsOptimizing(false); return; }
+      if (data.error) { setOptimizeError(data.error); setIsOptimizing(false); return; }
       const order = data.order;
       if (Array.isArray(order) && order.length === stops.length) {
         const reordered = order.map((idx, i) => ({ ...stops[idx], order: i + 1 }));

@@ -1,8 +1,11 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { stops, routeStart, apiKey } = req.body
-  if (!stops || !apiKey) return res.status(400).json({ error: 'Faltan campos: stops, apiKey' })
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada en el servidor. Agregala en Vercel → Settings → Environment Variables.' })
+
+  const { stops, routeStart } = req.body
+  if (!stops || stops.length < 2) return res.status(400).json({ error: 'Se necesitan al menos 2 paradas.' })
 
   const stopsDesc = stops.map((s, i) =>
     `${i + 1}. ${s.name} | Dirección: ${s.address || 'sin dirección'} | Horario: ${s.horarioAbre || '?'}-${s.horarioCierra || '?'} ${s.diasDisponibles || ''}`
@@ -13,7 +16,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey.trim(),
+        'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
