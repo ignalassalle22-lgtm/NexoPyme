@@ -2921,6 +2921,12 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
 
   return (
     <div>
+      {/* Modal Facturar desde POS */}
+      {showPOSImport && (
+        <POSImportModal companyId={companyId} onClose={() => setShowPOSImport(false)}
+          onImport={(preload) => { setShowPOSImport(false); onNewFacturaFromPOS(preload); }}
+        />
+      )}
       {/* Modal IA Presupuesto Rápido */}
       {showIAModal && (
         <Modal title="✦ Presupuesto rápido con IA" onClose={() => { setShowIAModal(false); resetIA(); }} wide>
@@ -9856,7 +9862,7 @@ export default function App({ session, profile, onLogout }) {
     openDoc(typeMap[action] || "factura");
   };
 
-  const handleSaveDoc = ({ lines, total, totalNeto, totalIva, clientId, clientName, docType, originPresupuestoId, originRemitoIds, modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor = "", metodoPago = "", editingId, oldLines }) => {
+  const handleSaveDoc = ({ lines, total, totalNeto, totalIva, clientId, clientName, docType, originPresupuestoId, originRemitoIds, modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor = "", metodoPago = "", editingId, oldLines, posTicketIds }) => {
     // Las facturas desde remito NO descuentan stock (el remito ya lo hizo)
     const vieneDeRemito = docType === "factura" && originRemitoIds?.length > 0;
     const debeDescontarStock = !vieneDeRemito && (docType === "factura" || (docType === "presupuesto" && modificaStock) || docType === "remito");
@@ -9907,6 +9913,9 @@ export default function App({ session, profile, onLogout }) {
     if (originRemitoIds?.length > 0) {
       setSaleInvoices(prev => prev.map(i => originRemitoIds.includes(i.id) ? { ...i, status: "facturado" } : i));
       if (companyId) supabase.from('sale_invoices').update({ status: 'facturado' }).in('id', originRemitoIds).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
+    }
+    if (posTicketIds?.length > 0) {
+      if (companyId) supabase.from('pos_tickets').update({ facturado: true }).in('id', posTicketIds).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
     const due = new Date(today); due.setDate(due.getDate() + 15);
     const newInv = { id, ref, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock, observaciones, moneda, vendedor, metodoPago };
@@ -10002,6 +10011,7 @@ export default function App({ session, profile, onLogout }) {
           onNewPresupuesto={() => openDoc("presupuesto")}
           onNewPresupuestoIA={(preload) => openDoc("presupuesto", preload)}
           onEditDoc={(inv) => openDoc(inv.type, { editingId: inv.id, clientId: inv.clientId, lines: inv.lines, moneda: inv.moneda, observaciones: inv.observaciones, vendedor: inv.vendedor, modificaStock: inv.modificaStock, metodoPago: inv.metodoPago || "" })}
+          onNewFacturaFromPOS={(preload) => openDoc("factura", preload)}
         />}
         {module === "comercial" && <ComercialModule clients={clients} saleInvoices={saleInvoices} />}
         {module === "compras" && <ComprasModule purchaseInvoices={purchaseInvoices} setPurchaseInvoices={setPurchaseInvoices} suppliers={suppliers} setSuppliers={setSuppliers} products={products} setProducts={setProducts} priceLists={priceLists} setPriceLists={setPriceLists} companyId={companyId} onNewPurchase={() => setShowPurchaseBuilder(true)} ordenesCompra={ordenesCompra} setOrdenesCompra={setOrdenesCompra} cheques={cheques} setCheques={setCheques} cajas={cajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} />}

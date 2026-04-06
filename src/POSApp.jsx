@@ -182,7 +182,7 @@ export default function POSApp({ profile, onLogout }) {
     setLoading(true)
     const [prods, cajas, ticks, config] = await Promise.all([
       supabase.from('products').select('*').eq('company_id', companyId).order('name'),
-      supabase.from('pos_cajas').select('*').eq('company_id', companyId).eq('estado', 'abierta').order('abierta_at', { ascending: false }).limit(1),
+      supabase.from('pos_cajas').select('*').eq('company_id', companyId).eq('estado', 'abierta').eq('fecha', todayStr()).order('abierta_at', { ascending: false }).limit(1),
       supabase.from('pos_tickets').select('*').eq('company_id', companyId).eq('fecha', todayStr()).order('created_at', { ascending: false }),
       supabase.from('pos_config').select('*').eq('company_id', companyId).maybeSingle(),
     ])
@@ -248,13 +248,16 @@ export default function POSApp({ profile, onLogout }) {
     : descuentoNum
   const totalConDescuento = Math.max(0, Math.round((calculos.total - descuentoMonto) * 100) / 100)
 
-  // Si hay un solo pago con monto vacío → usa totalConDescuento
-  const totalPagado = pagos.reduce((s, p, i) => {
+  // Si hay un solo pago con monto vacío → usa totalConDescuento automáticamente
+  const totalPagado = pagos.reduce((s, p) => {
     if (pagos.length === 1 && p.monto === '') return s + totalConDescuento
     return s + (parseFloat(p.monto) || 0)
   }, 0)
   const restante = Math.round((totalConDescuento - totalPagado) * 100) / 100
-  const canCobrar = lineas.length > 0 && cajaActual && restante <= 0.01
+  // Con 1 pago sin monto: siempre válido. Con montos ingresados: debe sumar exacto (±0.01)
+  const pagosCompletos = (pagos.length === 1 && pagos[0].monto === '')
+    || (pagos.every(p => p.monto !== '') && Math.abs(restante) <= 0.01)
+  const canCobrar = lineas.length > 0 && cajaActual && pagosCompletos
 
   // ── Ticket builder ───────────────────────────────────────────────
   const addProduct = (prod) => {
@@ -463,8 +466,8 @@ export default function POSApp({ profile, onLogout }) {
           : <span style={{ fontSize: 11, background: T.redLight, color: T.red, borderRadius: 20, padding: '3px 10px', fontWeight: 700 }}>Sin caja abierta</span>
         }
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button onClick={() => setShowMetodosConfig(true)} title="Configurar métodos de pago"
-            style={{ background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 10px', color: T.muted, fontSize: 11, cursor: 'pointer' }}>
+          <button onClick={() => setShowMetodosConfig(true)} title="Configurar métodos de pago personalizados"
+            style={{ background: T.purpleLight, border: `1px solid ${T.purple}50`, borderRadius: 6, padding: '5px 12px', color: T.purple, fontSize: 11, cursor: 'pointer', fontWeight: 700 }}>
             ⚙ Métodos de pago
           </button>
           <span style={{ fontSize: 12, color: T.muted }}>{profile.display_name || profile.email}</span>
@@ -624,8 +627,10 @@ export default function POSApp({ profile, onLogout }) {
                             )}
                           </div>
                         ))}
-                        {restante > 0.01 && pagos.some(p => p.monto !== '') && (
-                          <div style={{ fontSize: 11, color: T.yellow, marginBottom: 5 }}>Restante: {fmt(restante)}</div>
+                        {pagos.some(p => p.monto !== '') && Math.abs(restante) > 0.01 && (
+                          <div style={{ fontSize: 11, color: restante > 0 ? T.yellow : T.red, marginBottom: 5, fontWeight: 700 }}>
+                            {restante > 0 ? `Falta: ${fmt(restante)}` : `Sobrante: ${fmt(Math.abs(restante))} — ajustá los montos`}
+                          </div>
                         )}
                         <button onClick={() => setPagos(prev => [...prev, { metodo: 'efectivo', monto: '' }])}
                           style={{ background: 'transparent', border: `1px dashed ${T.border}`, borderRadius: 6, padding: '5px 12px', color: T.muted, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', width: '100%' }}>
@@ -638,10 +643,15 @@ export default function POSApp({ profile, onLogout }) {
                   <button onClick={cobrar} disabled={!canCobrar} style={{
                     ...btnPrimary, width: '100%', padding: '13px', fontSize: 15,
                     opacity: canCobrar ? 1 : 0.4, cursor: canCobrar ? 'pointer' : 'not-allowed',
-                    background: restante > 0.01 && pagos.some(p => p.monto !== '') ? T.yellow : T.accent,
+                    background: pagos.some(p => p.monto !== '') && Math.abs(restante) > 0.01 ? (restante > 0 ? T.yellow : T.red) : T.accent,
                   }}>
                     {lineas.length > 0 ? `Cobrar ${fmt(totalConDescuento)}` : 'Cobrar'}
                   </button>
+                  {!cajaActual && (
+                    <div style={{ marginTop: 8, background: T.redLight, border: `1px solid ${T.red}40`, borderRadius: 8, padding: '8px 12px', fontSize: 12, color: T.red, textAlign: 'center' }}>
+                      No hay caja abierta para hoy. Abrí una caja desde la pestaña Caja.
+                    </div>
+                  )}
                   {lineas.length > 0 && (
                     <button onClick={resetTicket} style={{ width: '100%', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px', color: T.muted, fontSize: 12, cursor: 'pointer', marginTop: 5, fontFamily: 'inherit' }}>
                       Limpiar ticket
