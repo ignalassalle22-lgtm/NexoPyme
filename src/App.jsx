@@ -579,7 +579,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   };
 
   const doSave = () => {
-    onSave({ lines, total, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor, metodoPago, editingId: preload?.editingId || null, oldLines: preload?.lines || null });
+    onSave({ lines, total, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor, metodoPago, editingId: preload?.editingId || null, oldLines: preload?.lines || null, posTicketIds: preload?.posTicketIds || null });
     setDone(true);
   };
 
@@ -2373,8 +2373,133 @@ function VendedoresTab({ vendedores, setVendedores, saleInvoices }) {
   );
 }
 
+// ─── POS IMPORT MODAL ─────────────────────────────────────────────────────────
+function POSImportModal({ companyId, onImport, onClose }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [loading, setLoading] = useState(true);
+  const [tickets, setTickets] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
+
+  const loadTickets = async (from, to) => {
+    setLoading(true);
+    setSelectedIds([]);
+    const { data } = await supabase.from('pos_tickets')
+      .select('*').eq('company_id', companyId).neq('estado', 'anulado').eq('facturado', false)
+      .gte('fecha', from).lte('fecha', to).order('created_at', { ascending: false });
+    if (data) setTickets(data);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadTickets(dateFrom, dateTo); }, []);
+
+  const toggle = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleAll = () => setSelectedIds(selectedIds.length === tickets.length ? [] : tickets.map(t => t.id));
+
+  const buildPreload = () => {
+    const selected = tickets.filter(t => selectedIds.includes(t.id));
+    const lineMap = {};
+    for (const ticket of selected) {
+      for (const l of (ticket.lines || [])) {
+        const key = l.productId || l.nombre;
+        const iva = l.iva ?? 21;
+        const unitNeto = l.precio / (1 + iva / 100);
+        if (lineMap[key]) {
+          const e = lineMap[key];
+          const qty = e.qty + l.qty;
+          const neto = qty * e.unitPrice;
+          const ivaImporte = neto * iva / 100;
+          lineMap[key] = { ...e, qty, neto, ivaImporte, subtotal: neto + ivaImporte };
+        } else {
+          const neto = l.qty * unitNeto;
+          const ivaImporte = neto * iva / 100;
+          lineMap[key] = { productId: l.productId || null, name: l.nombre, sku: l.sku || '', qty: l.qty, unitPrice: unitNeto, listPrice: unitNeto, isManualPrice: true, source: 'pos', unit: l.unit || 'unidad', iva, neto, ivaImporte, subtotal: neto + ivaImporte };
+        }
+      }
+    }
+    const dates = selected.map(t => t.fecha).sort();
+    const obs = `Consolidado de ${selected.length} ticket(s) POS · ${dates[0]}${dates[0] !== dates[dates.length - 1] ? ' al ' + dates[dates.length - 1] : ''}`;
+    onImport({ lines: Object.values(lineMap), moneda: 'ARS', modificaStock: false, observaciones: obs, posTicketIds: selectedIds });
+  };
+
+  const fmtAR = (n) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(n || 0);
+  const totalSel = tickets.filter(t => selectedIds.includes(t.id)).reduce((s, t) => s + (t.total || 0), 0);
+
+  return (
+    <Modal title="Facturar desde POS" onClose={onClose} wide>
+      {/* Filtro de fechas */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>DESDE</label>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>HASTA</label>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+        </div>
+        <Btn onClick={() => loadTickets(dateFrom, dateTo)}>Buscar</Btn>
+      </div>
+
+      {loading ? (
+        <div style={{ padding: "32px", textAlign: "center", color: T.muted }}>Cargando tickets…</div>
+      ) : tickets.length === 0 ? (
+        <div style={{ padding: "32px", textAlign: "center", color: T.muted, background: T.surface, borderRadius: 12, border: `1px dashed ${T.border}` }}>
+          Sin tickets sin facturar en el rango seleccionado.
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 13, color: T.muted }}>{tickets.length} ticket(s) disponibles · {selectedIds.length} seleccionados</div>
+            <button onClick={toggleAll} style={{ background: "none", border: "none", color: T.blue, fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+              {selectedIds.length === tickets.length ? "Deseleccionar todo" : "Seleccionar todo"}
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gap: 8, maxHeight: 380, overflowY: "auto", marginBottom: 16 }}>
+            {tickets.map(t => {
+              const isSel = selectedIds.includes(t.id);
+              return (
+                <div key={t.id} onClick={() => toggle(t.id)}
+                  style={{ background: isSel ? T.accentLight : T.surface, border: `2px solid ${isSel ? T.accent : T.border}`, borderRadius: 10, padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${isSel ? T.accent : T.border}`, background: isSel ? T.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {isSel && <span style={{ color: "#fff", fontSize: 11, fontWeight: 800 }}>✓</span>}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 3 }}>
+                      <span style={{ fontFamily: "monospace", fontWeight: 700, color: T.accent, fontSize: 12 }}>{t.numero}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{fmtAR(t.total)}</span>
+                      <span style={{ fontSize: 11, color: T.muted }}>{t.fecha} · {t.cajero_nombre}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: T.muted }}>
+                      {(t.lines || []).slice(0, 4).map((l, i) => <span key={i} style={{ background: T.surface2, padding: "1px 7px", borderRadius: 5, marginRight: 4 }}>{l.nombre} ×{l.qty}</span>)}
+                      {(t.lines || []).length > 4 && <span style={{ color: T.muted }}>+{t.lines.length - 4} más</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {selectedIds.length > 0 && (
+        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 11, color: T.muted }}>Total seleccionado</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.accent }}>{fmtAR(totalSel)}</div>
+          </div>
+          <Btn onClick={buildPreload}>Generar factura →</Btn>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 // ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
-function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, cheques, setCheques, cajas, cajaMovimientos, setCajaMovimientos, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc }) {
+function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, cheques, setCheques, cajas, cajaMovimientos, setCajaMovimientos, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc, onNewFacturaFromPOS }) {
   const [tab, setTab] = useState("docs");
   const [filterType, setFilterType] = useState("all");
   const [searchDocNum, setSearchDocNum] = useState("");
@@ -2388,6 +2513,7 @@ function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, prod
   const [payingInv, setPayingInv] = useState(null);
   const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
   const [viewingInv, setViewingInv] = useState(null);
+  const [showPOSImport, setShowPOSImport] = useState(false);
 
   // ── IA Presupuesto rápido ────────────────────────────────────────────────
   const [showIAModal, setShowIAModal] = useState(false);
@@ -3000,6 +3126,12 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
             style={{ background: T.orangeLight, color: T.orange, border: `1px solid ${T.orange}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
             📦 Nuevo remito
           </button>
+          {onNewFacturaFromPOS && (
+            <button onClick={() => setShowPOSImport(true)}
+              style={{ background: T.purpleLight, color: T.purple, border: `1px solid ${T.purple}40`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              🏪 Desde POS
+            </button>
+          )}
           <button onClick={onNewFactura}
             style={{ background: T.accent, color: "#fff", border: `1px solid ${T.accent}`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
             📄 Nueva factura

@@ -10,6 +10,7 @@ const T = {
   yellow: "#e3b341", yellowLight: "#2d1f02",
   red: "#f85149", redLight: "#2d0f0e",
   blue: "#58a6ff", blueLight: "#0c1d33",
+  purple: "#a371f7", purpleLight: "#1e1240",
 }
 
 const fmt = (n) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }).format(n || 0)
@@ -18,6 +19,15 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
 const labelStyle = { fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, display: 'block', marginBottom: 6 }
 const inputStyle = { width: '100%', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: '10px 12px', color: T.ink, fontSize: 14, outline: 'none', fontFamily: 'inherit' }
 const btnPrimary = { background: T.accent, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 18px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 13 }
+
+const DEFAULT_METODOS = [
+  { id: 'efectivo', label: '💵 Efectivo' },
+  { id: 'debito', label: '💳 Débito' },
+  { id: 'credito', label: '💳 Crédito' },
+  { id: 'transferencia', label: '🔀 Transferencia' },
+  { id: 'qr', label: '📱 QR / MP' },
+  { id: 'cuenta_corriente', label: '📋 Cta. corriente' },
+]
 
 // ─── MODAL ─────────────────────────────────────────────────────────────────────
 function Modal({ title, onClose, children, width = 480 }) {
@@ -36,7 +46,7 @@ function Modal({ title, onClose, children, width = 480 }) {
 }
 
 // ─── TICKET VIEW (formato boleta) ──────────────────────────────────────────────
-function TicketView({ ticket, companyName }) {
+function TicketView({ ticket, companyName, metodosPago }) {
   const lines = ticket.lines || []
   const calculos = lines.reduce((acc, l) => {
     const neto = (l.precio / (1 + l.iva / 100)) * l.qty
@@ -46,10 +56,14 @@ function TicketView({ ticket, companyName }) {
     return acc
   }, { ivaDesglose: {} })
 
-  const metodoLabel = {
-    efectivo: 'Efectivo', debito: 'Tarjeta Débito', credito: 'Tarjeta Crédito',
-    transferencia: 'Transferencia', qr: 'QR / Mercado Pago', cuenta_corriente: 'Cuenta Corriente',
-  }[ticket.metodo_pago] || ticket.metodo_pago
+  const getMetodoLabel = (id) => {
+    const all = [...DEFAULT_METODOS, ...(metodosPago || [])]
+    return all.find(m => m.id === id)?.label || id
+  }
+
+  const pagos = ticket.pagos?.length > 0 ? ticket.pagos : [{ metodo: ticket.metodo_pago, monto: ticket.total }]
+  const descuento = ticket.descuento || 0
+  const totalBruto = (ticket.total || 0) + descuento
 
   return (
     <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: T.ink, background: '#0d1117', borderRadius: 8, padding: '16px', border: `1px solid ${T.border}` }}>
@@ -60,9 +74,7 @@ function TicketView({ ticket, companyName }) {
           {new Date(ticket.created_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}
         </div>
         <div style={{ fontWeight: 700, fontSize: 14, color: T.accent, marginTop: 6 }}>{ticket.numero}</div>
-        {ticket.estado === 'anulado' && (
-          <div style={{ color: T.red, fontWeight: 800, marginTop: 6, letterSpacing: 2 }}>★ ANULADO ★</div>
-        )}
+        {ticket.estado === 'anulado' && <div style={{ color: T.red, fontWeight: 800, marginTop: 6, letterSpacing: 2 }}>★ ANULADO ★</div>}
       </div>
       <div style={{ marginBottom: 12, borderBottom: `1px dashed ${T.border}`, paddingBottom: 12 }}>
         {lines.map((l, i) => (
@@ -71,13 +83,11 @@ function TicketView({ ticket, companyName }) {
               <span style={{ flex: 1, paddingRight: 8 }}>{l.nombre}</span>
               <span style={{ fontWeight: 700 }}>{fmt(l.precio * l.qty)}</span>
             </div>
-            <div style={{ color: T.muted, fontSize: 10 }}>
-              {l.qty} × {fmt(l.precio)} · IVA {l.iva}%
-            </div>
+            <div style={{ color: T.muted, fontSize: 10 }}>{l.qty} × {fmt(l.precio)} · IVA {l.iva}%</div>
           </div>
         ))}
       </div>
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 12, borderBottom: `1px dashed ${T.border}`, paddingBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', color: T.muted, marginBottom: 3 }}>
           <span>Neto gravado:</span><span>{fmt(ticket.subtotal_neto)}</span>
         </div>
@@ -86,13 +96,28 @@ function TicketView({ ticket, companyName }) {
             <span>IVA {tasa}%:</span><span>{fmt(monto)}</span>
           </div>
         ))}
+        {descuento > 0 && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: T.muted, marginBottom: 3 }}>
+              <span>Subtotal:</span><span>{fmt(totalBruto)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: T.yellow, marginBottom: 3 }}>
+              <span>Descuento:</span><span>− {fmt(descuento)}</span>
+            </div>
+          </>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 16, color: T.accent, marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${T.border}` }}>
           <span>TOTAL</span><span>{fmt(ticket.total)}</span>
         </div>
       </div>
-      <div style={{ textAlign: 'center', color: T.muted, fontSize: 10, borderTop: `1px dashed ${T.border}`, paddingTop: 8 }}>
-        {metodoLabel} · {ticket.cajero_nombre || ''}
-        <br />Documento no válido como factura fiscal
+      <div style={{ color: T.muted, fontSize: 10 }}>
+        {pagos.map((p, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>{getMetodoLabel(p.metodo)}</span><span>{fmt(p.monto)}</span>
+          </div>
+        ))}
+        <div style={{ marginTop: 6, textAlign: 'center' }}>{ticket.cajero_nombre || ''}</div>
+        <div style={{ textAlign: 'center', marginTop: 4 }}>Documento no válido como factura fiscal</div>
       </div>
     </div>
   )
@@ -104,6 +129,7 @@ export default function POSApp({ profile, onLogout }) {
 
   // ── Data ─────────────────────────────────────────────────────────
   const [productos, setProductos] = useState([])
+  const [metodosPago, setMetodosPago] = useState([]) // custom methods from DB
   const [cajaActual, setCajaActual] = useState(null)
   const [tickets, setTickets] = useState([])
   const [movimientos, setMovimientos] = useState([])
@@ -111,7 +137,9 @@ export default function POSApp({ profile, onLogout }) {
 
   // ── Ticket builder ───────────────────────────────────────────────
   const [lineas, setLineas] = useState([])
-  const [metodoPago, setMetodoPago] = useState('efectivo')
+  const [pagos, setPagos] = useState([{ metodo: 'efectivo', monto: '' }])
+  const [descuento, setDescuento] = useState('')
+  const [tipoDescuento, setTipoDescuento] = useState('monto') // 'monto' | 'pct'
   const [search, setSearch] = useState('')
   const [ticketConfirmado, setTicketConfirmado] = useState(null)
   const searchRef = useRef(null)
@@ -121,6 +149,7 @@ export default function POSApp({ profile, onLogout }) {
 
   // ── Caja forms ───────────────────────────────────────────────────
   const [showAbrirCaja, setShowAbrirCaja] = useState(false)
+  const [cajaNombre, setCajaNombre] = useState('')
   const [turno, setTurno] = useState('mañana')
   const [montoInicial, setMontoInicial] = useState('0')
   const [showCerrarCaja, setShowCerrarCaja] = useState(false)
@@ -139,20 +168,26 @@ export default function POSApp({ profile, onLogout }) {
   const [ticketDetalle, setTicketDetalle] = useState(null)
   const [ticketFecha, setTicketFecha] = useState(todayStr())
 
-  // ── Stock search ─────────────────────────────────────────────────
+  // ── Stock ─────────────────────────────────────────────────────────
   const [stockSearch, setStockSearch] = useState('')
+
+  // ── Config métodos de pago ───────────────────────────────────────
+  const [showMetodosConfig, setShowMetodosConfig] = useState(false)
+  const [nuevoMetodoLabel, setNuevoMetodoLabel] = useState('')
 
   // ── Init ─────────────────────────────────────────────────────────
   useEffect(() => { loadAll() }, [])
 
   const loadAll = async () => {
     setLoading(true)
-    const [prods, cajas, ticks] = await Promise.all([
+    const [prods, cajas, ticks, config] = await Promise.all([
       supabase.from('products').select('*').eq('company_id', companyId).order('name'),
       supabase.from('pos_cajas').select('*').eq('company_id', companyId).eq('estado', 'abierta').order('abierta_at', { ascending: false }).limit(1),
       supabase.from('pos_tickets').select('*').eq('company_id', companyId).eq('fecha', todayStr()).order('created_at', { ascending: false }),
+      supabase.from('pos_config').select('*').eq('company_id', companyId).maybeSingle(),
     ])
     if (prods.data) setProductos(prods.data)
+    if (config.data?.metodos_pago) setMetodosPago(config.data.metodos_pago)
     if (cajas.data?.length) {
       const caja = cajas.data[0]
       setCajaActual(caja)
@@ -168,11 +203,58 @@ export default function POSApp({ profile, onLogout }) {
     if (data) setTickets(data)
   }
 
-  // ── Precio POS (usa lista_a como default) ────────────────────────
+  const saveMetodosPago = async (newList) => {
+    setMetodosPago(newList)
+    await supabase.from('pos_config').upsert({ company_id: companyId, metodos_pago: newList, updated_at: new Date().toISOString() })
+  }
+
+  const addMetodo = async () => {
+    if (!nuevoMetodoLabel.trim()) return
+    const id = 'custom_' + Date.now()
+    const newList = [...metodosPago, { id, label: nuevoMetodoLabel.trim() }]
+    await saveMetodosPago(newList)
+    setNuevoMetodoLabel('')
+  }
+
+  const removeMetodo = async (id) => {
+    await saveMetodosPago(metodosPago.filter(m => m.id !== id))
+  }
+
+  // ── Precio POS ───────────────────────────────────────────────────
   const getPosPrice = (prod) => {
     const prices = prod.prices || {}
     return prices.lista_a || prices[Object.keys(prices)[0]] || prod.cost || 0
   }
+
+  // ── Todos los métodos disponibles ────────────────────────────────
+  const allMetodos = [...DEFAULT_METODOS, ...metodosPago]
+  const getMetodoLabel = (id) => allMetodos.find(m => m.id === id)?.label || id
+
+  // ── Calculos ticket ──────────────────────────────────────────────
+  const calculos = lineas.reduce((acc, l) => {
+    const neto = (l.precio / (1 + l.iva / 100)) * l.qty
+    const iva = l.precio * l.qty - neto
+    acc.neto += neto
+    acc.iva += iva
+    acc.total += l.precio * l.qty
+    if (!acc.ivaDesglose[l.iva]) acc.ivaDesglose[l.iva] = 0
+    acc.ivaDesglose[l.iva] += iva
+    return acc
+  }, { neto: 0, iva: 0, total: 0, ivaDesglose: {} })
+
+  const descuentoNum = parseFloat(descuento) || 0
+  const descuentoMonto = tipoDescuento === 'pct'
+    ? Math.round(calculos.total * descuentoNum / 100 * 100) / 100
+    : descuentoNum
+  const totalConDescuento = Math.max(0, Math.round((calculos.total - descuentoMonto) * 100) / 100)
+
+  // Si hay un solo pago con monto vacío → usa totalConDescuento
+  const totalPagado = pagos.reduce((s, p, i) => {
+    if (pagos.length === 1 && p.monto === '') return s + totalConDescuento
+    return s + (parseFloat(p.monto) || 0)
+  }, 0)
+  const restante = Math.round((totalConDescuento - totalPagado) * 100) / 100
+  const canCobrar = lineas.length > 0 && cajaActual && restante <= 0.01
 
   // ── Ticket builder ───────────────────────────────────────────────
   const addProduct = (prod) => {
@@ -196,22 +278,21 @@ export default function POSApp({ profile, onLogout }) {
     setLineas(prev => prev.map(l => l.productId === productId ? { ...l, precio: parseFloat(precio) || 0 } : l))
   }
 
-  const calculos = lineas.reduce((acc, l) => {
-    const neto = (l.precio / (1 + l.iva / 100)) * l.qty
-    const iva = l.precio * l.qty - neto
-    acc.neto += neto
-    acc.iva += iva
-    acc.total += l.precio * l.qty
-    if (!acc.ivaDesglose[l.iva]) acc.ivaDesglose[l.iva] = 0
-    acc.ivaDesglose[l.iva] += iva
-    return acc
-  }, { neto: 0, iva: 0, total: 0, ivaDesglose: {} })
+  const resetTicket = () => {
+    setLineas([]); setPagos([{ metodo: 'efectivo', monto: '' }])
+    setDescuento(''); setTipoDescuento('monto')
+  }
 
   // ── Cobrar ───────────────────────────────────────────────────────
   const cobrar = async () => {
-    if (!lineas.length || !cajaActual) return
+    if (!canCobrar) return
     const { count } = await supabase.from('pos_tickets').select('id', { count: 'exact', head: true }).eq('company_id', companyId)
     const numero = `T-${String((count || 0) + 1).padStart(4, '0')}`
+
+    // Normalizar pagos
+    const pagosFinales = pagos.length === 1 && pagos[0].monto === ''
+      ? [{ metodo: pagos[0].metodo, monto: totalConDescuento }]
+      : pagos.map(p => ({ metodo: p.metodo, monto: parseFloat(p.monto) || 0 }))
 
     const ticketData = {
       company_id: companyId,
@@ -221,17 +302,21 @@ export default function POSApp({ profile, onLogout }) {
       cajero_nombre: profile.display_name || profile.email,
       caja_id: cajaActual.id,
       lines: lineas,
-      subtotal_neto: Math.round(calculos.neto * 100) / 100,
-      iva_total: Math.round(calculos.iva * 100) / 100,
-      total: Math.round(calculos.total * 100) / 100,
-      metodo_pago: metodoPago,
+      subtotal_neto: Math.round(calculos.neto * (totalConDescuento / (calculos.total || 1)) * 100) / 100,
+      iva_total: Math.round(calculos.iva * (totalConDescuento / (calculos.total || 1)) * 100) / 100,
+      total: totalConDescuento,
+      descuento: descuentoMonto,
+      metodo_pago: pagosFinales[0]?.metodo || 'efectivo',
+      pagos: pagosFinales,
       estado: 'emitido',
+      facturado: false,
     }
 
     const { data, error } = await supabase.from('pos_tickets').insert(ticketData).select().single()
     if (error) { alert('Error al guardar ticket: ' + error.message); return }
 
-    // Movimiento en caja
+    // Movimiento en caja (efectivo solamente)
+    const montoEfectivo = pagosFinales.filter(p => p.metodo === 'efectivo').reduce((s, p) => s + p.monto, 0)
     const newMov = { company_id: companyId, caja_id: cajaActual.id, tipo: 'venta', concepto: `Ticket ${numero}`, monto: ticketData.total }
     await supabase.from('pos_caja_movimientos').insert(newMov)
 
@@ -248,8 +333,7 @@ export default function POSApp({ profile, onLogout }) {
     setTickets(prev => [data, ...prev])
     setMovimientos(prev => [...prev, { ...newMov, created_at: new Date().toISOString() }])
     setTicketConfirmado(data)
-    setLineas([])
-    setMetodoPago('efectivo')
+    resetTicket()
     if (searchRef.current) searchRef.current.focus()
   }
 
@@ -258,6 +342,7 @@ export default function POSApp({ profile, onLogout }) {
     const monto = parseFloat(montoInicial) || 0
     const { data, error } = await supabase.from('pos_cajas').insert({
       company_id: companyId, fecha: todayStr(), turno,
+      nombre: cajaNombre.trim() || null,
       cajero_id: profile.id, cajero_nombre: profile.display_name || profile.email,
       monto_inicial: monto, estado: 'abierta', abierta_at: new Date().toISOString(),
     }).select().single()
@@ -267,7 +352,7 @@ export default function POSApp({ profile, onLogout }) {
     setCajaActual(data)
     setMovimientos([{ ...mov, created_at: new Date().toISOString() }])
     setShowAbrirCaja(false)
-    setMontoInicial('0')
+    setMontoInicial('0'); setCajaNombre('')
     setTab('venta')
   }
 
@@ -302,7 +387,6 @@ export default function POSApp({ profile, onLogout }) {
     if (!anulandoMotivo.trim()) return
     const { error } = await supabase.from('pos_tickets').update({ estado: 'anulado', anulado_motivo: anulandoMotivo }).eq('id', anulando.id)
     if (error) { alert('Error: ' + error.message); return }
-    // Restaurar stock
     for (const linea of (anulando.lines || [])) {
       const prod = productos.find(p => p.id === linea.productId)
       if (prod) {
@@ -311,7 +395,6 @@ export default function POSApp({ profile, onLogout }) {
         setProductos(prev => prev.map(p => p.id === prod.id ? { ...p, stock: ns } : p))
       }
     }
-    // Movimiento de anulación
     if (cajaActual) {
       const mov = { company_id: companyId, caja_id: cajaActual.id, tipo: 'anulacion', concepto: `Anulación ${anulando.numero}`, monto: anulando.total }
       await supabase.from('pos_caja_movimientos').insert(mov)
@@ -335,24 +418,22 @@ export default function POSApp({ profile, onLogout }) {
 
   // ── Caja balance ─────────────────────────────────────────────────
   const cajaBalance = movimientos.reduce((acc, m) => {
-    if (m.tipo === 'ingreso' || m.tipo === 'venta' || m.tipo === 'apertura') return acc + (m.monto || 0)
-    if (m.tipo === 'egreso' || m.tipo === 'anulacion') return acc - Math.abs(m.monto || 0)
+    if (['ingreso', 'venta', 'apertura'].includes(m.tipo)) return acc + (m.monto || 0)
+    if (['egreso', 'anulacion'].includes(m.tipo)) return acc - Math.abs(m.monto || 0)
     return acc
   }, 0)
 
   const filteredProducts = search.trim()
-    ? productos.filter(p => {
-        const q = search.toLowerCase()
-        return p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q)
-      })
+    ? productos.filter(p => { const q = search.toLowerCase(); return p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q) })
     : productos
 
   const filteredStock = stockSearch.trim()
-    ? productos.filter(p => {
-        const q = stockSearch.toLowerCase()
-        return p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q)
-      })
+    ? productos.filter(p => { const q = stockSearch.toLowerCase(); return p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q) })
     : productos
+
+  const cajaHeaderLabel = cajaActual
+    ? `✓ ${cajaActual.nombre ? `${cajaActual.nombre} · ` : ''}${cajaActual.turno}`
+    : ''
 
   if (loading) return (
     <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: T.bg, color: T.ink, fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
@@ -378,10 +459,14 @@ export default function POSApp({ profile, onLogout }) {
         <div style={{ fontSize: 17, fontWeight: 800 }}><span style={{ color: T.accent }}>Nexo</span>POS</div>
         <div style={{ fontSize: 12, color: T.muted, paddingLeft: 12, borderLeft: `1px solid ${T.border}` }}>{profile.company_name}</div>
         {cajaActual
-          ? <span style={{ fontSize: 11, background: T.accentLight, color: T.accent, borderRadius: 20, padding: '3px 10px', fontWeight: 700 }}>✓ Caja · {cajaActual.turno}</span>
+          ? <span style={{ fontSize: 11, background: T.accentLight, color: T.accent, borderRadius: 20, padding: '3px 10px', fontWeight: 700 }}>{cajaHeaderLabel}</span>
           : <span style={{ fontSize: 11, background: T.redLight, color: T.red, borderRadius: 20, padding: '3px 10px', fontWeight: 700 }}>Sin caja abierta</span>
         }
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={() => setShowMetodosConfig(true)} title="Configurar métodos de pago"
+            style={{ background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 10px', color: T.muted, fontSize: 11, cursor: 'pointer' }}>
+            ⚙ Métodos de pago
+          </button>
           <span style={{ fontSize: 12, color: T.muted }}>{profile.display_name || profile.email}</span>
           <button onClick={onLogout} style={{ background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 12px', color: T.muted, fontSize: 11, cursor: 'pointer' }}>
             Salir
@@ -421,14 +506,9 @@ export default function POSApp({ profile, onLogout }) {
               {/* Productos */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${T.border}`, overflow: 'hidden' }}>
                 <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.border}` }}>
-                  <input
-                    ref={searchRef}
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="Buscar por nombre, SKU o categoría…"
-                    autoFocus
-                    style={{ ...inputStyle, padding: '9px 14px' }}
-                  />
+                  <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
+                    placeholder="Buscar por nombre, SKU o categoría…" autoFocus
+                    style={{ ...inputStyle, padding: '9px 14px' }} />
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 8, alignContent: 'start' }}>
                   {filteredProducts.map(prod => (
@@ -455,7 +535,8 @@ export default function POSApp({ profile, onLogout }) {
               </div>
 
               {/* Ticket panel */}
-              <div style={{ width: 370, display: 'flex', flexDirection: 'column', background: T.paper, flexShrink: 0 }}>
+              <div style={{ width: 390, display: 'flex', flexDirection: 'column', background: T.paper, flexShrink: 0 }}>
+                {/* Lines */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, marginBottom: 10 }}>TICKET ACTUAL</div>
                   {lineas.length === 0 ? (
@@ -480,52 +561,89 @@ export default function POSApp({ profile, onLogout }) {
                   ))}
                 </div>
 
-                <div style={{ borderTop: `1px solid ${T.border}`, padding: '14px 16px' }}>
+                {/* Totals, descuento y pagos */}
+                <div style={{ borderTop: `1px solid ${T.border}`, padding: '12px 16px' }}>
                   {lineas.length > 0 && (
-                    <div style={{ background: T.surface, borderRadius: 8, padding: '10px 12px', marginBottom: 10, fontSize: 12 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: T.muted, marginBottom: 3 }}>
-                        <span>Neto:</span><span>{fmt(calculos.neto)}</span>
-                      </div>
-                      {Object.entries(calculos.ivaDesglose).map(([t, m]) => (
-                        <div key={t} style={{ display: 'flex', justifyContent: 'space-between', color: T.muted, marginBottom: 3 }}>
-                          <span>IVA {t}%:</span><span>{fmt(m)}</span>
+                    <>
+                      {/* Totales */}
+                      <div style={{ background: T.surface, borderRadius: 8, padding: '9px 12px', marginBottom: 10, fontSize: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: T.muted, marginBottom: 3 }}>
+                          <span>Neto:</span><span>{fmt(calculos.neto)}</span>
                         </div>
-                      ))}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 15, color: T.accent, marginTop: 6, paddingTop: 6, borderTop: `1px solid ${T.border}` }}>
-                        <span>TOTAL</span><span>{fmt(calculos.total)}</span>
+                        {Object.entries(calculos.ivaDesglose).map(([t, m]) => (
+                          <div key={t} style={{ display: 'flex', justifyContent: 'space-between', color: T.muted, marginBottom: 3 }}>
+                            <span>IVA {t}%:</span><span>{fmt(m)}</span>
+                          </div>
+                        ))}
+                        {descuentoMonto > 0 && (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: T.muted, marginBottom: 3, paddingTop: 4, borderTop: `1px solid ${T.border}` }}>
+                              <span>Subtotal:</span><span>{fmt(calculos.total)}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: T.yellow, marginBottom: 3 }}>
+                              <span>Descuento:</span><span>− {fmt(descuentoMonto)}</span>
+                            </div>
+                          </>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 15, color: T.accent, marginTop: 6, paddingTop: 6, borderTop: `1px solid ${T.border}` }}>
+                          <span>TOTAL</span><span>{fmt(totalConDescuento)}</span>
+                        </div>
                       </div>
-                    </div>
+
+                      {/* Descuento */}
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                        <div style={{ display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: `1px solid ${T.border}`, flexShrink: 0 }}>
+                          {[['monto', '$'], ['pct', '%']].map(([v, l]) => (
+                            <button key={v} onClick={() => setTipoDescuento(v)} style={{ background: tipoDescuento === v ? T.yellowLight : T.surface, color: tipoDescuento === v ? T.yellow : T.muted, border: 'none', padding: '6px 10px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700 }}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                        <input type="number" value={descuento} onChange={e => setDescuento(e.target.value)} placeholder={tipoDescuento === 'pct' ? 'Descuento %' : 'Descuento $'} min="0" step="0.01"
+                          style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', color: T.yellow, fontSize: 13, outline: 'none', fontFamily: 'inherit' }} />
+                      </div>
+
+                      {/* Pagos */}
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 6 }}>FORMA DE COBRO</div>
+                        {pagos.map((p, i) => (
+                          <div key={i} style={{ display: 'flex', gap: 5, marginBottom: 5, alignItems: 'center' }}>
+                            <select value={p.metodo} onChange={e => setPagos(prev => prev.map((pp, ii) => ii === i ? { ...pp, metodo: e.target.value } : pp))}
+                              style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', color: T.ink, fontSize: 12, outline: 'none' }}>
+                              {allMetodos.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                            </select>
+                            {(pagos.length > 1 || true) && (
+                              <input type="number" value={p.monto} onChange={e => setPagos(prev => prev.map((pp, ii) => ii === i ? { ...pp, monto: e.target.value } : pp))}
+                                placeholder={pagos.length === 1 ? fmt(totalConDescuento) : '0.00'}
+                                min="0" step="0.01"
+                                style={{ width: 100, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 8px', color: T.accent, fontSize: 12, fontWeight: 700, outline: 'none', textAlign: 'right' }} />
+                            )}
+                            {pagos.length > 1 && (
+                              <button onClick={() => setPagos(prev => prev.filter((_, ii) => ii !== i))}
+                                style={{ background: 'none', border: 'none', color: T.red, cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✕</button>
+                            )}
+                          </div>
+                        ))}
+                        {restante > 0.01 && pagos.some(p => p.monto !== '') && (
+                          <div style={{ fontSize: 11, color: T.yellow, marginBottom: 5 }}>Restante: {fmt(restante)}</div>
+                        )}
+                        <button onClick={() => setPagos(prev => [...prev, { metodo: 'efectivo', monto: '' }])}
+                          style={{ background: 'transparent', border: `1px dashed ${T.border}`, borderRadius: 6, padding: '5px 12px', color: T.muted, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', width: '100%' }}>
+                          + Agregar otro método de pago
+                        </button>
+                      </div>
+                    </>
                   )}
 
-                  {/* Métodos de pago */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5, marginBottom: 10 }}>
-                    {[
-                      { id: 'efectivo', label: '💵 Efectivo' },
-                      { id: 'debito', label: '💳 Débito' },
-                      { id: 'credito', label: '💳 Crédito' },
-                      { id: 'transferencia', label: '🔀 Transf.' },
-                      { id: 'qr', label: '📱 QR/MP' },
-                      { id: 'cuenta_corriente', label: '📋 Cta. cte.' },
-                    ].map(m => (
-                      <button key={m.id} onClick={() => setMetodoPago(m.id)} style={{
-                        background: metodoPago === m.id ? T.accentLight : T.surface,
-                        border: `1px solid ${metodoPago === m.id ? T.accent : T.border}`,
-                        borderRadius: 6, padding: '7px 4px', cursor: 'pointer', fontFamily: 'inherit',
-                        fontSize: 11, color: metodoPago === m.id ? T.accent : T.muted, fontWeight: metodoPago === m.id ? 700 : 500,
-                      }}>
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <button onClick={cobrar} disabled={lineas.length === 0} style={{
+                  <button onClick={cobrar} disabled={!canCobrar} style={{
                     ...btnPrimary, width: '100%', padding: '13px', fontSize: 15,
-                    opacity: lineas.length === 0 ? 0.4 : 1, cursor: lineas.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: canCobrar ? 1 : 0.4, cursor: canCobrar ? 'pointer' : 'not-allowed',
+                    background: restante > 0.01 && pagos.some(p => p.monto !== '') ? T.yellow : T.accent,
                   }}>
-                    Cobrar {lineas.length > 0 ? fmt(calculos.total) : ''}
+                    {lineas.length > 0 ? `Cobrar ${fmt(totalConDescuento)}` : 'Cobrar'}
                   </button>
                   {lineas.length > 0 && (
-                    <button onClick={() => setLineas([])} style={{ width: '100%', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px', color: T.muted, fontSize: 12, cursor: 'pointer', marginTop: 5, fontFamily: 'inherit' }}>
+                    <button onClick={resetTicket} style={{ width: '100%', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px', color: T.muted, fontSize: 12, cursor: 'pointer', marginTop: 5, fontFamily: 'inherit' }}>
                       Limpiar ticket
                     </button>
                   )}
@@ -544,17 +662,12 @@ export default function POSApp({ profile, onLogout }) {
                 style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 10px', color: T.ink, fontSize: 13, outline: 'none' }} />
               <button onClick={() => loadTickets(ticketFecha)} style={{ ...btnPrimary, padding: '7px 14px', fontSize: 12 }}>↻</button>
             </div>
-            {/* Resumen del día */}
             {tickets.length > 0 && (() => {
               const vigentes = tickets.filter(t => t.estado !== 'anulado')
               const totalDia = vigentes.reduce((s, t) => s + (t.total || 0), 0)
               return (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20, maxWidth: 600 }}>
-                  {[
-                    { label: 'Tickets emitidos', value: vigentes.length },
-                    { label: 'Anulados', value: tickets.filter(t => t.estado === 'anulado').length },
-                    { label: 'Total del día', value: fmt(totalDia), accent: true },
-                  ].map(s => (
+                  {[{ label: 'Tickets emitidos', value: vigentes.length }, { label: 'Anulados', value: tickets.filter(t => t.estado === 'anulado').length }, { label: 'Total del día', value: fmt(totalDia), accent: true }].map(s => (
                     <div key={s.label} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px' }}>
                       <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.5, marginBottom: 5 }}>{s.label.toUpperCase()}</div>
                       <div style={{ fontSize: 17, fontWeight: 800, color: s.accent ? T.accent : T.ink }}>{s.value}</div>
@@ -563,30 +676,34 @@ export default function POSApp({ profile, onLogout }) {
                 </div>
               )
             })()}
-
             {tickets.length === 0
               ? <div style={{ color: T.muted, fontSize: 13, padding: '30px 0' }}>No hay tickets para esta fecha</div>
               : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxWidth: 740 }}>
-                  {tickets.map(t => (
-                    <div key={t.id} style={{ background: T.paper, border: `1px solid ${t.estado === 'anulado' ? T.red : T.border}`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14, opacity: t.estado === 'anulado' ? 0.55 : 1 }}>
-                      <div style={{ minWidth: 64 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: t.estado === 'anulado' ? T.red : T.accent }}>{t.numero}</div>
-                        <div style={{ fontSize: 10, color: T.muted }}>{new Date(t.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
+                  {tickets.map(t => {
+                    const pagosT = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }]
+                    const pagosLabel = pagosT.map(p => getMetodoLabel(p.metodo)).join(' + ')
+                    return (
+                      <div key={t.id} style={{ background: T.paper, border: `1px solid ${t.estado === 'anulado' ? T.red : t.facturado ? T.blue : T.border}`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14, opacity: t.estado === 'anulado' ? 0.55 : 1 }}>
+                        <div style={{ minWidth: 64 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: t.estado === 'anulado' ? T.red : T.accent }}>{t.numero}</div>
+                          <div style={{ fontSize: 10, color: T.muted }}>{new Date(t.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700 }}>{fmt(t.total)}{t.descuento > 0 && <span style={{ fontSize: 11, color: T.yellow, marginLeft: 6 }}>− {fmt(t.descuento)}</span>}</div>
+                          <div style={{ fontSize: 11, color: T.muted }}>{pagosLabel} · {t.lines?.length || 0} ítem(s) · {t.cajero_nombre}</div>
+                          {t.estado === 'anulado' && <div style={{ fontSize: 11, color: T.red, marginTop: 2 }}>Anulado: {t.anulado_motivo}</div>}
+                          {t.facturado && <div style={{ fontSize: 11, color: T.blue, marginTop: 2 }}>Facturado</div>}
+                        </div>
+                        <div style={{ display: 'flex', gap: 7 }}>
+                          <button onClick={() => setTicketDetalle(t)} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', color: T.ink, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Ver</button>
+                          {t.estado !== 'anulado' && (
+                            <button onClick={() => setAnulando(t)} style={{ background: T.redLight, border: `1px solid ${T.red}`, borderRadius: 6, padding: '6px 12px', color: T.red, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Anular</button>
+                          )}
+                        </div>
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700 }}>{fmt(t.total)}</div>
-                        <div style={{ fontSize: 11, color: T.muted }}>{t.metodo_pago} · {t.lines?.length || 0} ítem(s) · {t.cajero_nombre}</div>
-                        {t.estado === 'anulado' && <div style={{ fontSize: 11, color: T.red, marginTop: 2 }}>Anulado: {t.anulado_motivo}</div>}
-                      </div>
-                      <div style={{ display: 'flex', gap: 7 }}>
-                        <button onClick={() => setTicketDetalle(t)} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', color: T.ink, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Ver</button>
-                        {t.estado !== 'anulado' && (
-                          <button onClick={() => setAnulando(t)} style={{ background: T.redLight, border: `1px solid ${T.red}`, borderRadius: 6, padding: '6px 12px', color: T.red, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Anular</button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )
             }
@@ -604,12 +721,11 @@ export default function POSApp({ profile, onLogout }) {
                 {cajaActual && <button onClick={() => setShowCerrarCaja(true)} style={{ ...btnPrimary, background: T.redLight, color: T.red, border: `1px solid ${T.red}` }}>Cerrar caja</button>}
               </div>
             </div>
-
             {cajaActual ? (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
                   {[
-                    { label: 'Turno', value: cajaActual.turno },
+                    { label: 'Caja', value: cajaActual.nombre ? `${cajaActual.nombre} · ${cajaActual.turno}` : cajaActual.turno },
                     { label: 'Cajero', value: cajaActual.cajero_nombre || '—' },
                     { label: 'Apertura', value: new Date(cajaActual.abierta_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) },
                     { label: 'Balance actual', value: fmt(cajaBalance), accent: true },
@@ -622,25 +738,23 @@ export default function POSApp({ profile, onLogout }) {
                 </div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 10 }}>MOVIMIENTOS</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxWidth: 680 }}>
-                  {movimientos.length === 0
-                    ? <div style={{ color: T.muted, fontSize: 13, padding: '16px 0' }}>Sin movimientos registrados</div>
-                    : [...movimientos].reverse().map((m, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.paper, borderRadius: 8, padding: '9px 14px', border: `1px solid ${T.border}` }}>
-                        <div>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: ['venta', 'ingreso', 'apertura'].includes(m.tipo) ? T.accent : T.red, marginRight: 8 }}>
-                            {m.tipo === 'venta' ? '↑ Venta' : m.tipo === 'ingreso' ? '↑ Ingreso' : m.tipo === 'egreso' ? '↓ Egreso' : m.tipo === 'anulacion' ? '↓ Anulación' : m.tipo === 'apertura' ? '○ Apertura' : '■ Cierre'}
-                          </span>
-                          <span style={{ fontSize: 13, color: T.ink }}>{m.concepto}</span>
-                        </div>
-                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: ['egreso', 'anulacion'].includes(m.tipo) ? T.red : T.accent }}>
-                            {['egreso', 'anulacion'].includes(m.tipo) ? '−' : '+'}{fmt(Math.abs(m.monto || 0))}
-                          </span>
-                          <span style={{ fontSize: 10, color: T.muted }}>{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
+                  {[...movimientos].reverse().map((m, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.paper, borderRadius: 8, padding: '9px 14px', border: `1px solid ${T.border}` }}>
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: ['venta', 'ingreso', 'apertura'].includes(m.tipo) ? T.accent : T.red, marginRight: 8 }}>
+                          {m.tipo === 'venta' ? '↑ Venta' : m.tipo === 'ingreso' ? '↑ Ingreso' : m.tipo === 'egreso' ? '↓ Egreso' : m.tipo === 'anulacion' ? '↓ Anulación' : m.tipo === 'apertura' ? '○ Apertura' : '■ Cierre'}
+                        </span>
+                        <span style={{ fontSize: 13, color: T.ink }}>{m.concepto}</span>
                       </div>
-                    ))
-                  }
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: ['egreso', 'anulacion'].includes(m.tipo) ? T.red : T.accent }}>
+                          {['egreso', 'anulacion'].includes(m.tipo) ? '−' : '+'}{fmt(Math.abs(m.monto || 0))}
+                        </span>
+                        <span style={{ fontSize: 10, color: T.muted }}>{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {movimientos.length === 0 && <div style={{ color: T.muted, fontSize: 13, padding: '16px 0' }}>Sin movimientos registrados</div>}
                 </div>
               </>
             ) : (
@@ -670,21 +784,14 @@ export default function POSApp({ profile, onLogout }) {
               </div>
               {filteredStock.map((p, i) => (
                 <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 90px 80px 100px', borderTop: `1px solid ${T.border}`, background: i % 2 === 0 ? T.paper : T.surface }}>
-                  <div style={{ padding: '10px 14px' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div>
-                    <div style={{ fontSize: 10, color: T.muted }}>{p.sku || ''}</div>
-                  </div>
+                  <div style={{ padding: '10px 14px' }}><div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div><div style={{ fontSize: 10, color: T.muted }}>{p.sku || ''}</div></div>
                   <div style={{ padding: '10px 14px', fontSize: 12, color: T.muted, alignSelf: 'center' }}>{p.category || '—'}</div>
-                  <div style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, color: (p.stock || 0) <= (p.min_stock || p.minStock || 0) ? T.red : T.accent, alignSelf: 'center' }}>
-                    {p.stock ?? 0}
-                  </div>
+                  <div style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, color: (p.stock || 0) <= (p.min_stock || p.minStock || 0) ? T.red : T.accent, alignSelf: 'center' }}>{p.stock ?? 0}</div>
                   <div style={{ padding: '10px 14px', fontSize: 12, color: T.muted, alignSelf: 'center' }}>{p.min_stock || p.minStock || 0}</div>
                   <div style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, alignSelf: 'center' }}>{fmt(getPosPrice(p))}</div>
                 </div>
               ))}
-              {filteredStock.length === 0 && (
-                <div style={{ padding: '24px', textAlign: 'center', color: T.muted, fontSize: 13 }}>Sin resultados</div>
-              )}
+              {filteredStock.length === 0 && <div style={{ padding: '24px', textAlign: 'center', color: T.muted, fontSize: 13 }}>Sin resultados</div>}
             </div>
           </div>
         )}
@@ -696,6 +803,10 @@ export default function POSApp({ profile, onLogout }) {
       {showAbrirCaja && (
         <Modal title="Abrir caja" onClose={() => setShowAbrirCaja(false)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={labelStyle}>NOMBRE DE LA CAJA (opcional)</label>
+              <input value={cajaNombre} onChange={e => setCajaNombre(e.target.value)} placeholder="Ej: Caja principal, Caja 1, Mostrador…" style={inputStyle} autoFocus />
+            </div>
             <div>
               <label style={labelStyle}>TURNO</label>
               <select value={turno} onChange={e => setTurno(e.target.value)} style={inputStyle}>
@@ -723,8 +834,7 @@ export default function POSApp({ profile, onLogout }) {
               ['Balance calculado', fmt(cajaBalance)],
             ].map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                <span style={{ color: T.muted }}>{label}:</span>
-                <span style={{ fontWeight: 700 }}>{value}</span>
+                <span style={{ color: T.muted }}>{label}:</span><span style={{ fontWeight: 700 }}>{value}</span>
               </div>
             ))}
           </div>
@@ -758,13 +868,14 @@ export default function POSApp({ profile, onLogout }) {
             </div>
             <div>
               <label style={labelStyle}>CONCEPTO</label>
-              <input value={movConcepto} onChange={e => setMovConcepto(e.target.value)} placeholder="Ej: Compra de insumos, retiro, etc." style={inputStyle} autoFocus />
+              <input value={movConcepto} onChange={e => setMovConcepto(e.target.value)} placeholder="Ej: Compra de insumos, retiro…" style={inputStyle} autoFocus />
             </div>
             <div>
               <label style={labelStyle}>MONTO</label>
               <input type="number" value={movMonto} onChange={e => setMovMonto(e.target.value)} style={inputStyle} min="0.01" step="0.01" placeholder="0.00" />
             </div>
-            <button onClick={agregarMovimiento} disabled={!movConcepto.trim() || !movMonto} style={{ ...btnPrimary, marginTop: 4, opacity: (!movConcepto.trim() || !movMonto) ? 0.5 : 1, cursor: (!movConcepto.trim() || !movMonto) ? 'not-allowed' : 'pointer' }}>
+            <button onClick={agregarMovimiento} disabled={!movConcepto.trim() || !movMonto}
+              style={{ ...btnPrimary, marginTop: 4, opacity: (!movConcepto.trim() || !movMonto) ? 0.5 : 1, cursor: (!movConcepto.trim() || !movMonto) ? 'not-allowed' : 'pointer' }}>
               Registrar movimiento
             </button>
           </div>
@@ -775,13 +886,12 @@ export default function POSApp({ profile, onLogout }) {
       {anulando && (
         <Modal title={`Anular ${anulando.numero}`} onClose={() => { setAnulando(null); setAnulandoMotivo('') }}>
           <div style={{ background: T.redLight, borderRadius: 8, padding: '12px', marginBottom: 16, fontSize: 13, color: T.red }}>
-            ⚠ Esta acción anulará el ticket <strong>{fmt(anulando.total)}</strong> y restaurará el stock. No se puede deshacer.
+            ⚠ Esta acción anulará <strong>{fmt(anulando.total)}</strong> y restaurará el stock. No se puede deshacer.
           </div>
-          <div>
-            <label style={labelStyle}>MOTIVO DE ANULACIÓN *</label>
-            <input value={anulandoMotivo} onChange={e => setAnulandoMotivo(e.target.value)} placeholder="Describí el motivo" style={inputStyle} autoFocus />
-          </div>
-          <button onClick={anularTicket} disabled={!anulandoMotivo.trim()} style={{ ...btnPrimary, background: T.red, marginTop: 16, width: '100%', opacity: !anulandoMotivo.trim() ? 0.5 : 1, cursor: !anulandoMotivo.trim() ? 'not-allowed' : 'pointer' }}>
+          <label style={labelStyle}>MOTIVO DE ANULACIÓN *</label>
+          <input value={anulandoMotivo} onChange={e => setAnulandoMotivo(e.target.value)} placeholder="Describí el motivo" style={inputStyle} autoFocus />
+          <button onClick={anularTicket} disabled={!anulandoMotivo.trim()}
+            style={{ ...btnPrimary, background: T.red, marginTop: 16, width: '100%', opacity: !anulandoMotivo.trim() ? 0.5 : 1, cursor: !anulandoMotivo.trim() ? 'not-allowed' : 'pointer' }}>
             Confirmar anulación
           </button>
         </Modal>
@@ -790,7 +900,7 @@ export default function POSApp({ profile, onLogout }) {
       {/* Ticket confirmado */}
       {ticketConfirmado && (
         <Modal title="✓ Ticket emitido" onClose={() => setTicketConfirmado(null)} width={400}>
-          <TicketView ticket={ticketConfirmado} companyName={profile.company_name} />
+          <TicketView ticket={ticketConfirmado} companyName={profile.company_name} metodosPago={metodosPago} />
           <button onClick={() => setTicketConfirmado(null)} style={{ ...btnPrimary, width: '100%', marginTop: 14 }}>
             Continuar →
           </button>
@@ -800,10 +910,43 @@ export default function POSApp({ profile, onLogout }) {
       {/* Ticket detalle */}
       {ticketDetalle && (
         <Modal title={`Ticket ${ticketDetalle.numero}`} onClose={() => setTicketDetalle(null)} width={400}>
-          <TicketView ticket={ticketDetalle} companyName={profile.company_name} />
+          <TicketView ticket={ticketDetalle} companyName={profile.company_name} metodosPago={metodosPago} />
           <button onClick={() => setTicketDetalle(null)} style={{ ...btnPrimary, width: '100%', marginTop: 14 }}>
             Cerrar
           </button>
+        </Modal>
+      )}
+
+      {/* Config métodos de pago */}
+      {showMetodosConfig && (
+        <Modal title="⚙ Métodos de pago" onClose={() => setShowMetodosConfig(false)} width={440}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 10 }}>MÉTODOS PREDETERMINADOS</div>
+            {DEFAULT_METODOS.map(m => (
+              <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: T.surface, borderRadius: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 13, color: T.muted }}>{m.label}</span>
+                <span style={{ fontSize: 10, color: T.faint }}>predeterminado</span>
+              </div>
+            ))}
+          </div>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 10 }}>MÉTODOS PERSONALIZADOS</div>
+            {metodosPago.length === 0
+              ? <div style={{ color: T.muted, fontSize: 12, marginBottom: 12 }}>Ninguno agregado aún</div>
+              : metodosPago.map(m => (
+                <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: T.surface, borderRadius: 6, marginBottom: 4 }}>
+                  <span style={{ fontSize: 13 }}>{m.label}</span>
+                  <button onClick={() => removeMetodo(m.id)} style={{ background: 'transparent', border: 'none', color: T.red, cursor: 'pointer', fontSize: 13 }}>✕</button>
+                </div>
+              ))
+            }
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <input value={nuevoMetodoLabel} onChange={e => setNuevoMetodoLabel(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addMetodo()}
+                placeholder="Ej: Banco Galicia, Naranja X, Cuenta DNI…" style={{ ...inputStyle, flex: 1 }} />
+              <button onClick={addMetodo} style={{ ...btnPrimary, flexShrink: 0 }}>+ Agregar</button>
+            </div>
+          </div>
         </Modal>
       )}
     </div>
