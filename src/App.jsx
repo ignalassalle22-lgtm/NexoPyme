@@ -9171,6 +9171,11 @@ function UsuariosModule({ companyId, profile }) {
     setEditPermsId(null); setSaving(false);
   };
 
+  const togglePosMode = async (userId, current) => {
+    await supabase.from("profiles").update({ pos_mode: !current }).eq("id", userId);
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, pos_mode: !current } : u));
+  };
+
   const deactivate = async (userId, name) => {
     if (!window.confirm(`¿Desactivar a ${name}? Ya no podrá acceder.`)) return;
     await supabase.from("profiles").update({ active: false }).eq("id", userId);
@@ -9262,7 +9267,12 @@ function UsuariosModule({ companyId, profile }) {
                   <div style={{ fontSize: 12, color: T.muted }}>{u.email || "—"}</div>
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button onClick={() => togglePosMode(u.id, u.pos_mode)}
+                  title="Activar / desactivar modo POS para este usuario"
+                  style={{ background: u.pos_mode ? T.blueLight : "transparent", color: u.pos_mode ? T.blue : T.muted, border: `1px solid ${u.pos_mode ? T.blue : T.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                  🏪 POS {u.pos_mode ? "ON" : "OFF"}
+                </button>
                 <button onClick={() => { setEditPermsId(editPermsId === u.id ? null : u.id); setPermsForm(u.permissions || DEFAULT_PERMS); }}
                   style={{ background: editPermsId === u.id ? T.accentLight : "transparent", color: editPermsId === u.id ? T.accent : T.muted, border: `1px solid ${editPermsId === u.id ? T.accent : T.border}`, borderRadius: 7, padding: "5px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
                   {editPermsId === u.id ? "▲ Permisos" : "▼ Permisos"}
@@ -9312,6 +9322,146 @@ function UsuariosModule({ companyId, profile }) {
               {statusBadge(r.status)}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── POS JEFE MODULE ───────────────────────────────────────────────────────────
+function POSJefeModule({ companyId }) {
+  const [tickets, setTickets] = useState([]);
+  const [cajas, setCajas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [ticketDetalle, setTicketDetalle] = useState(null);
+
+  useEffect(() => { loadData(fecha); }, []);
+
+  const loadData = async (f) => {
+    setLoading(true);
+    const [t, c] = await Promise.all([
+      supabase.from("pos_tickets").select("*").eq("company_id", companyId).eq("fecha", f).order("created_at", { ascending: false }),
+      supabase.from("pos_cajas").select("*").eq("company_id", companyId).order("abierta_at", { ascending: false }).limit(20),
+    ]);
+    if (t.data) setTickets(t.data);
+    if (c.data) setCajas(c.data);
+    setLoading(false);
+  };
+
+  const vigentes = tickets.filter(t => t.estado !== "anulado");
+  const totalDia = vigentes.reduce((s, t) => s + (t.total || 0), 0);
+  const porMetodo = vigentes.reduce((acc, t) => { acc[t.metodo_pago] = (acc[t.metodo_pago] || 0) + t.total; return acc; }, {});
+  const fmtAR = (n) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(n || 0);
+
+  const metodoLabel = { efectivo: "Efectivo", debito: "Débito", credito: "Crédito", transferencia: "Transf.", qr: "QR/MP", cuenta_corriente: "Cta. cte." };
+
+  if (loading) return <div style={{ padding: 40, color: T.muted, textAlign: "center" }}>Cargando…</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Punto de Venta — Vista jefe</div>
+          <div style={{ fontSize: 13, color: T.muted }}>Seguí las ventas del POS en tiempo real</div>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <input type="date" value={fecha} onChange={e => { setFecha(e.target.value); loadData(e.target.value); }}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 12px", color: T.ink, fontSize: 13, outline: "none" }} />
+          <Btn sm onClick={() => loadData(fecha)}>↻ Actualizar</Btn>
+        </div>
+      </div>
+
+      {/* KPIs del día */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+        {[
+          { label: "Total del día", value: fmtAR(totalDia), color: T.accent },
+          { label: "Tickets emitidos", value: vigentes.length, color: T.ink },
+          { label: "Ticket promedio", value: vigentes.length ? fmtAR(totalDia / vigentes.length) : "—", color: T.ink },
+          { label: "Anulados", value: tickets.filter(t => t.estado === "anulado").length, color: T.red },
+        ].map(k => (
+          <div key={k.label} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px" }}>
+            <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>{k.label.toUpperCase()}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Por método de pago */}
+      {Object.keys(porMetodo).length > 0 && (
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", marginBottom: 24 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 12 }}>VENTAS POR MÉTODO DE PAGO</div>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            {Object.entries(porMetodo).map(([m, v]) => (
+              <div key={m} style={{ background: T.surface, borderRadius: 8, padding: "10px 16px", minWidth: 120 }}>
+                <div style={{ fontSize: 11, color: T.muted, marginBottom: 3 }}>{metodoLabel[m] || m}</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.accent }}>{fmtAR(v)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cajas activas */}
+      {cajas.filter(c => c.estado === "abierta").length > 0 && (
+        <div style={{ background: T.paper, border: `1px solid ${T.accent}`, borderRadius: 12, padding: "16px 20px", marginBottom: 24 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, letterSpacing: 0.5, marginBottom: 12 }}>CAJAS ACTIVAS</div>
+          <div style={{ display: "flex", gap: 12 }}>
+            {cajas.filter(c => c.estado === "abierta").map(c => (
+              <div key={c.id} style={{ background: T.accentLight, border: `1px solid ${T.accent}`, borderRadius: 8, padding: "10px 16px" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.accent }}>Turno {c.turno}</div>
+                <div style={{ fontSize: 11, color: T.muted }}>{c.cajero_nombre}</div>
+                <div style={{ fontSize: 11, color: T.muted }}>Abrió: {new Date(c.abierta_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tickets del día */}
+      <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, fontSize: 13, fontWeight: 700 }}>
+          Tickets del día ({tickets.length})
+        </div>
+        {tickets.length === 0 ? (
+          <div style={{ padding: "32px", textAlign: "center", color: T.muted, fontSize: 13 }}>Sin tickets para esta fecha</div>
+        ) : tickets.map(t => (
+          <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 20px", borderBottom: `1px solid ${T.border}`, opacity: t.estado === "anulado" ? 0.5 : 1 }}>
+            <div style={{ minWidth: 72 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.estado === "anulado" ? T.red : T.accent }}>{t.numero}</div>
+              <div style={{ fontSize: 10, color: T.muted }}>{new Date(t.created_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{fmtAR(t.total)}</div>
+              <div style={{ fontSize: 11, color: T.muted }}>{metodoLabel[t.metodo_pago] || t.metodo_pago} · {t.cajero_nombre} · {t.lines?.length || 0} ítem(s)</div>
+              {t.estado === "anulado" && <span style={{ fontSize: 11, color: T.red }}>ANULADO: {t.anulado_motivo}</span>}
+            </div>
+            <button onClick={() => setTicketDetalle(ticketDetalle?.id === t.id ? null : t)}
+              style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px 12px", color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+              {ticketDetalle?.id === t.id ? "▲" : "▼"}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Detalle de ticket expandido */}
+      {ticketDetalle && (
+        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px", marginTop: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Detalle: {ticketDetalle.numero}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 100px 100px", gap: 1, background: T.border, borderRadius: 6, overflow: "hidden", marginBottom: 10 }}>
+            {["Producto", "Cant.", "Precio unit.", "Subtotal"].map(h => (
+              <div key={h} style={{ background: T.surface, padding: "7px 12px", fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.5 }}>{h.toUpperCase()}</div>
+            ))}
+            {(ticketDetalle.lines || []).map((l, i) => [
+              <div key={i+"n"} style={{ background: T.paper, padding: "9px 12px", fontSize: 13 }}>{l.nombre}</div>,
+              <div key={i+"q"} style={{ background: T.paper, padding: "9px 12px", fontSize: 13, color: T.muted }}>{l.qty}</div>,
+              <div key={i+"p"} style={{ background: T.paper, padding: "9px 12px", fontSize: 13 }}>{fmtAR(l.precio)}</div>,
+              <div key={i+"s"} style={{ background: T.paper, padding: "9px 12px", fontSize: 13, fontWeight: 700 }}>{fmtAR(l.precio * l.qty)}</div>,
+            ])}
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 15, fontWeight: 800, color: T.accent }}>
+            TOTAL: {fmtAR(ticketDetalle.total)}
+          </div>
         </div>
       )}
     </div>
@@ -9478,7 +9628,7 @@ export default function App({ session, profile, onLogout }) {
   const userPerms = profile?.permissions || {};
   const visibleNav = [
     ...NAV.filter(n => isJefe || (userPerms[n.id] && userPerms[n.id] !== 'none')),
-    ...(isJefe ? [{ id: "usuarios", label: "Usuarios", icon: "👤" }, { id: "arca", label: "ARCA", icon: "🏛" }] : []),
+    ...(isJefe ? [{ id: "pos", label: "POS", icon: "🏪" }, { id: "usuarios", label: "Usuarios", icon: "👤" }, { id: "arca", label: "ARCA", icon: "🏛" }] : []),
   ];
 
   const nextId = (prefix) => { const n = idCounter + 1; setIdCounter(n); return `${prefix}-${String(n).padStart(4, "0")}`; };
@@ -9729,6 +9879,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} companyId={companyId} />}
         {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
+        {module === "pos" && isJefe && <POSJefeModule companyId={companyId} />}
         {module === "usuarios" && isJefe && <UsuariosModule companyId={companyId} profile={profile} />}
         {module === "arca" && isJefe && <ArcaConfigModule companyId={companyId} />}
         </div>

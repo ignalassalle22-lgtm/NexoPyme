@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
+import POSApp from './POSApp'
 
 const T = {
   bg: "#0d1117", sidebar: "#0a0e14", paper: "#161b22", surface: "#1c2333",
@@ -1086,6 +1087,10 @@ export default function AuthGate({ children }) {
 
   // ── App principal (aprobada) ──────────────────────────────────────────────
   if (session && profile?.company_id && profile?.company_status === 'approved') {
+    // Usuarios con modo POS activo (no jefes) van al POS
+    if (profile.pos_mode === true && profile.role !== 'jefe') {
+      return <POSApp profile={profile} onLogout={handleLogout} />
+    }
     return children({ session, profile, onLogout: handleLogout })
   }
 
