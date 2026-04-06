@@ -6352,6 +6352,25 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
             </tbody>
           </table>
         </div>
+
+        {/* Descripción del reporte */}
+        <div style={{ marginTop: 28, background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "20px 24px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.yellow, letterSpacing: 1, marginBottom: 12 }}>ACERCA DE ESTE REPORTE</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Cobros pendientes</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Muestra todas las facturas de venta emitidas que todavía no fueron cobradas. Se calcula filtrando las facturas con estado distinto de "cobrado". Las marcadas en amarillo vencen dentro de los próximos 7 días.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Pagos pendientes</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Lista las órdenes de compra registradas que aún no fueron pagadas al proveedor. Se obtiene filtrando las OC con estado distinto de "pagado". El vencimiento surge de la condición de pago acordada con cada proveedor.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Stock crítico</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Productos cuyo stock actual es igual o menor al stock mínimo configurado en Inventario. El faltante se calcula como: mínimo − stock actual. Permite anticipar reposiciones antes de quedarse sin mercadería.</div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -6468,6 +6487,29 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
             </table>
           </div>
         </div>
+
+        {/* Descripción del reporte */}
+        <div style={{ marginTop: 28, background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "20px 24px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.blue, letterSpacing: 1, marginBottom: 12 }}>ACERCA DE ESTE REPORTE</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 20 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Ventas del período</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Todas las facturas de venta emitidas dentro del rango de fechas seleccionado. El total incluye IVA. Permite ver el volumen de facturación en cualquier período.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Compras del período</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Órdenes de compra registradas en el período seleccionado, independientemente de su estado de pago. Refleja el gasto en mercadería y materiales en ese lapso.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Ranking de clientes</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Clientes ordenados de mayor a menor según el total facturado en el período. Se suman todos los importes de sus facturas (con IVA) en las fechas seleccionadas.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Ranking de productos</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>Productos ordenados por ingresos generados en el período. La ganancia por producto se calcula como: ingresos − (último precio de compra × unidades vendidas).</div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -6577,6 +6619,25 @@ function MetricasModule({ saleInvoices, purchaseInvoices, products, clients, sup
             </table>
           </div>
         </div>
+
+        {/* Descripción del reporte */}
+        <div style={{ marginTop: 28, background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: "20px 24px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.purple, letterSpacing: 1, marginBottom: 12 }}>ACERCA DE ESTE REPORTE</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Rentabilidad mensual</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>
+                Muestra mes a mes: <strong style={{ color: T.ink }}>Ventas brutas</strong> (total facturado con IVA), <strong style={{ color: T.ink }}>Costo de compras</strong> (total de OC del mes), <strong style={{ color: T.ink }}>Costo de ventas</strong> (calculado multiplicando las cantidades vendidas por el último precio de compra de cada producto), <strong style={{ color: T.ink }}>Ganancia bruta</strong> (ventas brutas − costo de ventas) y <strong style={{ color: T.ink }}>Margen</strong> (ganancia / ventas × 100).
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Análisis ABC de productos</div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6 }}>
+                Clasifica los productos según su contribución a los ingresos usando la <strong style={{ color: T.ink }}>Regla de Pareto</strong>: los productos se ordenan de mayor a menor por ingresos y se calcula el porcentaje acumulado. <strong style={{ color: T.accent }}>Categoría A</strong>: productos que generan hasta el 80% de los ingresos totales. <strong style={{ color: T.blue }}>Categoría B</strong>: los que acumulan entre el 80% y el 95%. <strong style={{ color: T.muted }}>Categoría C</strong>: el resto. Permite enfocar esfuerzos en los productos más rentables.
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -6598,6 +6659,7 @@ function LogisticaModule({ clients, suppliers }) {
   const [stops, setStops] = useState([]); // { id, type:"cliente"|"proveedor"|"custom", refId, name, address, horarioAbre, horarioCierra, diasDisponibles, note, order }
   const [optimized, setOptimized] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [optimizeError, setOptimizeError] = useState("");
   const [showSavePanel, setShowSavePanel] = useState(false);
 
   // ── Agregar parada ─────────────────────────────────────────────────────────
@@ -6650,7 +6712,13 @@ function LogisticaModule({ clients, suppliers }) {
   // ── Optimización con IA ────────────────────────────────────────────────────
   const optimizeRoute = async () => {
     if (stops.length < 2) return;
+    const apiKey = localStorage.getItem("nexo_api_key") || "";
+    if (!apiKey.trim()) {
+      setOptimizeError("Para usar esta función necesitás configurar tu API Key de Anthropic en el módulo Compras (ajustes de IA).");
+      return;
+    }
     setIsOptimizing(true);
+    setOptimizeError("");
     try {
       const stopsDesc = stops.map((s, i) =>
         `${i + 1}. ${s.name} | Dirección: ${s.address || "sin dirección"} | Horario: ${s.horarioAbre || "?"}-${s.horarioCierra || "?"} ${s.diasDisponibles || ""}`
@@ -6658,13 +6726,18 @@ function LogisticaModule({ clients, suppliers }) {
 
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey.trim(),
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-allow-browser": "true",
+        },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 600,
-          system: `Sos un optimizador de rutas logísticas para una PyME argentina del Gran Buenos Aires. 
+          system: `Sos un optimizador de rutas logísticas para una PyME argentina del Gran Buenos Aires.
 Tu tarea es ordenar una lista de paradas para minimizar el tiempo de viaje y respetar los horarios de atención de cada lugar.
-Respondé SOLO con un JSON array con el orden óptimo de índices (base 0) de las paradas. 
+Respondé SOLO con un JSON array con el orden óptimo de índices (base 0) de las paradas.
 Ejemplo: [2, 0, 3, 1]
 No incluyas texto adicional, solo el JSON array.`,
           messages: [{
@@ -6678,6 +6751,7 @@ Devolveme el orden óptimo como JSON array de índices.`
         })
       });
       const data = await res.json();
+      if (data.error) { setOptimizeError(`Error de IA: ${data.error.message}`); setIsOptimizing(false); return; }
       const text = data.content?.[0]?.text || "[]";
       const cleanJson = text.replace(/```json|```/g, "").trim();
       const order = JSON.parse(cleanJson);
@@ -6688,6 +6762,7 @@ Devolveme el orden óptimo como JSON array de índices.`
       }
     } catch (e) {
       console.error("Optimize error", e);
+      setOptimizeError("Error al conectar con la IA. Verificá tu API Key y tu conexión a internet.");
     }
     setIsOptimizing(false);
   };
@@ -6963,6 +7038,11 @@ Devolveme el orden óptimo como JSON array de índices.`
             </div>
 
             {/* Botones de acción principales */}
+            {optimizeError && (
+              <div style={{ background: "#ff000015", border: "1px solid #ff000040", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: T.red, marginBottom: 10 }}>
+                {optimizeError}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
               <button onClick={optimizeRoute} disabled={isOptimizing || stops.length < 2}
                 style={{ flex: 1, padding: "13px", borderRadius: 10, border: `1px solid ${stops.length < 2 ? T.border : T.accent + "50"}`, background: stops.length < 2 ? T.surface : optimized ? T.surface : T.accentLight, color: stops.length < 2 ? T.muted : T.accent, fontWeight: 700, fontSize: 14, cursor: (isOptimizing || stops.length < 2) ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: isOptimizing ? 0.7 : 1 }}>
