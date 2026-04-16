@@ -152,6 +152,7 @@ const mapSaleInvoice = r => ({
   tipoComprobante: r.tipo_comprobante || 'B',
   clientCuit: r.client_cuit || '',
   cae: r.cae || '', caeVto: r.cae_vto || '', arcaNumero: r.arca_numero || null,
+  retenciones: r.retenciones || null,
 });
 const mapPurchaseInvoice = r => ({
   id: r.id, ref: r.ref, nroFactura: r.nro_factura, supplierId: r.supplier_id,
@@ -159,6 +160,7 @@ const mapPurchaseInvoice = r => ({
   total: r.total ?? 0, totalNeto: r.total_neto, totalIva: r.total_iva,
   status: r.status, lines: typeof r.lines === 'string' ? JSON.parse(r.lines) : (r.lines || []),
   metodoPago: r.metodo_pago || '',
+  percepciones: r.percepciones || null,
 });
 const mapEmployee = r => ({
   id: r.id, legajo: r.legajo || '', nombre: r.nombre, apellido: r.apellido,
@@ -197,12 +199,14 @@ const saleInvoiceToDb = (i, cid) => ({
   origin_remito_ids: i.originRemitoIds || null, modifica_stock: i.modificaStock,
   observaciones: i.observaciones, moneda: i.moneda, vendedor: i.vendedor,
   metodo_pago: i.metodoPago || null,
+  retenciones: i.retenciones || null,
 });
 const purchaseInvoiceToDb = (i, cid) => ({
   id: i.id, company_id: cid, ref: i.ref || null, nro_factura: i.nroFactura,
   supplier_id: i.supplierId, supplier_name: i.supplierName, date: i.date,
   due_date: i.dueDate, total: i.total, total_neto: i.totalNeto, total_iva: i.totalIva,
   status: i.status, lines: i.lines,
+  percepciones: i.percepciones || null,
 });
 const employeeToDb = (e, cid) => ({
   id: e.id, company_id: cid, legajo: e.legajo, nombre: e.nombre,
@@ -481,6 +485,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   const [observaciones, setObservaciones] = useState(preload?.observaciones || "");
   const [vendedor, setVendedor] = useState(preload?.vendedor || "");
   const [metodoPago, setMetodoPago] = useState(preload?.metodoPago || "");
+  const [retenciones, setRetenciones] = useState(preload?.retenciones || { iibbCaba: "", iibbBsAs: "", ganancias: "", ivaRet: "", suss: "" });
   const [stockAlert, setStockAlert] = useState(null);
 
   const currSymbol = moneda === "USD" ? "US$" : "$";
@@ -579,7 +584,8 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   };
 
   const doSave = () => {
-    onSave({ lines, total, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor, metodoPago, editingId: preload?.editingId || null, oldLines: preload?.lines || null, posTicketIds: preload?.posTicketIds || null });
+    const retObj = docType === "factura" ? Object.fromEntries(Object.entries(retenciones).map(([k, v]) => [k, parseFloat(v) || 0])) : null;
+    onSave({ lines, total, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor, metodoPago, retenciones: retObj, editingId: preload?.editingId || null, oldLines: preload?.lines || null, posTicketIds: preload?.posTicketIds || null });
     setDone(true);
   };
 
@@ -1160,6 +1166,47 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
             </div>
           </div>
 
+          {/* Retenciones sufridas — solo facturas */}
+          {docType === "factura" && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>
+                RETENCIONES SUFRIDAS <span style={{ fontWeight: 400, color: T.faint }}>(opcional · impactan en contabilidad al cobrar)</span>
+              </label>
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+                  {[
+                    ["iibbCaba",  "IIBB Ret. CABA",      "Cta. 114203"],
+                    ["iibbBsAs",  "IIBB Ret. Bs. As.",   "Cta. 114205"],
+                    ["ganancias", "Ret. Ganancias",       "Cta. 114403"],
+                    ["ivaRet",    "Ret. IVA",             "Cta. 114302"],
+                    ["suss",      "Ret. SUSS",            "Cta. 213400"],
+                  ].map(([key, label, cta]) => (
+                    <div key={key}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>
+                        {label} <span style={{ fontWeight: 400, color: T.faint, fontFamily: "monospace", fontSize: 9 }}>{cta}</span>
+                      </label>
+                      <input
+                        type="number" min="0" placeholder="0"
+                        value={retenciones[key]}
+                        onChange={e => setRetenciones(r => ({ ...r, [key]: e.target.value }))}
+                        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${retenciones[key] ? T.accent + "60" : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                {(() => {
+                  const totalRet = ["iibbCaba","iibbBsAs","ganancias","ivaRet","suss"].reduce((s, k) => s + (parseFloat(retenciones[k]) || 0), 0);
+                  return totalRet > 0 ? (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                      <span style={{ color: T.muted }}>Total retenciones</span>
+                      <span style={{ fontWeight: 700, color: T.red, fontFamily: "monospace" }}>-${totalRet.toLocaleString("es-AR")}</span>
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+            </div>
+          )}
+
           {/* Observaciones */}
           <div style={{ marginBottom: 20 }}>
             <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>
@@ -1443,6 +1490,7 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
   const [codeError, setCodeError] = useState("");
   const [done, setDone] = useState(false);
   const [ordenCompraId, setOrdenCompraId] = useState("");
+  const [percepciones, setPercepciones] = useState({ iibbCaba: "", iibbBsAs: "" });
 
   const supplier = suppliers.find(s => s.id === supplierId);
   const ocOptions = ordenesCompra.filter(o => o.supplierId === supplierId);
@@ -1541,8 +1589,11 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
   const totalNeto = lines.reduce((s, l) => s + l.neto, 0);
   const totalIva = lines.reduce((s, l) => s + l.ivaImporte, 0);
   const total = totalNeto + totalIva;
+  const percObj = { iibbCaba: parseFloat(percepciones.iibbCaba) || 0, iibbBsAs: parseFloat(percepciones.iibbBsAs) || 0 };
+  const totalPercepciones = percObj.iibbCaba + percObj.iibbBsAs;
+  const totalConPerc = total + totalPercepciones;
 
-  const confirm = () => { onSave({ lines, total, totalNeto, totalIva, supplierId, supplierName: supplier.name, payStatus, nroFactura, ordenCompraId: ordenCompraId || null }); setDone(true); };
+  const confirm = () => { onSave({ lines, total: totalConPerc, totalNeto, totalIva, supplierId, supplierName: supplier.name, payStatus, nroFactura, ordenCompraId: ordenCompraId || null, percepciones: percObj }); setDone(true); };
 
   if (done) return (
     <Modal title="Factura registrada" onClose={onClose}>
@@ -1672,8 +1723,27 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
               ))}</tbody>
             </table>
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, alignItems: "flex-end" }}>
-            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 20px", textAlign: "right", minWidth: 200 }}>
+          {/* Percepciones de IIBB sufridas */}
+          <div style={{ marginTop: 16, padding: "14px 16px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>
+              PERCEPCIONES DE IIBB SUFRIDAS <span style={{ fontWeight: 400, color: T.faint }}>(opcional · el proveedor las cobra y las suma al total)</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {[["iibbCaba","IIBB Percepción CABA","Cta. 114204"],["iibbBsAs","IIBB Percepción Bs. As.","Cta. 114206"]].map(([key, label, cta]) => (
+                <div key={key}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>
+                    {label} <span style={{ fontWeight: 400, color: T.faint, fontFamily: "monospace", fontSize: 9 }}>{cta}</span>
+                  </label>
+                  <input type="number" min="0" placeholder="0" value={percepciones[key]}
+                    onChange={e => setPercepciones(p => ({ ...p, [key]: e.target.value }))}
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${percepciones[key] ? T.accent + "60" : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, alignItems: "flex-end", marginTop: 16 }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 20px", textAlign: "right", minWidth: 220 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}>
                 <span>Subtotal s/IVA</span><span style={{ color: T.ink }}>{fmt(totalNeto)}</span>
               </div>
@@ -1682,8 +1752,12 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
                   <span>IVA {rate}%</span><span style={{ color: T.yellow }}>{fmt(imp)}</span>
                 </div>
               ))}
+              {totalPercepciones > 0 && <>
+                {percObj.iibbCaba > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}><span>IIBB Perc. CABA</span><span style={{ color: T.orange }}>{fmt(percObj.iibbCaba)}</span></div>}
+                {percObj.iibbBsAs > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}><span>IIBB Perc. Bs.As.</span><span style={{ color: T.orange }}>{fmt(percObj.iibbBsAs)}</span></div>}
+              </>}
               <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 8, marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800 }}>
-                <span style={{ color: T.muted }}>TOTAL</span><span style={{ color: T.accent }}>{fmt(total)}</span>
+                <span style={{ color: T.muted }}>TOTAL</span><span style={{ color: T.accent }}>{fmt(totalConPerc)}</span>
               </div>
             </div>
             <Btn onClick={confirm} disabled={!supplierId}>✓ Confirmar compra</Btn>
@@ -9622,16 +9696,25 @@ function generarAsientosAuto(saleInvoices, purchaseInvoices, products) {
       ],
       origen: "sistema"
     });
-    // Cobro: DB Caja / CR Deudores
+    // Cobro: DB Caja (+retenciones activo) / CR Deudores
     if (inv.status === "cobrada") {
+      const ret = inv.retenciones || {};
+      const totalRet = (ret.iibbCaba || 0) + (ret.iibbBsAs || 0) + (ret.ganancias || 0) + (ret.ivaRet || 0) + (ret.suss || 0);
+      const cajaMonto = totalConIva - totalRet;
+      const lineasCobro = [
+        { cuenta: "111100", debe: cajaMonto, haber: 0 },
+        ...(ret.iibbCaba > 0 ? [{ cuenta: "114203", debe: ret.iibbCaba, haber: 0 }] : []),
+        ...(ret.iibbBsAs > 0 ? [{ cuenta: "114205", debe: ret.iibbBsAs, haber: 0 }] : []),
+        ...(ret.ganancias > 0 ? [{ cuenta: "114403", debe: ret.ganancias, haber: 0 }] : []),
+        ...(ret.ivaRet > 0 ? [{ cuenta: "114302", debe: ret.ivaRet, haber: 0 }] : []),
+        ...(ret.suss > 0 ? [{ cuenta: "213400", debe: ret.suss, haber: 0 }] : []),
+        { cuenta: "113100", debe: 0, haber: totalConIva },
+      ];
       asientos.push({
         id: `auto-cobro-${inv.id}`,
         fecha: inv.date,
         glosa: `Cobro factura ${docRef(inv)} — ${inv.clientName}`,
-        lineas: [
-          { cuenta: "111100", debe: totalConIva, haber: 0 },
-          { cuenta: "113100", debe: 0, haber: totalConIva },
-        ],
+        lineas: lineasCobro,
         origen: "sistema"
       });
     }
@@ -9642,17 +9725,23 @@ function generarAsientosAuto(saleInvoices, purchaseInvoices, products) {
       const prod = products.find(p => p.id === l.productId);
       return s + (l.subtotal || 0) * (prod?.iva ?? 21) / 100;
     }, 0);
-    const neto = inv.total;
-    // Recepción: DB Mercaderías + IVA Crédito / CR Proveedores
+    const neto = inv.total; // ya incluye percepciones (sumadas en PurchaseBuilder)
+    // Recepción: DB Mercaderías + IVA Crédito + Percepciones IIBB / CR Proveedores
+    const perc = inv.percepciones || {};
+    const totalPerc = (perc.iibbCaba || 0) + (perc.iibbBsAs || 0);
+    const netoSinPerc = neto - totalPerc;
+    const lineasCmp = [
+      { cuenta: "115103", debe: netoSinPerc, haber: 0 },
+      { cuenta: "114301", debe: totalIva, haber: 0 },
+      ...(perc.iibbCaba > 0 ? [{ cuenta: "114204", debe: perc.iibbCaba, haber: 0 }] : []),
+      ...(perc.iibbBsAs > 0 ? [{ cuenta: "114206", debe: perc.iibbBsAs, haber: 0 }] : []),
+      { cuenta: "211100", debe: 0, haber: neto + totalIva },
+    ];
     asientos.push({
       id: `auto-cmp-${inv.id}`,
       fecha: inv.date,
       glosa: `Factura compra ${docRef(inv)} — ${inv.supplierName || "Proveedor"}`,
-      lineas: [
-        { cuenta: "115103", debe: neto, haber: 0 },
-        { cuenta: "114301", debe: totalIva, haber: 0 },
-        { cuenta: "211100", debe: 0, haber: neto + totalIva },
-      ],
+      lineas: lineasCmp,
       origen: "sistema"
     });
     // Pago
@@ -11127,7 +11216,7 @@ export default function App({ session, profile, onLogout }) {
     openDoc(typeMap[action] || "factura");
   };
 
-  const handleSaveDoc = ({ lines, total, totalNeto, totalIva, clientId, clientName, docType, originPresupuestoId, originRemitoIds, modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor = "", metodoPago = "", editingId, oldLines, posTicketIds }) => {
+  const handleSaveDoc = ({ lines, total, totalNeto, totalIva, clientId, clientName, docType, originPresupuestoId, originRemitoIds, modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor = "", metodoPago = "", retenciones = null, editingId, oldLines, posTicketIds }) => {
     // Las facturas desde remito NO descuentan stock (el remito ya lo hizo)
     const vieneDeRemito = docType === "factura" && originRemitoIds?.length > 0;
     const debeDescontarStock = !vieneDeRemito && (docType === "factura" || (docType === "presupuesto" && modificaStock) || docType === "remito");
@@ -11149,7 +11238,7 @@ export default function App({ session, profile, onLogout }) {
         });
       }
       setSaleInvoices(prev => {
-        const updated = { clientId, clientName, total, totalNeto, totalIva, lines, observaciones, moneda, modificaStock, vendedor, metodoPago };
+        const updated = { clientId, clientName, total, totalNeto, totalIva, lines, observaciones, moneda, modificaStock, vendedor, metodoPago, retenciones };
         if (companyId) {
           const inv = prev.find(i => i.id === editingId);
           if (inv) supabase.from('sale_invoices').update(Object.fromEntries(Object.entries(saleInvoiceToDb({ ...inv, ...updated }, companyId)).filter(([k]) => k !== 'id' && k !== 'company_id'))).eq('id', editingId).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
@@ -11183,14 +11272,14 @@ export default function App({ session, profile, onLogout }) {
       if (companyId) supabase.from('pos_tickets').update({ facturado: true }).in('id', posTicketIds).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     }
     const due = new Date(today); due.setDate(due.getDate() + 15);
-    const newInv = { id, ref, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock, observaciones, moneda, vendedor, metodoPago };
+    const newInv = { id, ref, type: docType, clientId, clientName, date: today, due: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: docType === "remito" ? "emitido" : "pendiente", lines, originPresupuestoId: originPresupuestoId || null, originRemitoIds: originRemitoIds || null, modificaStock, observaciones, moneda, vendedor, metodoPago, retenciones: retenciones || null };
     setSaleInvoices(prev => [newInv, ...prev]);
     if (companyId) supabase.from('sale_invoices').insert(saleInvoiceToDb(newInv, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     setShowDocBuilder(false);
     if (imprimirPDF && generarPDF) generarPDF(id);
   };
 
-  const handleSavePurchase = ({ lines, total, totalNeto, totalIva, supplierId, supplierName, payStatus, nroFactura, ordenCompraId }) => {
+  const handleSavePurchase = ({ lines, total, totalNeto, totalIva, supplierId, supplierName, payStatus, nroFactura, ordenCompraId, percepciones }) => {
     setProducts(prev => {
       const next = prev.map(p => { const l = lines.find(l => l.productId === p.id); return l ? { ...p, stock: p.stock + l.qty } : p; });
       if (companyId) next.filter(p => lines.find(l=>l.productId===p.id)).forEach(p => supabase.from('products').update({ stock: p.stock }).eq('id', p.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }));
@@ -11199,7 +11288,7 @@ export default function App({ session, profile, onLogout }) {
     const due = new Date(today); const sup = suppliers.find(s => s.id === supplierId); due.setDate(due.getDate() + (sup?.paymentDays || 0));
     const ref = nextId("OC");
     const id = crypto.randomUUID();
-    const newPI = { id, ref, nroFactura: nroFactura || null, supplierId, supplierName, date: today, dueDate: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: payStatus, lines };
+    const newPI = { id, ref, nroFactura: nroFactura || null, supplierId, supplierName, date: today, dueDate: due.toISOString().slice(0, 10), total, totalNeto, totalIva, status: payStatus, lines, percepciones: percepciones || null };
     setPurchaseInvoices(prev => [newPI, ...prev]);
     if (companyId) supabase.from('purchase_invoices').insert(purchaseInvoiceToDb(newPI, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     setShowPurchaseBuilder(false);
