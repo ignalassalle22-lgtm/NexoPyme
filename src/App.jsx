@@ -9685,52 +9685,142 @@ function asientosAMovimientos(asientos) {
 }
 
 function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyId }) {
+  // ── Estado principal ──────────────────────────────────────────────────────
   const [tab, setTab] = useState("plan");
-  const [filterTipo, setFilterTipo] = useState("todas");
-  const [searchCuenta, setSearchCuenta] = useState("");
-  const [periodoFrom, setPeriodoFrom] = useState(new Date().toISOString().slice(0, 7) + "-01");
-  const [periodoTo, setPeriodoTo] = useState(new Date().toISOString().slice(0, 10));
+
+  // Configuración de cuentas: mods = { [code]: { name?, inactiva? } }, custom = [{ code, name, tipo, nivel }]
+  const [cuentasConfig, setCuentasConfig] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`nexopyme_cuentas_${companyId}`) || '{"mods":{},"custom":[]}'); }
+    catch { return { mods: {}, custom: [] }; }
+  });
+  const saveCuentasConfig = (cfg) => {
+    setCuentasConfig(cfg);
+    localStorage.setItem(`nexopyme_cuentas_${companyId}`, JSON.stringify(cfg));
+  };
+
+  // Asientos manuales
   const [manualEntries, setManualEntries] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`nexopyme_asientos_${companyId}`) || "[]"); } catch { return []; }
   });
-  const [showNewAsiento, setShowNewAsiento] = useState(false);
-  const [newAsiento, setNewAsiento] = useState({ fecha: new Date().toISOString().slice(0, 10), glosa: "", lineas: [{ cuenta: "", debe: "", haber: "" }, { cuenta: "", debe: "", haber: "" }] });
-  const [asientoError, setAsientoError] = useState("");
-
   const saveManual = (entries) => {
     setManualEntries(entries);
     localStorage.setItem(`nexopyme_asientos_${companyId}`, JSON.stringify(entries));
   };
 
+  // Filtros Plan de Cuentas
+  const [filterTipo, setFilterTipo] = useState("todas");
+  const [searchCuenta, setSearchCuenta] = useState("");
+  const [mostrarInactivas, setMostrarInactivas] = useState(false);
+
+  // Edición de cuenta
+  const [editandoCuenta, setEditandoCuenta] = useState(null); // { code, name, tipo, nivel, imputable, esCustom }
+  const [editForm, setEditForm] = useState({ name: "", code: "" });
+
+  // Nueva cuenta
+  const [showNuevaCuenta, setShowNuevaCuenta] = useState(false);
+  const [nuevaCuentaForm, setNuevaCuentaForm] = useState({ code: "", name: "", tipo: "activo" });
+  const [nuevaCuentaError, setNuevaCuentaError] = useState("");
+
+  // Asientos manuales
+  const [showNewAsiento, setShowNewAsiento] = useState(false);
+  const [newAsiento, setNewAsiento] = useState({ fecha: new Date().toISOString().slice(0, 10), glosa: "", lineas: [{ cuenta: "", debe: "", haber: "" }, { cuenta: "", debe: "", haber: "" }] });
+  const [asientoError, setAsientoError] = useState("");
+
+  // Período
+  const [periodoFrom, setPeriodoFrom] = useState(new Date().toISOString().slice(0, 7) + "-01");
+  const [periodoTo, setPeriodoTo] = useState(new Date().toISOString().slice(0, 10));
+
+  // Extracto
+  const [extractoCuentas, setExtractoCuentas] = useState([]);
+  const [extractoFrom, setExtractoFrom] = useState(new Date().toISOString().slice(0, 7) + "-01");
+  const [extractoTo, setExtractoTo] = useState(new Date().toISOString().slice(0, 10));
+  const [searchExtractoCuenta, setSearchExtractoCuenta] = useState("");
+
+  // ── Plan de cuentas vigente (base + mods + custom, sin inactivas por defecto) ──
+  const planVigente = [
+    ...PLAN_CUENTAS.map(a => ({
+      ...a,
+      name: cuentasConfig.mods[a.code]?.name ?? a.name,
+      code: cuentasConfig.mods[a.code]?.code ?? a.code,
+      inactiva: cuentasConfig.mods[a.code]?.inactiva ?? false,
+      esCustom: false,
+    })),
+    ...cuentasConfig.custom.map(a => ({ ...a, imputable: true, esCustom: true, inactiva: cuentasConfig.mods[a.code]?.inactiva ?? false })),
+  ];
+
+  const planActivo = planVigente.filter(a => !a.inactiva);
+  const cuentasImputables = planActivo.filter(a => a.imputable);
+
+  // ── Cálculo de saldos ────────────────────────────────────────────────────
   const asientosAuto = generarAsientosAuto(saleInvoices, purchaseInvoices, products);
   const todosAsientos = [...asientosAuto, ...manualEntries].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const movimientos = asientosAMovimientos(todosAsientos);
 
-  // Saldo de una cuenta 6 dígitos
   const getSaldo = (code) => saldoCuenta(code, movimientos);
+  const getSaldoGrupo = (prefijo) => planActivo.filter(a => a.imputable && a.code.startsWith(prefijo)).reduce((s, a) => s + getSaldo(a.code), 0);
 
-  // Saldo de un grupo (suma de subcuentas imputables)
-  const getSaldoGrupo = (prefijo) => {
-    return PLAN_CUENTAS
-      .filter(a => a.imputable && a.code.startsWith(prefijo))
-      .reduce((s, a) => s + getSaldo(a.code), 0);
-  };
-
-  // IVA position
-  const ivaDebito  = PLAN_CUENTAS.find(a => a.code === "214101") ? Math.abs(getSaldo("214101")) : 0;
-  const ivaCredito = PLAN_CUENTAS.find(a => a.code === "114301") ? Math.abs(getSaldo("114301")) : 0;
+  // IVA y IIBB
+  const ivaDebito  = Math.abs(getSaldo("214101"));
+  const ivaCredito = Math.abs(getSaldo("114301"));
   const ivaNeto    = ivaDebito - ivaCredito;
-
-  // IIBB position
   const iibbPagar  = getSaldo("214300") + getSaldo("214301");
   const iibbAFavor = getSaldo("114201") + getSaldo("114202") + getSaldo("114203") + getSaldo("114204") + getSaldo("114205") + getSaldo("114206");
 
   const fmtN = (n) => `$${Math.abs(n).toLocaleString("es-AR")}`;
 
-  // Asientos del período filtrado
+  // Período
   const asientosPeriodo = todosAsientos.filter(a => a.fecha >= periodoFrom && a.fecha <= periodoTo);
 
-  // Guardar asiento manual
+  const tipoColor = { activo: T.blue, pasivo: T.red, pn: T.accent, ingreso: "#10b981", egreso: "#f59e0b" };
+  const tipoLabel = { activo: "Activo", pasivo: "Pasivo", pn: "Patrimonio Neto", ingreso: "Ingresos", egreso: "Egresos" };
+
+  // ── Editar cuenta ─────────────────────────────────────────────────────────
+  const abrirEdicion = (acc) => {
+    setEditandoCuenta(acc);
+    setEditForm({ name: acc.name, code: acc.code });
+  };
+  const guardarEdicion = () => {
+    if (!editForm.name.trim()) return;
+    const mods = { ...cuentasConfig.mods };
+    const originalCode = editandoCuenta.esCustom ? editandoCuenta.code : editandoCuenta.code;
+    mods[editandoCuenta.code] = { ...(mods[editandoCuenta.code] || {}), name: editForm.name.trim() };
+    // Si se cambió el código en una cuenta custom, actualizamos el array
+    let custom = cuentasConfig.custom;
+    if (editandoCuenta.esCustom && editForm.code !== editandoCuenta.code) {
+      custom = custom.map(c => c.code === editandoCuenta.code ? { ...c, code: editForm.code, name: editForm.name.trim() } : c);
+      delete mods[editandoCuenta.code];
+    }
+    saveCuentasConfig({ ...cuentasConfig, mods, custom });
+    setEditandoCuenta(null);
+  };
+  const toggleInactiva = (acc) => {
+    const mods = { ...cuentasConfig.mods };
+    mods[acc.code] = { ...(mods[acc.code] || {}), inactiva: !acc.inactiva };
+    saveCuentasConfig({ ...cuentasConfig, mods });
+  };
+
+  // ── Nueva cuenta ──────────────────────────────────────────────────────────
+  const guardarNuevaCuenta = () => {
+    setNuevaCuentaError("");
+    const code = nuevaCuentaForm.code.trim();
+    const name = nuevaCuentaForm.name.trim();
+    if (!code || !name) { setNuevaCuentaError("El código y nombre son obligatorios"); return; }
+    if (planVigente.some(a => a.code === code)) { setNuevaCuentaError("Ya existe una cuenta con ese código"); return; }
+    const nueva = { code, name, tipo: nuevaCuentaForm.tipo, nivel: 4, imputable: true };
+    saveCuentasConfig({ ...cuentasConfig, custom: [...cuentasConfig.custom, nueva] });
+    setShowNuevaCuenta(false);
+    setNuevaCuentaForm({ code: "", name: "", tipo: "activo" });
+  };
+
+  const eliminarCustom = (code) => {
+    if (!window.confirm("¿Eliminar esta cuenta personalizada?")) return;
+    const custom = cuentasConfig.custom.filter(c => c.code !== code);
+    const mods = { ...cuentasConfig.mods };
+    delete mods[code];
+    saveCuentasConfig({ ...cuentasConfig, custom, mods });
+  };
+
+  // ── Guardar asiento manual ────────────────────────────────────────────────
   const handleGuardarAsiento = () => {
     setAsientoError("");
     if (!newAsiento.fecha || !newAsiento.glosa.trim()) { setAsientoError("Completá fecha y descripción"); return; }
@@ -9750,27 +9840,18 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
     setShowNewAsiento(false);
     setNewAsiento({ fecha: new Date().toISOString().slice(0, 10), glosa: "", lineas: [{ cuenta: "", debe: "", haber: "" }, { cuenta: "", debe: "", haber: "" }] });
   };
-
   const eliminarManual = (id) => {
     if (!window.confirm("¿Eliminar este asiento manual?")) return;
     saveManual(manualEntries.filter(a => a.id !== id));
   };
 
-  // Export Libro Diario Excel
+  // ── Exports ───────────────────────────────────────────────────────────────
   const exportLibroDiario = () => {
-    const rows = [["Fecha", "Asiento", "Descripción", "Cuenta", "Nombre Cuenta", "Debe", "Haber"]];
+    const rows = [["Fecha", "N°", "Descripción", "Cuenta", "Nombre Cuenta", "Debe", "Haber"]];
     asientosPeriodo.forEach((a, idx) => {
       a.lineas.forEach((l, li) => {
-        const acc = PLAN_CUENTAS.find(x => x.code === l.cuenta);
-        rows.push([
-          li === 0 ? a.fecha : "",
-          li === 0 ? (idx + 1) : "",
-          li === 0 ? a.glosa : "",
-          l.cuenta,
-          acc?.name || "",
-          l.debe || "",
-          l.haber || ""
-        ]);
+        const acc = planVigente.find(x => x.code === l.cuenta);
+        rows.push([li === 0 ? a.fecha : "", li === 0 ? (idx + 1) : "", li === 0 ? a.glosa : "", l.cuenta, acc?.name || "", l.debe || "", l.haber || ""]);
       });
       rows.push(["", "", "", "", "", "", ""]);
     });
@@ -9780,12 +9861,11 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
     XLSX.writeFile(wb, `LibroDiario_${periodoFrom}_${periodoTo}.xlsx`);
   };
 
-  // Export Plan de Cuentas Excel
   const exportPlanCuentas = () => {
-    const rows = [["Código", "Nombre", "Tipo", "Saldo"]];
-    PLAN_CUENTAS.forEach(a => {
+    const rows = [["Código", "Nombre", "Tipo", "Activa", "Saldo"]];
+    planVigente.forEach(a => {
       const saldo = a.imputable ? getSaldo(a.code) : getSaldoGrupo(a.code);
-      rows.push([a.code, a.name, a.tipo, saldo]);
+      rows.push([a.code, a.name, tipoLabel[a.tipo] || a.tipo, a.inactiva ? "No" : "Sí", saldo]);
     });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -9793,10 +9873,51 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
     XLSX.writeFile(wb, "PlanDeCuentas.xlsx");
   };
 
-  const tipoColor = { activo: T.blue, pasivo: T.red, pn: T.accent, ingreso: "#10b981", egreso: "#f59e0b" };
-  const tipoLabel = { activo: "Activo", pasivo: "Pasivo", pn: "Patrimonio Neto", ingreso: "Ingresos", egreso: "Egresos" };
+  // ── Extracto por cuenta ───────────────────────────────────────────────────
+  const toggleExtractoCuenta = (code) => {
+    setExtractoCuentas(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
+  };
 
-  const cuentasImputables = PLAN_CUENTAS.filter(a => a.imputable);
+  const getExtracto = (code) => {
+    const acc = planVigente.find(a => a.code === code);
+    const esDeudora = acc?.tipo === "activo" || acc?.tipo === "egreso";
+    const asientosFiltrados = todosAsientos.filter(a => a.fecha >= extractoFrom && a.fecha <= extractoTo && a.lineas.some(l => l.cuenta === code));
+    let saldoAcum = 0;
+    const rows = [];
+    asientosFiltrados.forEach(a => {
+      const lineasCuenta = a.lineas.filter(l => l.cuenta === code);
+      lineasCuenta.forEach(l => {
+        const debe = l.debe || 0;
+        const haber = l.haber || 0;
+        saldoAcum += esDeudora ? (debe - haber) : (haber - debe);
+        rows.push({ fecha: a.fecha, glosa: a.glosa, debe, haber, saldo: saldoAcum, origen: a.origen });
+      });
+    });
+    return rows;
+  };
+
+  const exportExtracto = () => {
+    if (extractoCuentas.length === 0) return;
+    const wb = XLSX.utils.book_new();
+    extractoCuentas.forEach(code => {
+      const acc = planVigente.find(a => a.code === code);
+      const rows = getExtracto(code);
+      const data = [
+        [`Extracto de cuenta: ${code} — ${acc?.name || ""}`, "", "", "", ""],
+        [`Período: ${extractoFrom} al ${extractoTo}`, "", "", "", ""],
+        [""],
+        ["Fecha", "Descripción", "Debe", "Haber", "Saldo"],
+        ...rows.map(r => [r.fecha, r.glosa, r.debe || "", r.haber || "", r.saldo]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      const sheetName = `${code}`.slice(0, 31);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+    XLSX.writeFile(wb, `Extracto_${extractoFrom}_${extractoTo}.xlsx`);
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  const inpStyle = { width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
 
   return (
     <div>
@@ -9808,50 +9929,137 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: `1px solid ${T.border}`, paddingBottom: 0 }}>
-        {[["plan","Plan de Cuentas"], ["diario","Libro Diario"], ["manual","Asientos Manuales"], ["impuestos","Posición Impositiva"]].map(([v, l]) => (
-          <button key={v} onClick={() => setTab(v)} style={{ padding: "10px 18px", border: "none", borderBottom: `3px solid ${tab === v ? T.accent : "transparent"}`, background: "transparent", color: tab === v ? T.accent : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s", marginBottom: -1 }}>{l}</button>
+      <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: `1px solid ${T.border}` }}>
+        {[["plan","Plan de Cuentas"], ["diario","Libro Diario"], ["manual","Asientos Manuales"], ["extracto","Extracto"], ["impuestos","Posición Impositiva"]].map(([v, l]) => (
+          <button key={v} onClick={() => setTab(v)} style={{ padding: "10px 18px", border: "none", borderBottom: `3px solid ${tab === v ? T.accent : "transparent"}`, background: "transparent", color: tab === v ? T.accent : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: -1 }}>{l}</button>
         ))}
       </div>
 
       {/* ── PLAN DE CUENTAS ── */}
       {tab === "plan" && (
         <div>
+          {/* Toolbar */}
           <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
-            <input value={searchCuenta} onChange={e => setSearchCuenta(e.target.value)} placeholder="Buscar cuenta..." style={{ padding: "9px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", width: 220 }} />
+            <input value={searchCuenta} onChange={e => setSearchCuenta(e.target.value)} placeholder="Buscar por código o nombre..." style={{ padding: "9px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", width: 240 }} />
             {["todas","activo","pasivo","pn","ingreso","egreso"].map(v => (
-              <button key={v} onClick={() => setFilterTipo(v)} style={{ padding: "7px 14px", borderRadius: 20, border: `1px solid ${filterTipo === v ? T.accent : T.border}`, background: filterTipo === v ? T.accentLight : "transparent", color: filterTipo === v ? T.accent : T.muted, fontSize: 12, fontWeight: filterTipo === v ? 700 : 500, cursor: "pointer", fontFamily: "inherit" }}>
+              <button key={v} onClick={() => setFilterTipo(v)} style={{ padding: "7px 12px", borderRadius: 20, border: `1px solid ${filterTipo === v ? T.accent : T.border}`, background: filterTipo === v ? T.accentLight : "transparent", color: filterTipo === v ? T.accent : T.muted, fontSize: 12, fontWeight: filterTipo === v ? 700 : 500, cursor: "pointer", fontFamily: "inherit" }}>
                 {v === "todas" ? "Todas" : tipoLabel[v]}
               </button>
             ))}
-            <button onClick={exportPlanCuentas} style={{ marginLeft: "auto", padding: "8px 16px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>⬇ Excel</button>
+            <button onClick={() => setMostrarInactivas(v => !v)} style={{ padding: "7px 12px", borderRadius: 20, border: `1px solid ${mostrarInactivas ? T.accent : T.border}`, background: mostrarInactivas ? T.accentLight : "transparent", color: mostrarInactivas ? T.accent : T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+              {mostrarInactivas ? "Ocultar inactivas" : "Mostrar inactivas"}
+            </button>
+            <button onClick={() => setShowNuevaCuenta(true)} style={{ marginLeft: "auto", padding: "8px 14px", borderRadius: 8, border: `1px solid ${T.accent}`, background: T.accentLight, color: T.accent, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>+ Nueva cuenta</button>
+            <button onClick={exportPlanCuentas} style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>⬇ Excel</button>
           </div>
+
+          {/* Info asientos automáticos */}
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12, color: T.muted, lineHeight: 1.8 }}>
+            <strong style={{ color: T.ink }}>Cuentas actualizadas automáticamente desde el sistema:</strong>{" "}
+            <span style={{ color: T.blue, fontFamily: "monospace" }}>113100</span> Deudores (cada factura de venta emitida) ·{" "}
+            <span style={{ color: T.blue, fontFamily: "monospace" }}>410100</span> Ventas (neto de cada factura) ·{" "}
+            <span style={{ color: T.blue, fontFamily: "monospace" }}>214101</span> IVA Débito Fiscal (IVA de ventas calculado por alícuota de producto) ·{" "}
+            <span style={{ color: T.blue, fontFamily: "monospace" }}>111100</span> Caja en pesos (facturas cobradas / compras pagadas) ·{" "}
+            <span style={{ color: T.blue, fontFamily: "monospace" }}>115103</span> Mercaderías (neto de facturas de compra) ·{" "}
+            <span style={{ color: T.blue, fontFamily: "monospace" }}>114301</span> IVA Crédito Fiscal (IVA de compras) ·{" "}
+            <span style={{ color: T.blue, fontFamily: "monospace" }}>211100</span> Proveedores (facturas de compra recibidas y pagadas).{" "}
+            El resto de las cuentas se nutren de los <strong>asientos manuales</strong>.
+          </div>
+
+          {/* Formulario nueva cuenta */}
+          {showNuevaCuenta && (
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 10, padding: 20, marginBottom: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Nueva cuenta personalizada</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1fr", gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>CÓDIGO</label>
+                  <input value={nuevaCuentaForm.code} onChange={e => setNuevaCuentaForm(f => ({ ...f, code: e.target.value }))} placeholder="ej: 521204" style={inpStyle} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>NOMBRE</label>
+                  <input value={nuevaCuentaForm.name} onChange={e => setNuevaCuentaForm(f => ({ ...f, name: e.target.value }))} placeholder="ej: Combustibles" style={inpStyle} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>TIPO</label>
+                  <select value={nuevaCuentaForm.tipo} onChange={e => setNuevaCuentaForm(f => ({ ...f, tipo: e.target.value }))} style={{ ...inpStyle, cursor: "pointer" }}>
+                    {Object.entries(tipoLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+              </div>
+              {nuevaCuentaError && <div style={{ color: T.red, fontSize: 12, marginBottom: 10 }}>{nuevaCuentaError}</div>}
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn v="ghost" onClick={() => { setShowNuevaCuenta(false); setNuevaCuentaError(""); }}>Cancelar</Btn>
+                <Btn onClick={guardarNuevaCuenta}>Guardar cuenta</Btn>
+              </div>
+            </div>
+          )}
+
+          {/* Modal edición de cuenta */}
+          {editandoCuenta && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 28, width: 420, maxWidth: "95vw" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Editar cuenta</div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>NOMBRE</label>
+                  <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} style={inpStyle} />
+                </div>
+                {editandoCuenta.esCustom && (
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>CÓDIGO</label>
+                    <input value={editForm.code} onChange={e => setEditForm(f => ({ ...f, code: e.target.value }))} style={inpStyle} />
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 20 }}>
+                  {editandoCuenta.esCustom ? "Podés editar nombre y código de esta cuenta personalizada." : "Solo podés editar el nombre de cuentas del plan base. El código es fijo."}
+                </div>
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                  <Btn v="ghost" onClick={() => setEditandoCuenta(null)}>Cancelar</Btn>
+                  {editandoCuenta.esCustom && <Btn v="danger" onClick={() => { setEditandoCuenta(null); eliminarCustom(editandoCuenta.code); }}>Eliminar</Btn>}
+                  <Btn onClick={guardarEdicion}>Guardar</Btn>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tabla del plan */}
           <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: T.surface }}>
-                  {["Código", "Nombre", "Tipo", "Saldo"].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+                  {["Código", "Nombre", "Tipo", "Saldo", ""].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: h === "Saldo" ? "right" : "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {PLAN_CUENTAS
-                  .filter(a => (filterTipo === "todas" || a.tipo === filterTipo) && (!searchCuenta || a.name.toLowerCase().includes(searchCuenta.toLowerCase()) || a.code.includes(searchCuenta)))
+                {planVigente
+                  .filter(a => {
+                    if (!mostrarInactivas && a.inactiva) return false;
+                    if (filterTipo !== "todas" && a.tipo !== filterTipo) return false;
+                    if (searchCuenta && !a.name.toLowerCase().includes(searchCuenta.toLowerCase()) && !a.code.includes(searchCuenta)) return false;
+                    return true;
+                  })
                   .map(a => {
                     const saldo = a.imputable ? getSaldo(a.code) : getSaldoGrupo(a.code);
                     const isGroup = !a.imputable;
                     return (
-                      <tr key={a.code} style={{ borderTop: `1px solid ${T.border}`, background: isGroup ? T.surface + "60" : "transparent" }}>
-                        <td style={{ padding: "9px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: isGroup ? 700 : 400, color: isGroup ? T.ink : T.muted, paddingLeft: 14 + (a.nivel - 1) * 16 }}>
+                      <tr key={a.code} style={{ borderTop: `1px solid ${T.border}`, background: a.inactiva ? T.surface + "40" : isGroup ? T.surface + "80" : "transparent", opacity: a.inactiva ? 0.5 : 1 }}>
+                        <td style={{ padding: "9px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: isGroup ? 700 : 400, color: isGroup ? T.ink : T.muted, paddingLeft: 14 + Math.min((a.nivel - 1) * 14, 56) }}>
                           {a.code}
+                          {a.esCustom && <span style={{ marginLeft: 6, fontSize: 9, color: T.accent, background: T.accentLight, padding: "1px 5px", borderRadius: 6, fontWeight: 700 }}>CUSTOM</span>}
                         </td>
-                        <td style={{ padding: "9px 14px", fontSize: 13, fontWeight: isGroup ? 700 : 400, color: T.ink }}>
-                          {a.name}
-                        </td>
+                        <td style={{ padding: "9px 14px", fontSize: 13, fontWeight: isGroup ? 700 : 400, color: a.inactiva ? T.muted : T.ink }}>{a.name}</td>
                         <td style={{ padding: "9px 14px" }}>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: tipoColor[a.tipo], background: tipoColor[a.tipo] + "20", padding: "2px 8px", borderRadius: 10 }}>{tipoLabel[a.tipo]}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: tipoColor[a.tipo] || T.muted, background: (tipoColor[a.tipo] || T.muted) + "20", padding: "2px 8px", borderRadius: 10 }}>{tipoLabel[a.tipo] || a.tipo}</span>
                         </td>
                         <td style={{ padding: "9px 14px", textAlign: "right", fontFamily: "monospace", fontSize: 13, fontWeight: isGroup ? 700 : 400, color: saldo === 0 ? T.muted : saldo > 0 ? T.ink : T.red }}>
                           {saldo !== 0 ? fmtN(saldo) : "—"}
+                        </td>
+                        <td style={{ padding: "9px 14px", whiteSpace: "nowrap" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => abrirEdicion(a)} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 6, color: T.muted, cursor: "pointer", fontSize: 11, padding: "3px 8px", fontFamily: "inherit" }}>✏ Editar</button>
+                            <button onClick={() => toggleInactiva(a)} style={{ background: "none", border: `1px solid ${a.inactiva ? T.accent : T.border}`, borderRadius: 6, color: a.inactiva ? T.accent : T.muted, cursor: "pointer", fontSize: 11, padding: "3px 8px", fontFamily: "inherit" }}>
+                              {a.inactiva ? "✓ Activar" : "Desactivar"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -9874,48 +10082,50 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
               <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>HASTA</label>
               <input type="date" value={periodoTo} onChange={e => setPeriodoTo(e.target.value)} style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
             </div>
-            <button onClick={exportLibroDiario} style={{ padding: "9px 16px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-end" }}>⬇ Excel</button>
+            <div style={{ alignSelf: "flex-end" }}>
+              <QuickDateFilter setFrom={setPeriodoFrom} setTo={setPeriodoTo} />
+            </div>
+            <button onClick={exportLibroDiario} style={{ padding: "9px 14px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-end" }}>⬇ Excel</button>
             <span style={{ alignSelf: "flex-end", fontSize: 12, color: T.muted }}>{asientosPeriodo.length} asientos</span>
           </div>
           <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
-            {asientosPeriodo.length === 0 ? (
-              <div style={{ padding: 40, textAlign: "center", color: T.muted, fontSize: 13 }}>No hay asientos en el período seleccionado</div>
-            ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ background: T.surface }}>
-                    {["Fecha", "Descripción / Cuenta", "Debe", "Haber"].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {asientosPeriodo.map((a, idx) => (
-                    <>
-                      <tr key={`${a.id}-head`} style={{ borderTop: `2px solid ${T.border}`, background: T.surface + "80" }}>
-                        <td style={{ padding: "8px 14px", fontFamily: "monospace", fontSize: 12, color: T.blue }}>{a.fecha}</td>
-                        <td colSpan={3} style={{ padding: "8px 14px", fontSize: 13, fontWeight: 700, color: T.ink }}>
-                          {a.glosa}
-                          {a.origen === "manual" && <span style={{ marginLeft: 8, fontSize: 10, color: T.accent, background: T.accentLight, padding: "1px 7px", borderRadius: 10, fontWeight: 700 }}>MANUAL</span>}
-                        </td>
-                      </tr>
-                      {a.lineas.map((l, li) => {
-                        const acc = PLAN_CUENTAS.find(x => x.code === l.cuenta);
-                        return (
-                          <tr key={`${a.id}-${li}`} style={{ borderTop: `1px solid ${T.border}` }}>
-                            <td style={{ padding: "7px 14px" }} />
-                            <td style={{ padding: "7px 14px", fontSize: 12, color: T.muted }}>
-                              <span style={{ fontFamily: "monospace", color: T.blue, marginRight: 8 }}>{l.cuenta}</span>
-                              {acc?.name || "—"}
-                            </td>
-                            <td style={{ padding: "7px 14px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: l.debe > 0 ? T.ink : "transparent" }}>{l.debe > 0 ? fmtN(l.debe) : "—"}</td>
-                            <td style={{ padding: "7px 14px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: l.haber > 0 ? T.ink : "transparent" }}>{l.haber > 0 ? fmtN(l.haber) : "—"}</td>
-                          </tr>
-                        );
-                      })}
-                    </>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            {asientosPeriodo.length === 0
+              ? <div style={{ padding: 40, textAlign: "center", color: T.muted, fontSize: 13 }}>No hay asientos en el período seleccionado</div>
+              : (
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: T.surface }}>
+                      {["Fecha", "Descripción / Cuenta", "Debe", "Haber"].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {asientosPeriodo.map((a) => (
+                      <React.Fragment key={a.id}>
+                        <tr style={{ borderTop: `2px solid ${T.border}`, background: T.surface + "80" }}>
+                          <td style={{ padding: "8px 14px", fontFamily: "monospace", fontSize: 12, color: T.blue }}>{a.fecha}</td>
+                          <td colSpan={3} style={{ padding: "8px 14px", fontSize: 13, fontWeight: 700, color: T.ink }}>
+                            {a.glosa}
+                            {a.origen === "manual" && <span style={{ marginLeft: 8, fontSize: 10, color: T.accent, background: T.accentLight, padding: "1px 7px", borderRadius: 10, fontWeight: 700 }}>MANUAL</span>}
+                          </td>
+                        </tr>
+                        {a.lineas.map((l, li) => {
+                          const acc = planVigente.find(x => x.code === l.cuenta);
+                          return (
+                            <tr key={li} style={{ borderTop: `1px solid ${T.border}` }}>
+                              <td style={{ padding: "7px 14px" }} />
+                              <td style={{ padding: "7px 14px", fontSize: 12, color: T.muted }}>
+                                <span style={{ fontFamily: "monospace", color: T.blue, marginRight: 8 }}>{l.cuenta}</span>{acc?.name || "—"}
+                              </td>
+                              <td style={{ padding: "7px 14px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: l.debe > 0 ? T.ink : "transparent" }}>{l.debe > 0 ? fmtN(l.debe) : "—"}</td>
+                              <td style={{ padding: "7px 14px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: l.haber > 0 ? T.ink : "transparent" }}>{l.haber > 0 ? fmtN(l.haber) : "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              )}
           </div>
         </div>
       )}
@@ -9934,15 +10144,13 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
               <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 12, marginBottom: 16 }}>
                 <div>
                   <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>FECHA</label>
-                  <input type="date" value={newAsiento.fecha} onChange={e => setNewAsiento(a => ({ ...a, fecha: e.target.value }))} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  <input type="date" value={newAsiento.fecha} onChange={e => setNewAsiento(a => ({ ...a, fecha: e.target.value }))} style={inpStyle} />
                 </div>
                 <div>
                   <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>DESCRIPCIÓN / GLOSA</label>
-                  <input value={newAsiento.glosa} onChange={e => setNewAsiento(a => ({ ...a, glosa: e.target.value }))} placeholder="ej: Pago alquiler mes de abril" style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  <input value={newAsiento.glosa} onChange={e => setNewAsiento(a => ({ ...a, glosa: e.target.value }))} placeholder="ej: Pago alquiler mes de abril" style={inpStyle} />
                 </div>
               </div>
-
-              {/* Líneas del asiento */}
               <div style={{ background: T.surface, borderRadius: 8, padding: 16, marginBottom: 14 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr 1fr 1fr auto", gap: 8, marginBottom: 8 }}>
                   {["CUENTA", "NOMBRE", "DEBE", "HABER", ""].map(h => <div key={h} style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8 }}>{h}</div>)}
@@ -9954,9 +10162,7 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
                       <option value="">Seleccionar...</option>
                       {cuentasImputables.map(a => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
                     </select>
-                    <div style={{ fontSize: 12, color: T.muted, padding: "8px 0" }}>
-                      {l.cuenta ? (PLAN_CUENTAS.find(a => a.code === l.cuenta)?.name || "—") : ""}
-                    </div>
+                    <div style={{ fontSize: 12, color: T.muted, padding: "8px 0" }}>{l.cuenta ? (planVigente.find(a => a.code === l.cuenta)?.name || "—") : ""}</div>
                     <input type="number" value={l.debe} onChange={e => setNewAsiento(a => { const ls = [...a.lineas]; ls[i] = { ...ls[i], debe: e.target.value, haber: e.target.value ? "" : ls[i].haber }; return { ...a, lineas: ls }; })} placeholder="0" min="0" style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", textAlign: "right" }} />
                     <input type="number" value={l.haber} onChange={e => setNewAsiento(a => { const ls = [...a.lineas]; ls[i] = { ...ls[i], haber: e.target.value, debe: e.target.value ? "" : ls[i].debe }; return { ...a, lineas: ls }; })} placeholder="0" min="0" style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", textAlign: "right" }} />
                     <button onClick={() => setNewAsiento(a => ({ ...a, lineas: a.lineas.filter((_, j) => j !== i) }))} disabled={newAsiento.lineas.length <= 2} style={{ background: "none", border: "none", color: T.red, cursor: "pointer", fontSize: 16, padding: "4px 6px" }}>×</button>
@@ -9964,8 +10170,6 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
                 ))}
                 <button onClick={() => setNewAsiento(a => ({ ...a, lineas: [...a.lineas, { cuenta: "", debe: "", haber: "" }] }))} style={{ marginTop: 4, padding: "6px 14px", border: `1px dashed ${T.border}`, borderRadius: 8, background: "transparent", color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>+ Agregar línea</button>
               </div>
-
-              {/* Totales */}
               {(() => {
                 const td = newAsiento.lineas.reduce((s, l) => s + (parseFloat(l.debe) || 0), 0);
                 const th = newAsiento.lineas.reduce((s, l) => s + (parseFloat(l.haber) || 0), 0);
@@ -9978,9 +10182,7 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
                   </div>
                 );
               })()}
-
               {asientoError && <div style={{ padding: "8px 12px", borderRadius: 8, background: T.redLight, color: T.red, fontSize: 12, marginBottom: 14 }}>{asientoError}</div>}
-
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <Btn v="ghost" onClick={() => { setShowNewAsiento(false); setAsientoError(""); }}>Cancelar</Btn>
                 <Btn onClick={handleGuardarAsiento}>Guardar asiento</Btn>
@@ -9988,7 +10190,6 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
             </div>
           )}
 
-          {/* Lista de asientos manuales */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {manualEntries.length === 0 && !showNewAsiento && (
               <div style={{ padding: 40, textAlign: "center", color: T.muted, fontSize: 13, background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12 }}>
@@ -10007,7 +10208,7 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
                 <table style={{ width: "100%", fontSize: 12 }}>
                   <tbody>
                     {a.lineas.map((l, i) => {
-                      const acc = PLAN_CUENTAS.find(x => x.code === l.cuenta);
+                      const acc = planVigente.find(x => x.code === l.cuenta);
                       return (
                         <tr key={i} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : "none" }}>
                           <td style={{ padding: "5px 0", fontFamily: "monospace", color: T.blue, width: 80 }}>{l.cuenta}</td>
@@ -10025,43 +10226,134 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
         </div>
       )}
 
+      {/* ── EXTRACTO ── */}
+      {tab === "extracto" && (
+        <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 20, alignItems: "flex-start" }}>
+          {/* Panel izquierdo: selección de cuentas */}
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Seleccionar cuentas</div>
+            <input value={searchExtractoCuenta} onChange={e => setSearchExtractoCuenta(e.target.value)} placeholder="Buscar..." style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 10 }} />
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <button onClick={() => setExtractoCuentas(cuentasImputables.map(a => a.code))} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: "transparent", color: T.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Todas</button>
+              <button onClick={() => setExtractoCuentas([])} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: "transparent", color: T.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Ninguna</button>
+            </div>
+            <div style={{ maxHeight: 420, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+              {cuentasImputables
+                .filter(a => !searchExtractoCuenta || a.name.toLowerCase().includes(searchExtractoCuenta.toLowerCase()) || a.code.includes(searchExtractoCuenta))
+                .map(a => (
+                  <label key={a.code} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", borderRadius: 6, cursor: "pointer", background: extractoCuentas.includes(a.code) ? T.accentLight : "transparent" }}>
+                    <input type="checkbox" checked={extractoCuentas.includes(a.code)} onChange={() => toggleExtractoCuenta(a.code)} style={{ accentColor: T.accent }} />
+                    <span style={{ fontFamily: "monospace", fontSize: 11, color: T.blue }}>{a.code}</span>
+                    <span style={{ fontSize: 12, color: extractoCuentas.includes(a.code) ? T.ink : T.muted, flex: 1 }}>{a.name}</span>
+                  </label>
+                ))}
+            </div>
+          </div>
+
+          {/* Panel derecho: período + extracto */}
+          <div>
+            <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>DESDE</label>
+                <input type="date" value={extractoFrom} onChange={e => setExtractoFrom(e.target.value)} style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>HASTA</label>
+                <input type="date" value={extractoTo} onChange={e => setExtractoTo(e.target.value)} style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+              </div>
+              <div style={{ alignSelf: "flex-end" }}>
+                <QuickDateFilter setFrom={setExtractoFrom} setTo={setExtractoTo} />
+              </div>
+              <Btn onClick={exportExtracto} disabled={extractoCuentas.length === 0} style={{ alignSelf: "flex-end" }}>⬇ Descargar Excel ({extractoCuentas.length} {extractoCuentas.length === 1 ? "cuenta" : "cuentas"})</Btn>
+            </div>
+
+            {extractoCuentas.length === 0
+              ? <div style={{ padding: 40, textAlign: "center", color: T.muted, fontSize: 13, background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12 }}>Seleccioná una o más cuentas del panel izquierdo para ver su extracto</div>
+              : extractoCuentas.map(code => {
+                  const acc = planVigente.find(a => a.code === code);
+                  const rows = getExtracto(code);
+                  const saldoFinal = rows.length > 0 ? rows[rows.length - 1].saldo : 0;
+                  return (
+                    <div key={code} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 16, overflow: "hidden" }}>
+                      <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <span style={{ fontFamily: "monospace", fontSize: 13, color: T.blue, marginRight: 10 }}>{code}</span>
+                          <span style={{ fontSize: 15, fontWeight: 700 }}>{acc?.name || "—"}</span>
+                          <span style={{ marginLeft: 10, fontSize: 11, color: tipoColor[acc?.tipo] || T.muted, background: (tipoColor[acc?.tipo] || T.muted) + "20", padding: "2px 8px", borderRadius: 10, fontWeight: 600 }}>{tipoLabel[acc?.tipo] || acc?.tipo}</span>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 11, color: T.muted }}>Saldo al {extractoTo}</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, fontFamily: "monospace", color: saldoFinal >= 0 ? T.ink : T.red }}>{fmtN(saldoFinal)}</div>
+                        </div>
+                      </div>
+                      {rows.length === 0
+                        ? <div style={{ padding: 20, textAlign: "center", color: T.muted, fontSize: 13 }}>Sin movimientos en el período</div>
+                        : (
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr style={{ background: T.surface }}>
+                                {["Fecha", "Descripción", "Debe", "Haber", "Saldo"].map(h => <th key={h} style={{ padding: "8px 14px", textAlign: h === "Descripción" ? "left" : "right", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map((r, i) => (
+                                <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+                                  <td style={{ padding: "8px 14px", fontFamily: "monospace", fontSize: 12, color: T.blue, whiteSpace: "nowrap" }}>{r.fecha}</td>
+                                  <td style={{ padding: "8px 14px", fontSize: 12, color: T.muted }}>
+                                    {r.glosa}
+                                    {r.origen === "manual" && <span style={{ marginLeft: 6, fontSize: 10, color: T.accent, background: T.accentLight, padding: "1px 5px", borderRadius: 6, fontWeight: 700 }}>M</span>}
+                                  </td>
+                                  <td style={{ padding: "8px 14px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: r.debe > 0 ? T.ink : T.muted }}>{r.debe > 0 ? fmtN(r.debe) : "—"}</td>
+                                  <td style={{ padding: "8px 14px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: r.haber > 0 ? T.ink : T.muted }}>{r.haber > 0 ? fmtN(r.haber) : "—"}</td>
+                                  <td style={{ padding: "8px 14px", fontFamily: "monospace", fontSize: 13, textAlign: "right", fontWeight: 700, color: r.saldo >= 0 ? T.ink : T.red }}>{fmtN(r.saldo)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                    </div>
+                  );
+                })}
+          </div>
+        </div>
+      )}
+
       {/* ── POSICIÓN IMPOSITIVA ── */}
       {tab === "impuestos" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* IVA */}
           <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24 }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>IVA — Posición fiscal</div>
-            <div style={{ fontSize: 12, color: T.muted, marginBottom: 20 }}>Calculado automáticamente desde facturas de venta y compra registradas en el sistema</div>
+            <div style={{ fontSize: 12, color: T.muted, marginBottom: 20 }}>
+              Calculado automáticamente desde facturas de venta y compra registradas.{" "}
+              <strong>IVA Débito</strong> = IVA de cada línea de factura de venta (alícuota × neto por producto).{" "}
+              <strong>IVA Crédito</strong> = ídem para facturas de compra.
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 20 }}>
               <div style={{ background: T.redLight, borderRadius: 10, padding: 18 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.red, letterSpacing: 1, marginBottom: 8 }}>IVA DÉBITO FISCAL (ventas)</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.red, letterSpacing: 1, marginBottom: 8 }}>IVA DÉBITO FISCAL (ventas) · Cta. 214101</div>
                 <div style={{ fontSize: 26, fontWeight: 800, color: T.red, fontFamily: "monospace" }}>{fmtN(ivaDebito)}</div>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Cta. 214101 — Lo que le debés a AFIP</div>
               </div>
               <div style={{ background: T.accentLight, borderRadius: 10, padding: 18 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, letterSpacing: 1, marginBottom: 8 }}>IVA CRÉDITO FISCAL (compras)</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, letterSpacing: 1, marginBottom: 8 }}>IVA CRÉDITO FISCAL (compras) · Cta. 114301</div>
                 <div style={{ fontSize: 26, fontWeight: 800, color: T.accent, fontFamily: "monospace" }}>{fmtN(ivaCredito)}</div>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Cta. 114301 — Lo que te corresponde descontar</div>
               </div>
               <div style={{ background: ivaNeto > 0 ? T.redLight : T.surface, borderRadius: 10, padding: 18, border: `2px solid ${ivaNeto > 0 ? T.red : T.border}` }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: ivaNeto > 0 ? T.red : "#10b981", letterSpacing: 1, marginBottom: 8 }}>{ivaNeto > 0 ? "IVA A INGRESAR (DDJJ)" : "SALDO A FAVOR"}</div>
                 <div style={{ fontSize: 26, fontWeight: 800, color: ivaNeto > 0 ? T.red : "#10b981", fontFamily: "monospace" }}>{fmtN(Math.abs(ivaNeto))}</div>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Débito − Crédito = {ivaNeto > 0 ? "Deuda con AFIP" : "Favor del contribuyente"}</div>
               </div>
             </div>
-            {/* Detalle IVA por alícuota desde ventas */}
             <div style={{ background: T.surface, borderRadius: 8, padding: 14 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>DETALLE POR ALÍCUOTA (ventas)</div>
               {[21, 10.5, 27].map(rate => {
-                const facturas = saleInvoices.filter(i => i.type === "factura");
-                const base = facturas.flatMap(i => (i.lines || []).filter(l => { const p = products.find(x => x.id === l.productId); return (p?.iva ?? 21) === rate; })).reduce((s, l) => s + l.subtotal, 0);
+                const base = saleInvoices.filter(i => i.type === "factura").flatMap(i => (i.lines || []).filter(l => { const p = products.find(x => x.id === l.productId); return (p?.iva ?? 21) === rate; })).reduce((s, l) => s + l.subtotal, 0);
                 const iva = base * rate / 100;
                 if (base === 0) return null;
                 return (
                   <div key={rate} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
                     <span style={{ color: T.muted }}>Alícuota {rate}%</span>
-                    <span style={{ color: T.muted }}>Base neta: <strong style={{ color: T.ink }}>{fmtN(base)}</strong></span>
-                    <span style={{ color: T.muted }}>IVA: <strong style={{ color: T.red, fontFamily: "monospace" }}>{fmtN(iva)}</strong></span>
+                    <span>Base neta: <strong style={{ color: T.ink }}>{fmtN(base)}</strong></span>
+                    <span>IVA: <strong style={{ color: T.red, fontFamily: "monospace" }}>{fmtN(iva)}</strong></span>
                   </div>
                 );
               }).filter(Boolean)}
@@ -10071,17 +10363,15 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
           {/* IIBB */}
           <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24 }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Ingresos Brutos</div>
-            <div style={{ fontSize: 12, color: T.muted, marginBottom: 20 }}>Posición de IIBB CABA y Buenos Aires (actualizada desde asientos contables)</div>
+            <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>Posición actualizada desde asientos contables (automáticos y manuales)</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div style={{ background: T.redLight, borderRadius: 10, padding: 18 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.red, letterSpacing: 1, marginBottom: 8 }}>IIBB A PAGAR</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.red, letterSpacing: 1, marginBottom: 8 }}>IIBB A PAGAR · Ctas. 214300 + 214301</div>
                 <div style={{ fontSize: 26, fontWeight: 800, color: T.red, fontFamily: "monospace" }}>{fmtN(Math.max(0, iibbPagar))}</div>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Ctas. 214300 (CABA) + 214301 (BS.AS)</div>
               </div>
               <div style={{ background: T.accentLight, borderRadius: 10, padding: 18 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, letterSpacing: 1, marginBottom: 8 }}>IIBB A FAVOR / RETENCIONES</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, letterSpacing: 1, marginBottom: 8 }}>IIBB A FAVOR · Ctas. 114201–114206</div>
                 <div style={{ fontSize: 26, fontWeight: 800, color: T.accent, fontFamily: "monospace" }}>{fmtN(Math.abs(iibbAFavor))}</div>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Ctas. 114201–114206 (retenc. y percepciones)</div>
               </div>
             </div>
           </div>
@@ -10090,14 +10380,10 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
           <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24 }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Otras cuentas fiscales</div>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: T.surface }}>
-                  {["Código", "Cuenta", "Saldo"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
-                </tr>
-              </thead>
+              <thead><tr style={{ background: T.surface }}>{["Código","Cuenta","Saldo"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}</tr></thead>
               <tbody>
                 {["214200","214400","114401","114402","114403","114404","114405"].map(code => {
-                  const acc = PLAN_CUENTAS.find(a => a.code === code);
+                  const acc = planVigente.find(a => a.code === code);
                   if (!acc) return null;
                   const s = getSaldo(code);
                   return (
@@ -10116,6 +10402,7 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
     </div>
   );
 }
+
 
 // ─── USUARIOS MODULE ──────────────────────────────────────────────────────────
 const PERM_MODULES = [
