@@ -2499,6 +2499,160 @@ function POSImportModal({ companyId, onImport, onClose }) {
 }
 
 // ─── MODULE: VENTAS ───────────────────────────────────────────────────────────
+// ─── EMAIL DOC MODAL ──────────────────────────────────────────────────────────
+function EmailDocModal({ inv, clients, products, onClose }) {
+  const client = clients.find(c => c.id === inv.clientId);
+  const typeLabel = inv.type === "factura" ? "Factura" : inv.type === "remito" ? "Remito" : "Presupuesto";
+  const [toExtra, setToExtra] = useState("");
+  const [subject, setSubject] = useState(`${typeLabel} ${docRef(inv)} — ${inv.clientName}`);
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null); // "ok" | "error: ..."
+
+  const buildHtml = () => {
+    const linesHtml = (inv.lines || []).map(l => {
+      const prod = products.find(p => p.id === l.productId);
+      const ivaRate = prod?.iva ?? 21;
+      const ivaAmt = l.subtotal * ivaRate / 100;
+      return `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px">${l.clientCode || l.sku || "—"}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px">${l.name}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;text-align:center">${l.qty}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;text-align:right">${fmt(l.unitPrice)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;text-align:right">${fmt(l.subtotal)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:12px;text-align:right;color:#666">${ivaRate}% (${fmt(ivaAmt)})</td>
+      </tr>`;
+    }).join("");
+    const totalIva = (inv.lines || []).reduce((s, l) => {
+      const prod = products.find(p => p.id === l.productId);
+      return s + l.subtotal * (prod?.iva ?? 21) / 100;
+    }, 0);
+    const totalConIva = inv.total + totalIva;
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;color:#222;max-width:700px;margin:0 auto;padding:24px">
+  <div style="background:#0d1117;color:#fff;padding:18px 24px;border-radius:10px 10px 0 0;display:flex;align-items:center;gap:12px">
+    <span style="font-size:20px;font-weight:800;letter-spacing:-0.5px">NexoPyme</span>
+    <span style="margin-left:auto;background:#238636;color:#fff;padding:3px 12px;border-radius:20px;font-size:12px;font-weight:700">${typeLabel.toUpperCase()}</span>
+  </div>
+  <div style="border:1px solid #e0e0e0;border-top:none;border-radius:0 0 10px 10px;padding:24px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:20px">
+      <div>
+        <div style="font-size:22px;font-weight:800;margin-bottom:4px">${typeLabel} ${docRef(inv)}</div>
+        ${inv.nroFactura ? `<div style="font-size:12px;color:#666">N° ${inv.nroFactura}</div>` : ""}
+        ${inv.cae ? `<div style="font-size:11px;color:#238636;margin-top:2px">✓ CAE: ${inv.cae}</div>` : ""}
+      </div>
+      <div style="text-align:right;font-size:13px;color:#444">
+        <div><strong>Fecha:</strong> ${inv.date}</div>
+        ${inv.due && inv.due !== inv.date ? `<div><strong>Vence:</strong> ${inv.due}</div>` : ""}
+      </div>
+    </div>
+    <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;margin-bottom:20px">
+      <div style="font-size:11px;color:#888;font-weight:700;letter-spacing:1px;margin-bottom:6px">CLIENTE</div>
+      <div style="font-size:15px;font-weight:700">${client?.name || inv.clientName}</div>
+      ${client?.cuit ? `<div style="font-size:13px;color:#555">CUIT: ${client.cuit}</div>` : ""}
+      ${client?.direccion ? `<div style="font-size:13px;color:#555">${client.direccion}</div>` : ""}
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+      <thead>
+        <tr style="background:#f5f5f5">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#666">CÓDIGO</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#666">DESCRIPCIÓN</th>
+          <th style="padding:8px 12px;text-align:center;font-size:11px;color:#666">CANT.</th>
+          <th style="padding:8px 12px;text-align:right;font-size:11px;color:#666">PRECIO UNIT.</th>
+          <th style="padding:8px 12px;text-align:right;font-size:11px;color:#666">SUBTOTAL</th>
+          <th style="padding:8px 12px;text-align:right;font-size:11px;color:#666">IVA</th>
+        </tr>
+      </thead>
+      <tbody>${linesHtml}</tbody>
+    </table>
+    <div style="text-align:right;border-top:2px solid #eee;padding-top:12px">
+      <div style="font-size:13px;color:#666;margin-bottom:4px">Neto: <strong>${fmt(inv.total)}</strong></div>
+      <div style="font-size:13px;color:#666;margin-bottom:4px">IVA: <strong>${fmt(totalIva)}</strong></div>
+      <div style="font-size:22px;font-weight:800">TOTAL: ${fmt(totalConIva)}</div>
+    </div>
+    ${inv.observaciones ? `<div style="margin-top:16px;padding:12px 14px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:4px;font-size:13px;color:#555"><strong>Observaciones:</strong> ${inv.observaciones}</div>` : ""}
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid #eee;font-size:11px;color:#999;text-align:center">
+      Este documento fue generado por <strong>NexoPyme</strong>. Ante cualquier consulta respondé este correo.
+    </div>
+  </div>
+</body></html>`;
+  };
+
+  const handleSend = async () => {
+    const primaryEmail = client?.email || "";
+    const extras = toExtra.split(",").map(e => e.trim()).filter(Boolean);
+    const allEmails = [...(primaryEmail ? [primaryEmail] : []), ...extras];
+    if (allEmails.length === 0) { setResult("error: No hay ningún correo destinatario"); return; }
+    setSending(true); setResult(null);
+    try {
+      const r = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: allEmails.join(","), subject, html: buildHtml() })
+      });
+      const data = await r.json();
+      setResult(data.ok ? "ok" : "error: " + (data.error || "Error desconocido"));
+    } catch (e) {
+      setResult("error: " + e.message);
+    }
+    setSending(false);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 16, padding: 28, width: 520, maxWidth: "95vw" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>✉ Enviar por email</div>
+            <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{`${inv.type === "factura" ? "Factura" : inv.type === "remito" ? "Remito" : "Presupuesto"} ${docRef(inv)} — ${inv.clientName}`}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Destinatario principal */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 6 }}>DESTINATARIO PRINCIPAL (email registrado del cliente)</label>
+          <div style={{ padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: client?.email ? T.ink : T.red, fontSize: 13, fontFamily: "monospace" }}>
+            {client?.email || "⚠ Este cliente no tiene email registrado"}
+          </div>
+        </div>
+
+        {/* CC extras */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 6 }}>CORREOS ADICIONALES (separados por coma)</label>
+          <input value={toExtra} onChange={e => setToExtra(e.target.value)} placeholder="otro@mail.com, copia@mail.com"
+            style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        </div>
+
+        {/* Asunto */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 6 }}>ASUNTO</label>
+          <input value={subject} onChange={e => setSubject(e.target.value)}
+            style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        </div>
+
+        {/* Resultado */}
+        {result === "ok" && (
+          <div style={{ padding: "10px 14px", borderRadius: 8, background: T.accentLight, color: T.accent, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>
+            ✓ Email enviado correctamente
+          </div>
+        )}
+        {result && result.startsWith("error") && (
+          <div style={{ padding: "10px 14px", borderRadius: 8, background: T.redLight, color: T.red, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>
+            {result}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Btn v="ghost" onClick={onClose}>Cancelar</Btn>
+          <Btn onClick={handleSend} disabled={sending || (!client?.email && !toExtra.trim())}>
+            {sending ? "Enviando…" : "Enviar email"}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, products, setProducts, vendedores, setVendedores, companyId, profile, cheques, setCheques, cajas, cajaMovimientos, setCajaMovimientos, onNewFactura, onNewRemito, onNewPresupuesto, onNewPresupuestoIA, onEditDoc, onNewFacturaFromPOS }) {
   const [tab, setTab] = useState("docs");
   const [filterType, setFilterType] = useState("all");
@@ -2514,6 +2668,7 @@ function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, prod
   const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
   const [viewingInv, setViewingInv] = useState(null);
   const [showPOSImport, setShowPOSImport] = useState(false);
+  const [emailingDoc, setEmailingDoc] = useState(null);
 
   // ── IA Presupuesto rápido ────────────────────────────────────────────────
   const [showIAModal, setShowIAModal] = useState(false);
@@ -3370,6 +3525,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                       {inv.type === "factura" && !inv.cae && <Btn sm v="ghost" onClick={() => emitirARCA(inv)} disabled={arcaLoading === inv.id}>{arcaLoading === inv.id ? "Enviando..." : "🏛 Emitir ARCA"}</Btn>}
                       {inv.type === "factura" && inv.cae && <span style={{ fontSize: 10, color: T.accent, fontWeight: 700, padding: "3px 8px", border: `1px solid ${T.accent}40`, borderRadius: 6 }}>✓ CAE</span>}
                       <Btn sm v="ghost" onClick={() => generarPDFFactura(inv)}>📄 PDF</Btn>
+                      <Btn sm v="ghost" onClick={() => setEmailingDoc(inv)}>✉ Enviar</Btn>
                       <Btn sm v="ghost" onClick={() => onEditDoc(inv)}>✏ Editar</Btn>
                       {inv.type === "presupuesto" && (() => {
                         const linkedDoc = saleInvoices.find(i => i.originPresupuestoId === inv.id);
@@ -3621,6 +3777,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
         </div>
       )}
 
+      {emailingDoc && <EmailDocModal inv={emailingDoc} clients={clients} products={products} onClose={() => setEmailingDoc(null)} />}
     </div>
   );
 }
@@ -9302,6 +9459,664 @@ function ChequesModule({ cheques, setCheques, companyId }) {
   );
 }
 
+// ─── CONTABILIDAD MODULE ──────────────────────────────────────────────────────
+const PLAN_CUENTAS = [
+  // ACTIVO
+  { code: "1",      name: "Activo",                                        tipo: "activo", nivel: 1 },
+  { code: "11",     name: "Activo Corriente",                              tipo: "activo", nivel: 2 },
+  { code: "111",    name: "Caja y Bancos",                                 tipo: "activo", nivel: 3 },
+  { code: "111100", name: "Caja en pesos",                                 tipo: "activo", nivel: 4, imputable: true },
+  { code: "111200", name: "Banco Provincia Cta Cte.",                      tipo: "activo", nivel: 4, imputable: true },
+  { code: "111300", name: "Banco Nacion Cta Especial",                     tipo: "activo", nivel: 4, imputable: true },
+  { code: "113",    name: "Creditos por Ventas",                           tipo: "activo", nivel: 3 },
+  { code: "113100", name: "Deudores Por Ventas",                           tipo: "activo", nivel: 4, imputable: true },
+  { code: "113200", name: "Valores a Depositar",                           tipo: "activo", nivel: 4, imputable: true },
+  { code: "114",    name: "Otros Creditos",                                tipo: "activo", nivel: 3 },
+  { code: "114101", name: "Accionistas",                                   tipo: "activo", nivel: 4, imputable: true },
+  { code: "114102", name: "Varios",                                        tipo: "activo", nivel: 4, imputable: true },
+  { code: "114103", name: "Alquileres a Devengar",                         tipo: "activo", nivel: 4, imputable: true },
+  { code: "114104", name: "Depositos de Alquiler",                         tipo: "activo", nivel: 4, imputable: true },
+  { code: "114201", name: "IIBB Saldo a Favor CABA",                       tipo: "activo", nivel: 4, imputable: true },
+  { code: "114202", name: "IIBB Saldo a Favor BS AS",                      tipo: "activo", nivel: 4, imputable: true },
+  { code: "114203", name: "IIBB Retenciones CABA",                         tipo: "activo", nivel: 4, imputable: true },
+  { code: "114204", name: "IIBB Percepciones CABA",                        tipo: "activo", nivel: 4, imputable: true },
+  { code: "114205", name: "IIBB Retenciones BS AS",                        tipo: "activo", nivel: 4, imputable: true },
+  { code: "114206", name: "IIBB Percepciones BS AS",                       tipo: "activo", nivel: 4, imputable: true },
+  { code: "114301", name: "IVA Credito Fiscal",                            tipo: "activo", nivel: 4, imputable: true },
+  { code: "114302", name: "IVA Retenciones",                               tipo: "activo", nivel: 4, imputable: true },
+  { code: "114303", name: "IVA Percepciones",                              tipo: "activo", nivel: 4, imputable: true },
+  { code: "114304", name: "IVA Saldo Tecnico a Favor",                     tipo: "activo", nivel: 4, imputable: true },
+  { code: "114305", name: "IVA Saldo Libre Disponibilidad",                tipo: "activo", nivel: 4, imputable: true },
+  { code: "114401", name: "Saldo a Favor Ganancias",                       tipo: "activo", nivel: 4, imputable: true },
+  { code: "114402", name: "Anticipos de Ganancias",                        tipo: "activo", nivel: 4, imputable: true },
+  { code: "114403", name: "Retenciones de Ganancias",                      tipo: "activo", nivel: 4, imputable: true },
+  { code: "114404", name: "Percepciones de Ganancias",                     tipo: "activo", nivel: 4, imputable: true },
+  { code: "114405", name: "Impuesto al debito y credito Bancario",         tipo: "activo", nivel: 4, imputable: true },
+  { code: "114406", name: "Credito Impuesto Diferido",                     tipo: "activo", nivel: 4, imputable: true },
+  { code: "115",    name: "Bienes de Cambio",                              tipo: "activo", nivel: 3 },
+  { code: "115100", name: "Materias Primas",                               tipo: "activo", nivel: 4, imputable: true },
+  { code: "115101", name: "Productos en Proceso",                          tipo: "activo", nivel: 4, imputable: true },
+  { code: "115102", name: "Productos Terminados",                          tipo: "activo", nivel: 4, imputable: true },
+  { code: "115103", name: "Mercanderias",                                  tipo: "activo", nivel: 4, imputable: true },
+  { code: "115200", name: "Anticipos a Proveedores",                       tipo: "activo", nivel: 4, imputable: true },
+  { code: "12",     name: "Activo No Corriente",                           tipo: "activo", nivel: 2 },
+  { code: "125",    name: "Bienes de Uso",                                 tipo: "activo", nivel: 3 },
+  { code: "125100", name: "Maquinarias",                                   tipo: "activo", nivel: 4, imputable: true },
+  { code: "125200", name: "Amortizacion Acumulada Maquinarias",            tipo: "activo", nivel: 4, imputable: true },
+  { code: "126",    name: "Activos Intangibles",                           tipo: "activo", nivel: 3 },
+  { code: "126100", name: "Gastos de Organizacion",                        tipo: "activo", nivel: 4, imputable: true },
+  { code: "126200", name: "Amortizacion Acumulada Gastos de Organizacion", tipo: "activo", nivel: 4, imputable: true },
+  { code: "127",    name: "Otros Creditos No Corriente",                   tipo: "activo", nivel: 3 },
+  { code: "127100", name: "Deposito Alquiler",                             tipo: "activo", nivel: 4, imputable: true },
+  { code: "127200", name: "Quebrantos",                                    tipo: "activo", nivel: 4, imputable: true },
+  { code: "128",    name: "Regularizadoras del Activo",                    tipo: "activo", nivel: 3 },
+  { code: "128100", name: "Intereses Positivos a Devengar",                tipo: "activo", nivel: 4, imputable: true },
+  // PASIVO
+  { code: "2",      name: "Pasivo",                                        tipo: "pasivo", nivel: 1 },
+  { code: "21",     name: "Pasivo Corriente",                              tipo: "pasivo", nivel: 2 },
+  { code: "211",    name: "Deudas Comerciales",                            tipo: "pasivo", nivel: 3 },
+  { code: "211100", name: "Proveedores",                                   tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "211200", name: "Acreedores Varios",                             tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "211300", name: "Provisiones",                                   tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "211400", name: "Cheques Diferidos no debitados",                tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "211500", name: "Anticipo de Clientes",                          tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "212",    name: "Deudas Financieras",                            tipo: "pasivo", nivel: 3 },
+  { code: "212100", name: "Prestamo Banco a pagar",                        tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "213",    name: "Deudas Sociales",                               tipo: "pasivo", nivel: 3 },
+  { code: "213100", name: "Remuneraciones a Pagar",                        tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "213200", name: "Cargas Sociales a pagar",                       tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "213300", name: "Sindicatos a Pagar",                            tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "213400", name: "Retenciones Sufridas SUSS",                     tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "214",    name: "Deudas Fiscales",                               tipo: "pasivo", nivel: 3 },
+  { code: "214100", name: "IVA a Pagar DDJJ",                              tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "214101", name: "IVA Debito Fiscal",                             tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "214200", name: "Impuesto a las Ganancias a pagar",              tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "214300", name: "Impuesto a los IIBB a pagar CABA",              tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "214301", name: "Impuesto a los IIBB a pagar BS.AS",             tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "214400", name: "Tasa de Seguridad e Higiene a Pagar",           tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "215",    name: "Otras Deudas",                                  tipo: "pasivo", nivel: 3 },
+  { code: "215100", name: "Alquileres a Pagar",                            tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "215200", name: "Servicios a Pagar",                             tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "215300", name: "Honorarios a pagar",                            tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "215400", name: "Acreedores Varios",                             tipo: "pasivo", nivel: 4, imputable: true },
+  { code: "216",    name: "Regularizadoras del Pasivo",                    tipo: "pasivo", nivel: 3 },
+  { code: "216100", name: "Intereses Negativos a Devengar",                tipo: "pasivo", nivel: 4, imputable: true },
+  // PATRIMONIO NETO
+  { code: "3",      name: "Patrimonio Neto",                               tipo: "pn",     nivel: 1 },
+  { code: "310100", name: "Acciones a emitir",                             tipo: "pn",     nivel: 4, imputable: true },
+  { code: "310101", name: "Acciones en circulacion",                       tipo: "pn",     nivel: 4, imputable: true },
+  { code: "311100", name: "Ajuste de Capital",                             tipo: "pn",     nivel: 4, imputable: true },
+  { code: "320100", name: "Reserva Legal",                                 tipo: "pn",     nivel: 4, imputable: true },
+  { code: "320102", name: "Reserva Estatutaria",                           tipo: "pn",     nivel: 4, imputable: true },
+  { code: "320103", name: "Reserva Facultativa",                           tipo: "pn",     nivel: 4, imputable: true },
+  { code: "330100", name: "Resultados No Asignados",                       tipo: "pn",     nivel: 4, imputable: true },
+  { code: "330101", name: "Resultado del Ejercicio",                       tipo: "pn",     nivel: 4, imputable: true },
+  // INGRESOS
+  { code: "4",      name: "Ingresos",                                      tipo: "ingreso",nivel: 1 },
+  { code: "410100", name: "Ventas",                                        tipo: "ingreso",nivel: 4, imputable: true },
+  // EGRESOS
+  { code: "5",      name: "Egresos",                                       tipo: "egreso", nivel: 1 },
+  { code: "511100", name: "Costo de Mercaderia Vendida",                   tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521100", name: "Sueldos de produccion",                         tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521101", name: "Sueldos de administracion",                     tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521102", name: "Cargas Sociales de produccion",                 tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521103", name: "Cargas Sociales de administracion",             tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521104", name: "Sindicatos",                                    tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521105", name: "Honorarios Contables",                          tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521106", name: "Honorarios",                                    tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521107", name: "Alquileres",                                    tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521108", name: "Agua",                                          tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521109", name: "Energia Electrica",                             tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521110", name: "Limpieza",                                      tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521111", name: "Gastos Generales",                              tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521112", name: "Gastos de Fabrica",                             tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521113", name: "Gastos Bancarios",                              tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521114", name: "Impuestos Deb/Cred CtaCte",                     tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521115", name: "Amortizacion Gastos de Organizacion",           tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521116", name: "Amortizacion Maquinarias",                      tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521200", name: "Ingresos Brutos",                               tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521201", name: "Tasa Seguridad y Higiene",                      tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521202", name: "Impuesto al Sello",                             tipo: "egreso", nivel: 4, imputable: true },
+  { code: "521203", name: "Impuestos y Tasas",                             tipo: "egreso", nivel: 4, imputable: true },
+  { code: "53",     name: "Impuestos a las Ganancias",                     tipo: "egreso", nivel: 2 },
+  { code: "530100", name: "Impuesto a las Ganancias",                      tipo: "egreso", nivel: 4, imputable: true },
+  { code: "54",     name: "Otros Resultados",                              tipo: "egreso", nivel: 2 },
+  { code: "541001", name: "Intereses Negativos",                           tipo: "egreso", nivel: 4, imputable: true },
+  { code: "541002", name: "Intereses Positivos",                           tipo: "ingreso",nivel: 4, imputable: true },
+  { code: "541003", name: "R.F.G.A.",                                      tipo: "egreso", nivel: 4, imputable: true },
+  { code: "541004", name: "R.F.G.P.",                                      tipo: "egreso", nivel: 4, imputable: true },
+  { code: "551001", name: "RECPAM",                                        tipo: "egreso", nivel: 4, imputable: true },
+];
+
+// Calcula el saldo de una cuenta a partir de sus movimientos
+// Activo/Egreso → saldo = debe - haber (deudora)
+// Pasivo/PN/Ingreso → saldo = haber - debe (acreedora)
+function saldoCuenta(code, movimientos) {
+  const debe = movimientos.filter(m => m.debe === code).reduce((s, m) => s + m.importe, 0);
+  const haber = movimientos.filter(m => m.haber === code).reduce((s, m) => s + m.importe, 0);
+  const acc = PLAN_CUENTAS.find(a => a.code === code);
+  if (!acc) return debe - haber;
+  return (acc.tipo === "activo" || acc.tipo === "egreso") ? debe - haber : haber - debe;
+}
+
+// Genera asientos automáticos a partir de los datos del sistema
+function generarAsientosAuto(saleInvoices, purchaseInvoices, products) {
+  const asientos = [];
+  // Facturas de venta
+  saleInvoices.filter(i => i.type === "factura").forEach(inv => {
+    const totalIva = (inv.lines || []).reduce((s, l) => {
+      const prod = products.find(p => p.id === l.productId);
+      return s + l.subtotal * (prod?.iva ?? 21) / 100;
+    }, 0);
+    const neto = inv.total;
+    const totalConIva = neto + totalIva;
+    // Emisión: DB Deudores / CR Ventas + IVA Débito
+    asientos.push({
+      id: `auto-vta-${inv.id}`,
+      fecha: inv.date,
+      glosa: `Factura venta ${docRef(inv)} — ${inv.clientName}`,
+      lineas: [
+        { cuenta: "113100", debe: totalConIva, haber: 0 },
+        { cuenta: "410100", debe: 0, haber: neto },
+        { cuenta: "214101", debe: 0, haber: totalIva },
+      ],
+      origen: "sistema"
+    });
+    // Cobro: DB Caja / CR Deudores
+    if (inv.status === "cobrada") {
+      asientos.push({
+        id: `auto-cobro-${inv.id}`,
+        fecha: inv.date,
+        glosa: `Cobro factura ${docRef(inv)} — ${inv.clientName}`,
+        lineas: [
+          { cuenta: "111100", debe: totalConIva, haber: 0 },
+          { cuenta: "113100", debe: 0, haber: totalConIva },
+        ],
+        origen: "sistema"
+      });
+    }
+  });
+  // Facturas de compra
+  purchaseInvoices.forEach(inv => {
+    const totalIva = (inv.lines || []).reduce((s, l) => {
+      const prod = products.find(p => p.id === l.productId);
+      return s + (l.subtotal || 0) * (prod?.iva ?? 21) / 100;
+    }, 0);
+    const neto = inv.total;
+    // Recepción: DB Mercaderías + IVA Crédito / CR Proveedores
+    asientos.push({
+      id: `auto-cmp-${inv.id}`,
+      fecha: inv.date,
+      glosa: `Factura compra ${docRef(inv)} — ${inv.supplierName || "Proveedor"}`,
+      lineas: [
+        { cuenta: "115103", debe: neto, haber: 0 },
+        { cuenta: "114301", debe: totalIva, haber: 0 },
+        { cuenta: "211100", debe: 0, haber: neto + totalIva },
+      ],
+      origen: "sistema"
+    });
+    // Pago
+    if (inv.status === "pagada") {
+      asientos.push({
+        id: `auto-pago-${inv.id}`,
+        fecha: inv.dueDate || inv.date,
+        glosa: `Pago factura compra ${docRef(inv)} — ${inv.supplierName || "Proveedor"}`,
+        lineas: [
+          { cuenta: "211100", debe: neto + totalIva, haber: 0 },
+          { cuenta: "111100", debe: 0, haber: neto + totalIva },
+        ],
+        origen: "sistema"
+      });
+    }
+  });
+  return asientos.sort((a, b) => a.fecha.localeCompare(b.fecha));
+}
+
+// Expande asientos en movimientos planos cuenta/debe/haber para cálculo de saldos
+function asientosAMovimientos(asientos) {
+  const movs = [];
+  asientos.forEach(a => {
+    (a.lineas || []).forEach(l => {
+      if (l.debe > 0)  movs.push({ debe: l.cuenta, haber: null,    importe: l.debe,  fecha: a.fecha });
+      if (l.haber > 0) movs.push({ debe: null,    haber: l.cuenta, importe: l.haber, fecha: a.fecha });
+    });
+  });
+  return movs;
+}
+
+function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyId }) {
+  const [tab, setTab] = useState("plan");
+  const [filterTipo, setFilterTipo] = useState("todas");
+  const [searchCuenta, setSearchCuenta] = useState("");
+  const [periodoFrom, setPeriodoFrom] = useState(new Date().toISOString().slice(0, 7) + "-01");
+  const [periodoTo, setPeriodoTo] = useState(new Date().toISOString().slice(0, 10));
+  const [manualEntries, setManualEntries] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`nexopyme_asientos_${companyId}`) || "[]"); } catch { return []; }
+  });
+  const [showNewAsiento, setShowNewAsiento] = useState(false);
+  const [newAsiento, setNewAsiento] = useState({ fecha: new Date().toISOString().slice(0, 10), glosa: "", lineas: [{ cuenta: "", debe: "", haber: "" }, { cuenta: "", debe: "", haber: "" }] });
+  const [asientoError, setAsientoError] = useState("");
+
+  const saveManual = (entries) => {
+    setManualEntries(entries);
+    localStorage.setItem(`nexopyme_asientos_${companyId}`, JSON.stringify(entries));
+  };
+
+  const asientosAuto = generarAsientosAuto(saleInvoices, purchaseInvoices, products);
+  const todosAsientos = [...asientosAuto, ...manualEntries].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const movimientos = asientosAMovimientos(todosAsientos);
+
+  // Saldo de una cuenta 6 dígitos
+  const getSaldo = (code) => saldoCuenta(code, movimientos);
+
+  // Saldo de un grupo (suma de subcuentas imputables)
+  const getSaldoGrupo = (prefijo) => {
+    return PLAN_CUENTAS
+      .filter(a => a.imputable && a.code.startsWith(prefijo))
+      .reduce((s, a) => s + getSaldo(a.code), 0);
+  };
+
+  // IVA position
+  const ivaDebito  = PLAN_CUENTAS.find(a => a.code === "214101") ? Math.abs(getSaldo("214101")) : 0;
+  const ivaCredito = PLAN_CUENTAS.find(a => a.code === "114301") ? Math.abs(getSaldo("114301")) : 0;
+  const ivaNeto    = ivaDebito - ivaCredito;
+
+  // IIBB position
+  const iibbPagar  = getSaldo("214300") + getSaldo("214301");
+  const iibbAFavor = getSaldo("114201") + getSaldo("114202") + getSaldo("114203") + getSaldo("114204") + getSaldo("114205") + getSaldo("114206");
+
+  const fmtN = (n) => `$${Math.abs(n).toLocaleString("es-AR")}`;
+
+  // Asientos del período filtrado
+  const asientosPeriodo = todosAsientos.filter(a => a.fecha >= periodoFrom && a.fecha <= periodoTo);
+
+  // Guardar asiento manual
+  const handleGuardarAsiento = () => {
+    setAsientoError("");
+    if (!newAsiento.fecha || !newAsiento.glosa.trim()) { setAsientoError("Completá fecha y descripción"); return; }
+    const lineasValidas = newAsiento.lineas.filter(l => l.cuenta && (parseFloat(l.debe) > 0 || parseFloat(l.haber) > 0));
+    if (lineasValidas.length < 2) { setAsientoError("El asiento necesita al menos 2 líneas con importes"); return; }
+    const totalDebe  = lineasValidas.reduce((s, l) => s + (parseFloat(l.debe) || 0), 0);
+    const totalHaber = lineasValidas.reduce((s, l) => s + (parseFloat(l.haber) || 0), 0);
+    if (Math.abs(totalDebe - totalHaber) > 0.01) { setAsientoError(`No balancea: Debe ${fmtN(totalDebe)} ≠ Haber ${fmtN(totalHaber)}`); return; }
+    const asiento = {
+      id: `manual-${Date.now()}`,
+      fecha: newAsiento.fecha,
+      glosa: newAsiento.glosa.trim(),
+      lineas: lineasValidas.map(l => ({ cuenta: l.cuenta, debe: parseFloat(l.debe) || 0, haber: parseFloat(l.haber) || 0 })),
+      origen: "manual"
+    };
+    saveManual([...manualEntries, asiento]);
+    setShowNewAsiento(false);
+    setNewAsiento({ fecha: new Date().toISOString().slice(0, 10), glosa: "", lineas: [{ cuenta: "", debe: "", haber: "" }, { cuenta: "", debe: "", haber: "" }] });
+  };
+
+  const eliminarManual = (id) => {
+    if (!window.confirm("¿Eliminar este asiento manual?")) return;
+    saveManual(manualEntries.filter(a => a.id !== id));
+  };
+
+  // Export Libro Diario Excel
+  const exportLibroDiario = () => {
+    const rows = [["Fecha", "Asiento", "Descripción", "Cuenta", "Nombre Cuenta", "Debe", "Haber"]];
+    asientosPeriodo.forEach((a, idx) => {
+      a.lineas.forEach((l, li) => {
+        const acc = PLAN_CUENTAS.find(x => x.code === l.cuenta);
+        rows.push([
+          li === 0 ? a.fecha : "",
+          li === 0 ? (idx + 1) : "",
+          li === 0 ? a.glosa : "",
+          l.cuenta,
+          acc?.name || "",
+          l.debe || "",
+          l.haber || ""
+        ]);
+      });
+      rows.push(["", "", "", "", "", "", ""]);
+    });
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, "Libro Diario");
+    XLSX.writeFile(wb, `LibroDiario_${periodoFrom}_${periodoTo}.xlsx`);
+  };
+
+  // Export Plan de Cuentas Excel
+  const exportPlanCuentas = () => {
+    const rows = [["Código", "Nombre", "Tipo", "Saldo"]];
+    PLAN_CUENTAS.forEach(a => {
+      const saldo = a.imputable ? getSaldo(a.code) : getSaldoGrupo(a.code);
+      rows.push([a.code, a.name, a.tipo, saldo]);
+    });
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, "Plan de Cuentas");
+    XLSX.writeFile(wb, "PlanDeCuentas.xlsx");
+  };
+
+  const tipoColor = { activo: T.blue, pasivo: T.red, pn: T.accent, ingreso: "#10b981", egreso: "#f59e0b" };
+  const tipoLabel = { activo: "Activo", pasivo: "Pasivo", pn: "Patrimonio Neto", ingreso: "Ingresos", egreso: "Egresos" };
+
+  const cuentasImputables = PLAN_CUENTAS.filter(a => a.imputable);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Contabilidad</div>
+          <div style={{ fontSize: 13, color: T.muted }}>Plan de cuentas, libro diario y posición impositiva</div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: `1px solid ${T.border}`, paddingBottom: 0 }}>
+        {[["plan","Plan de Cuentas"], ["diario","Libro Diario"], ["manual","Asientos Manuales"], ["impuestos","Posición Impositiva"]].map(([v, l]) => (
+          <button key={v} onClick={() => setTab(v)} style={{ padding: "10px 18px", border: "none", borderBottom: `3px solid ${tab === v ? T.accent : "transparent"}`, background: "transparent", color: tab === v ? T.accent : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s", marginBottom: -1 }}>{l}</button>
+        ))}
+      </div>
+
+      {/* ── PLAN DE CUENTAS ── */}
+      {tab === "plan" && (
+        <div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
+            <input value={searchCuenta} onChange={e => setSearchCuenta(e.target.value)} placeholder="Buscar cuenta..." style={{ padding: "9px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", width: 220 }} />
+            {["todas","activo","pasivo","pn","ingreso","egreso"].map(v => (
+              <button key={v} onClick={() => setFilterTipo(v)} style={{ padding: "7px 14px", borderRadius: 20, border: `1px solid ${filterTipo === v ? T.accent : T.border}`, background: filterTipo === v ? T.accentLight : "transparent", color: filterTipo === v ? T.accent : T.muted, fontSize: 12, fontWeight: filterTipo === v ? 700 : 500, cursor: "pointer", fontFamily: "inherit" }}>
+                {v === "todas" ? "Todas" : tipoLabel[v]}
+              </button>
+            ))}
+            <button onClick={exportPlanCuentas} style={{ marginLeft: "auto", padding: "8px 16px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>⬇ Excel</button>
+          </div>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: T.surface }}>
+                  {["Código", "Nombre", "Tipo", "Saldo"].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {PLAN_CUENTAS
+                  .filter(a => (filterTipo === "todas" || a.tipo === filterTipo) && (!searchCuenta || a.name.toLowerCase().includes(searchCuenta.toLowerCase()) || a.code.includes(searchCuenta)))
+                  .map(a => {
+                    const saldo = a.imputable ? getSaldo(a.code) : getSaldoGrupo(a.code);
+                    const isGroup = !a.imputable;
+                    return (
+                      <tr key={a.code} style={{ borderTop: `1px solid ${T.border}`, background: isGroup ? T.surface + "60" : "transparent" }}>
+                        <td style={{ padding: "9px 14px", fontFamily: "monospace", fontSize: 12, fontWeight: isGroup ? 700 : 400, color: isGroup ? T.ink : T.muted, paddingLeft: 14 + (a.nivel - 1) * 16 }}>
+                          {a.code}
+                        </td>
+                        <td style={{ padding: "9px 14px", fontSize: 13, fontWeight: isGroup ? 700 : 400, color: T.ink }}>
+                          {a.name}
+                        </td>
+                        <td style={{ padding: "9px 14px" }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: tipoColor[a.tipo], background: tipoColor[a.tipo] + "20", padding: "2px 8px", borderRadius: 10 }}>{tipoLabel[a.tipo]}</span>
+                        </td>
+                        <td style={{ padding: "9px 14px", textAlign: "right", fontFamily: "monospace", fontSize: 13, fontWeight: isGroup ? 700 : 400, color: saldo === 0 ? T.muted : saldo > 0 ? T.ink : T.red }}>
+                          {saldo !== 0 ? fmtN(saldo) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── LIBRO DIARIO ── */}
+      {tab === "diario" && (
+        <div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>DESDE</label>
+              <input type="date" value={periodoFrom} onChange={e => setPeriodoFrom(e.target.value)} style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>HASTA</label>
+              <input type="date" value={periodoTo} onChange={e => setPeriodoTo(e.target.value)} style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+            </div>
+            <button onClick={exportLibroDiario} style={{ padding: "9px 16px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-end" }}>⬇ Excel</button>
+            <span style={{ alignSelf: "flex-end", fontSize: 12, color: T.muted }}>{asientosPeriodo.length} asientos</span>
+          </div>
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+            {asientosPeriodo.length === 0 ? (
+              <div style={{ padding: 40, textAlign: "center", color: T.muted, fontSize: 13 }}>No hay asientos en el período seleccionado</div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: T.surface }}>
+                    {["Fecha", "Descripción / Cuenta", "Debe", "Haber"].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {asientosPeriodo.map((a, idx) => (
+                    <>
+                      <tr key={`${a.id}-head`} style={{ borderTop: `2px solid ${T.border}`, background: T.surface + "80" }}>
+                        <td style={{ padding: "8px 14px", fontFamily: "monospace", fontSize: 12, color: T.blue }}>{a.fecha}</td>
+                        <td colSpan={3} style={{ padding: "8px 14px", fontSize: 13, fontWeight: 700, color: T.ink }}>
+                          {a.glosa}
+                          {a.origen === "manual" && <span style={{ marginLeft: 8, fontSize: 10, color: T.accent, background: T.accentLight, padding: "1px 7px", borderRadius: 10, fontWeight: 700 }}>MANUAL</span>}
+                        </td>
+                      </tr>
+                      {a.lineas.map((l, li) => {
+                        const acc = PLAN_CUENTAS.find(x => x.code === l.cuenta);
+                        return (
+                          <tr key={`${a.id}-${li}`} style={{ borderTop: `1px solid ${T.border}` }}>
+                            <td style={{ padding: "7px 14px" }} />
+                            <td style={{ padding: "7px 14px", fontSize: 12, color: T.muted }}>
+                              <span style={{ fontFamily: "monospace", color: T.blue, marginRight: 8 }}>{l.cuenta}</span>
+                              {acc?.name || "—"}
+                            </td>
+                            <td style={{ padding: "7px 14px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: l.debe > 0 ? T.ink : "transparent" }}>{l.debe > 0 ? fmtN(l.debe) : "—"}</td>
+                            <td style={{ padding: "7px 14px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: l.haber > 0 ? T.ink : "transparent" }}>{l.haber > 0 ? fmtN(l.haber) : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── ASIENTOS MANUALES ── */}
+      {tab === "manual" && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div style={{ fontSize: 13, color: T.muted }}>{manualEntries.length} asientos manuales cargados</div>
+            <Btn onClick={() => { setShowNewAsiento(true); setAsientoError(""); }}>+ Nuevo asiento</Btn>
+          </div>
+
+          {showNewAsiento && (
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24, marginBottom: 20 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Nuevo asiento contable</div>
+              <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 12, marginBottom: 16 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>FECHA</label>
+                  <input type="date" value={newAsiento.fecha} onChange={e => setNewAsiento(a => ({ ...a, fecha: e.target.value }))} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, display: "block", marginBottom: 5 }}>DESCRIPCIÓN / GLOSA</label>
+                  <input value={newAsiento.glosa} onChange={e => setNewAsiento(a => ({ ...a, glosa: e.target.value }))} placeholder="ej: Pago alquiler mes de abril" style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                </div>
+              </div>
+
+              {/* Líneas del asiento */}
+              <div style={{ background: T.surface, borderRadius: 8, padding: 16, marginBottom: 14 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr 1fr 1fr auto", gap: 8, marginBottom: 8 }}>
+                  {["CUENTA", "NOMBRE", "DEBE", "HABER", ""].map(h => <div key={h} style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8 }}>{h}</div>)}
+                </div>
+                {newAsiento.lineas.map((l, i) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 3fr 1fr 1fr auto", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                    <select value={l.cuenta} onChange={e => setNewAsiento(a => { const ls = [...a.lineas]; ls[i] = { ...ls[i], cuenta: e.target.value }; return { ...a, lineas: ls }; })}
+                      style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 12, fontFamily: "monospace", outline: "none" }}>
+                      <option value="">Seleccionar...</option>
+                      {cuentasImputables.map(a => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
+                    </select>
+                    <div style={{ fontSize: 12, color: T.muted, padding: "8px 0" }}>
+                      {l.cuenta ? (PLAN_CUENTAS.find(a => a.code === l.cuenta)?.name || "—") : ""}
+                    </div>
+                    <input type="number" value={l.debe} onChange={e => setNewAsiento(a => { const ls = [...a.lineas]; ls[i] = { ...ls[i], debe: e.target.value, haber: e.target.value ? "" : ls[i].haber }; return { ...a, lineas: ls }; })} placeholder="0" min="0" style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", textAlign: "right" }} />
+                    <input type="number" value={l.haber} onChange={e => setNewAsiento(a => { const ls = [...a.lineas]; ls[i] = { ...ls[i], haber: e.target.value, debe: e.target.value ? "" : ls[i].debe }; return { ...a, lineas: ls }; })} placeholder="0" min="0" style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", textAlign: "right" }} />
+                    <button onClick={() => setNewAsiento(a => ({ ...a, lineas: a.lineas.filter((_, j) => j !== i) }))} disabled={newAsiento.lineas.length <= 2} style={{ background: "none", border: "none", color: T.red, cursor: "pointer", fontSize: 16, padding: "4px 6px" }}>×</button>
+                  </div>
+                ))}
+                <button onClick={() => setNewAsiento(a => ({ ...a, lineas: [...a.lineas, { cuenta: "", debe: "", haber: "" }] }))} style={{ marginTop: 4, padding: "6px 14px", border: `1px dashed ${T.border}`, borderRadius: 8, background: "transparent", color: T.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>+ Agregar línea</button>
+              </div>
+
+              {/* Totales */}
+              {(() => {
+                const td = newAsiento.lineas.reduce((s, l) => s + (parseFloat(l.debe) || 0), 0);
+                const th = newAsiento.lineas.reduce((s, l) => s + (parseFloat(l.haber) || 0), 0);
+                const ok = Math.abs(td - th) < 0.01 && td > 0;
+                return (
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 24, marginBottom: 14, fontSize: 13 }}>
+                    <span style={{ color: T.muted }}>Total Debe: <strong style={{ color: T.ink, fontFamily: "monospace" }}>{fmtN(td)}</strong></span>
+                    <span style={{ color: T.muted }}>Total Haber: <strong style={{ color: T.ink, fontFamily: "monospace" }}>{fmtN(th)}</strong></span>
+                    <span style={{ fontWeight: 700, color: ok ? "#10b981" : T.red }}>{ok ? "✓ Balanceado" : "⚠ No balancea"}</span>
+                  </div>
+                );
+              })()}
+
+              {asientoError && <div style={{ padding: "8px 12px", borderRadius: 8, background: T.redLight, color: T.red, fontSize: 12, marginBottom: 14 }}>{asientoError}</div>}
+
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <Btn v="ghost" onClick={() => { setShowNewAsiento(false); setAsientoError(""); }}>Cancelar</Btn>
+                <Btn onClick={handleGuardarAsiento}>Guardar asiento</Btn>
+              </div>
+            </div>
+          )}
+
+          {/* Lista de asientos manuales */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {manualEntries.length === 0 && !showNewAsiento && (
+              <div style={{ padding: 40, textAlign: "center", color: T.muted, fontSize: 13, background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+                No hay asientos manuales. Usá "+ Nuevo asiento" para cargar ajustes contables.
+              </div>
+            )}
+            {[...manualEntries].reverse().map(a => (
+              <div key={a.id} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <div>
+                    <span style={{ fontFamily: "monospace", fontSize: 12, color: T.blue, marginRight: 10 }}>{a.fecha}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{a.glosa}</span>
+                  </div>
+                  <button onClick={() => eliminarManual(a.id)} style={{ background: "none", border: "none", color: T.red, cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>🗑 Eliminar</button>
+                </div>
+                <table style={{ width: "100%", fontSize: 12 }}>
+                  <tbody>
+                    {a.lineas.map((l, i) => {
+                      const acc = PLAN_CUENTAS.find(x => x.code === l.cuenta);
+                      return (
+                        <tr key={i} style={{ borderTop: i > 0 ? `1px solid ${T.border}` : "none" }}>
+                          <td style={{ padding: "5px 0", fontFamily: "monospace", color: T.blue, width: 80 }}>{l.cuenta}</td>
+                          <td style={{ padding: "5px 8px", color: T.muted }}>{acc?.name || "—"}</td>
+                          <td style={{ padding: "5px 0", textAlign: "right", color: T.ink, fontFamily: "monospace" }}>{l.debe > 0 ? fmtN(l.debe) : ""}</td>
+                          <td style={{ padding: "5px 0 5px 16px", textAlign: "right", color: T.muted, fontFamily: "monospace" }}>{l.haber > 0 ? fmtN(l.haber) : ""}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── POSICIÓN IMPOSITIVA ── */}
+      {tab === "impuestos" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* IVA */}
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>IVA — Posición fiscal</div>
+            <div style={{ fontSize: 12, color: T.muted, marginBottom: 20 }}>Calculado automáticamente desde facturas de venta y compra registradas en el sistema</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 20 }}>
+              <div style={{ background: T.redLight, borderRadius: 10, padding: 18 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.red, letterSpacing: 1, marginBottom: 8 }}>IVA DÉBITO FISCAL (ventas)</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: T.red, fontFamily: "monospace" }}>{fmtN(ivaDebito)}</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Cta. 214101 — Lo que le debés a AFIP</div>
+              </div>
+              <div style={{ background: T.accentLight, borderRadius: 10, padding: 18 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, letterSpacing: 1, marginBottom: 8 }}>IVA CRÉDITO FISCAL (compras)</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: T.accent, fontFamily: "monospace" }}>{fmtN(ivaCredito)}</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Cta. 114301 — Lo que te corresponde descontar</div>
+              </div>
+              <div style={{ background: ivaNeto > 0 ? T.redLight : T.surface, borderRadius: 10, padding: 18, border: `2px solid ${ivaNeto > 0 ? T.red : T.border}` }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: ivaNeto > 0 ? T.red : "#10b981", letterSpacing: 1, marginBottom: 8 }}>{ivaNeto > 0 ? "IVA A INGRESAR (DDJJ)" : "SALDO A FAVOR"}</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: ivaNeto > 0 ? T.red : "#10b981", fontFamily: "monospace" }}>{fmtN(Math.abs(ivaNeto))}</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Débito − Crédito = {ivaNeto > 0 ? "Deuda con AFIP" : "Favor del contribuyente"}</div>
+              </div>
+            </div>
+            {/* Detalle IVA por alícuota desde ventas */}
+            <div style={{ background: T.surface, borderRadius: 8, padding: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>DETALLE POR ALÍCUOTA (ventas)</div>
+              {[21, 10.5, 27].map(rate => {
+                const facturas = saleInvoices.filter(i => i.type === "factura");
+                const base = facturas.flatMap(i => (i.lines || []).filter(l => { const p = products.find(x => x.id === l.productId); return (p?.iva ?? 21) === rate; })).reduce((s, l) => s + l.subtotal, 0);
+                const iva = base * rate / 100;
+                if (base === 0) return null;
+                return (
+                  <div key={rate} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: `1px solid ${T.border}`, fontSize: 13 }}>
+                    <span style={{ color: T.muted }}>Alícuota {rate}%</span>
+                    <span style={{ color: T.muted }}>Base neta: <strong style={{ color: T.ink }}>{fmtN(base)}</strong></span>
+                    <span style={{ color: T.muted }}>IVA: <strong style={{ color: T.red, fontFamily: "monospace" }}>{fmtN(iva)}</strong></span>
+                  </div>
+                );
+              }).filter(Boolean)}
+            </div>
+          </div>
+
+          {/* IIBB */}
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>Ingresos Brutos</div>
+            <div style={{ fontSize: 12, color: T.muted, marginBottom: 20 }}>Posición de IIBB CABA y Buenos Aires (actualizada desde asientos contables)</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div style={{ background: T.redLight, borderRadius: 10, padding: 18 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.red, letterSpacing: 1, marginBottom: 8 }}>IIBB A PAGAR</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: T.red, fontFamily: "monospace" }}>{fmtN(Math.max(0, iibbPagar))}</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Ctas. 214300 (CABA) + 214301 (BS.AS)</div>
+              </div>
+              <div style={{ background: T.accentLight, borderRadius: 10, padding: 18 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, letterSpacing: 1, marginBottom: 8 }}>IIBB A FAVOR / RETENCIONES</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: T.accent, fontFamily: "monospace" }}>{fmtN(Math.abs(iibbAFavor))}</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>Ctas. 114201–114206 (retenc. y percepciones)</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Otras cuentas fiscales */}
+          <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}>Otras cuentas fiscales</div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: T.surface }}>
+                  {["Código", "Cuenta", "Saldo"].map(h => <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {["214200","214400","114401","114402","114403","114404","114405"].map(code => {
+                  const acc = PLAN_CUENTAS.find(a => a.code === code);
+                  if (!acc) return null;
+                  const s = getSaldo(code);
+                  return (
+                    <tr key={code} style={{ borderTop: `1px solid ${T.border}` }}>
+                      <td style={{ padding: "9px 14px", fontFamily: "monospace", fontSize: 12, color: T.blue }}>{code}</td>
+                      <td style={{ padding: "9px 14px", fontSize: 13, color: T.ink }}>{acc.name}</td>
+                      <td style={{ padding: "9px 14px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: s === 0 ? T.muted : T.ink }}>{s !== 0 ? fmtN(s) : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── USUARIOS MODULE ──────────────────────────────────────────────────────────
 const PERM_MODULES = [
   { id: "hub", label: "Inicio" }, { id: "ventas", label: "Ventas" },
@@ -9309,6 +10124,7 @@ const PERM_MODULES = [
   { id: "caja", label: "Caja" }, { id: "cheques", label: "Cheques" },
   { id: "inventario", label: "Inventario" }, { id: "logistica", label: "Logística" },
   { id: "reportes", label: "Reportes" }, { id: "rrhh", label: "RRHH" },
+  { id: "contabilidad", label: "Contabilidad" },
 ];
 
 const DEFAULT_PERMS = Object.fromEntries(PERM_MODULES.map(m => [m.id, "edit"]));
@@ -9890,8 +10706,9 @@ const NAV = [
   { id: "cheques",    label: "Cheques",    icon: "✦" },
   { id: "inventario", label: "Inventario", icon: "▦" },
   { id: "logistica",  label: "Logística",  icon: "🚚" },
-  { id: "reportes",   label: "Reportes",   icon: "◎" },
-  { id: "rrhh",       label: "RRHH",       icon: "👥" },
+  { id: "reportes",      label: "Reportes",      icon: "◎" },
+  { id: "rrhh",          label: "RRHH",          icon: "👥" },
+  { id: "contabilidad",  label: "Contabilidad",  icon: "⚖" },
 ];
 
 export default function App({ session, profile, onLogout }) {
@@ -10182,6 +10999,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} companyId={companyId} />}
         {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
+        {module === "contabilidad" && <ContabilidadModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} companyId={companyId} />}
         {module === "pos" && isJefe && <POSJefeModule companyId={companyId} />}
         {module === "usuarios" && isJefe && <UsuariosModule companyId={companyId} profile={profile} />}
         {module === "arca" && isJefe && <ArcaConfigModule companyId={companyId} />}
