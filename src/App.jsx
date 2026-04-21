@@ -1116,6 +1116,68 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
             </table>
           </div>
 
+          {/* Percepciones impositivas — solo facturas, mismo formato que compras */}
+          {docType === "factura" && (
+            <div style={{ marginTop: 16, padding: "14px 16px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>
+                PERCEPCIONES IMPOSITIVAS <span style={{ fontWeight: 400, color: T.faint }}>(opcional · el cliente las paga junto con la factura)</span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                {[
+                  ["iva", "Perc. IVA", "Cta. 114303"],
+                  ["ganancias", "Perc. Ganancias", "Cta. 114404"],
+                ].map(([key, label, cta]) => (
+                  <div key={key}>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>
+                      {label} <span style={{ fontWeight: 400, color: T.faint, fontFamily: "monospace", fontSize: 9 }}>{cta}</span>
+                    </label>
+                    <input type="number" min="0" placeholder="0"
+                      value={percepciones[key]}
+                      onChange={e => setPercepciones(p => ({ ...p, [key]: e.target.value }))}
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${percepciones[key] ? T.accent + "60" : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                ))}
+              </div>
+              {/* IIBB por jurisdicción */}
+              <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8 }}>
+                    PERC. IIBB POR JURISDICCIÓN <span style={{ fontWeight: 400, color: T.faint, fontFamily: "monospace", fontSize: 9 }}>Cta. 114200</span>
+                  </span>
+                  <button onClick={() => setPercepciones(p => ({ ...p, iibb: [...(p.iibb || []), { jurisdiccion: "", monto: "" }] }))}
+                    style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, border: `1px solid ${T.accent}`, background: T.accentLight, color: T.accent, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                    + Agregar provincia
+                  </button>
+                </div>
+                {(percepciones.iibb || []).length === 0 && (
+                  <div style={{ fontSize: 11, color: T.faint, padding: "4px 0" }}>Sin percepciones de IIBB</div>
+                )}
+                {(percepciones.iibb || []).map((entry, idx) => (
+                  <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 6, alignItems: "flex-end" }}>
+                    <div>
+                      {idx === 0 && <label style={{ fontSize: 9, fontWeight: 700, color: T.faint, display: "block", marginBottom: 3, letterSpacing: 0.8 }}>JURISDICCIÓN</label>}
+                      <select value={entry.jurisdiccion}
+                        onChange={e => setPercepciones(p => ({ ...p, iibb: p.iibb.map((x, i) => i === idx ? { ...x, jurisdiccion: e.target.value } : x) }))}
+                        style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${entry.jurisdiccion ? T.accent + "60" : T.border}`, background: T.surface2, color: entry.jurisdiccion ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
+                        <option value="">Seleccionar...</option>
+                        {PROVINCIAS_ARGENTINA.map(prov => <option key={prov} value={prov}>{prov}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      {idx === 0 && <label style={{ fontSize: 9, fontWeight: 700, color: T.faint, display: "block", marginBottom: 3, letterSpacing: 0.8 }}>IMPORTE</label>}
+                      <input type="number" min="0" placeholder="0"
+                        value={entry.monto}
+                        onChange={e => setPercepciones(p => ({ ...p, iibb: p.iibb.map((x, i) => i === idx ? { ...x, monto: e.target.value } : x) }))}
+                        style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${entry.monto ? T.accent + "60" : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <button onClick={() => setPercepciones(p => ({ ...p, iibb: p.iibb.filter((_, i) => i !== idx) }))}
+                      style={{ padding: "7px 10px", borderRadius: 7, border: "none", background: "none", color: T.muted, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Fiscal totals */}
           {/* Options: stock toggle (presupuesto only) + PDF */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
@@ -1215,76 +1277,6 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
                     </div>
                   ) : null;
                 })()}
-              </div>
-            </div>
-          )}
-
-          {/* Percepciones impositivas */}
-          {docType === "factura" && (
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>
-                PERCEPCIONES IMPOSITIVAS <span style={{ fontWeight: 400, color: T.faint }}>(opcional · el cliente las paga junto con la factura)</span>
-              </label>
-              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-                  {[
-                    ["iva", "Perc. IVA", "Cta. 114303"],
-                    ["ganancias", "Perc. Ganancias", "Cta. 114404"],
-                  ].map(([key, label, cta]) => (
-                    <div key={key}>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>
-                        {label} <span style={{ fontWeight: 400, color: T.faint, fontFamily: "monospace", fontSize: 9 }}>{cta}</span>
-                      </label>
-                      <input type="number" min="0" placeholder="0"
-                        value={percepciones[key]}
-                        onChange={e => setPercepciones(p => ({ ...p, [key]: e.target.value }))}
-                        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${percepciones[key] ? T.accent + "60" : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
-                    </div>
-                  ))}
-                </div>
-                {/* IIBB por jurisdicción */}
-                <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8 }}>
-                      PERC. IIBB POR JURISDICCIÓN <span style={{ fontWeight: 400, color: T.faint, fontFamily: "monospace", fontSize: 9 }}>Cta. 114200</span>
-                    </span>
-                    <button onClick={() => setPercepciones(p => ({ ...p, iibb: [...(p.iibb || []), { jurisdiccion: "", monto: "" }] }))}
-                      style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, border: `1px solid ${T.accent}`, background: T.accentLight, color: T.accent, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
-                      + Agregar provincia
-                    </button>
-                  </div>
-                  {(percepciones.iibb || []).length === 0 && (
-                    <div style={{ fontSize: 11, color: T.faint, padding: "4px 0" }}>Sin percepciones de IIBB</div>
-                  )}
-                  {(percepciones.iibb || []).map((entry, idx) => (
-                    <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 6, alignItems: "flex-end" }}>
-                      <div>
-                        {idx === 0 && <label style={{ fontSize: 9, fontWeight: 700, color: T.faint, display: "block", marginBottom: 3, letterSpacing: 0.8 }}>JURISDICCIÓN</label>}
-                        <select value={entry.jurisdiccion}
-                          onChange={e => setPercepciones(p => ({ ...p, iibb: p.iibb.map((x, i) => i === idx ? { ...x, jurisdiccion: e.target.value } : x) }))}
-                          style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${entry.jurisdiccion ? T.accent + "60" : T.border}`, background: T.surface2, color: entry.jurisdiccion ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
-                          <option value="">Seleccionar...</option>
-                          {PROVINCIAS_ARGENTINA.map(prov => <option key={prov} value={prov}>{prov}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        {idx === 0 && <label style={{ fontSize: 9, fontWeight: 700, color: T.faint, display: "block", marginBottom: 3, letterSpacing: 0.8 }}>IMPORTE</label>}
-                        <input type="number" min="0" placeholder="0"
-                          value={entry.monto}
-                          onChange={e => setPercepciones(p => ({ ...p, iibb: p.iibb.map((x, i) => i === idx ? { ...x, monto: e.target.value } : x) }))}
-                          style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${entry.monto ? T.accent + "60" : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
-                      </div>
-                      <button onClick={() => setPercepciones(p => ({ ...p, iibb: p.iibb.filter((_, i) => i !== idx) }))}
-                        style={{ padding: "7px 10px", borderRadius: 7, border: "none", background: "none", color: T.muted, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>✕</button>
-                    </div>
-                  ))}
-                </div>
-                {totalPercepciones > 0 && (
-                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                    <span style={{ color: T.muted }}>Total percepciones</span>
-                    <span style={{ fontWeight: 700, color: T.orange, fontFamily: "monospace" }}>+{fmtM(totalPercepciones)}</span>
-                  </div>
-                )}
               </div>
             </div>
           )}
