@@ -5625,8 +5625,14 @@ function InventarioModule({ products, setProducts, clients, suppliers, priceList
         if (ovIdx >= 0) overrides[ovIdx] = newOv; else overrides.push(newOv);
         next[prodIdx] = { ...next[prodIdx], clientOverrides: overrides };
       });
-      // Sync to DB
-      if (companyId) next.forEach(p => supabase.from('products').upsert(productToDb(p, companyId)).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) }));
+      // Sync to DB en batches para evitar saturar Supabase con miles de requests simultáneos
+      if (companyId) {
+        const BATCH = 100;
+        const rows = next.map(p => productToDb(p, companyId));
+        for (let i = 0; i < rows.length; i += BATCH) {
+          supabase.from('products').upsert(rows.slice(i, i + BATCH)).then(r => { if (r?.error) console.error("DB upsert batch error:", r.error.message) });
+        }
+      }
       return next;
     });
     const parts = [];
