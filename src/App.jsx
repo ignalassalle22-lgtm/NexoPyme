@@ -9913,25 +9913,36 @@ function generarAsientosAuto(saleInvoices, purchaseInvoices, products, cheques =
       const prod = products.find(p => p.id === l.productId);
       return s + l.subtotal * (prod?.iva ?? 21) / 100;
     }, 0);
-    const neto = inv.total;
+    // percepciones cobradas al cliente (pasivo: las debemos depositar al fisco)
+    const perc = inv.percepciones || {};
+    const percIvaCob = perc.iva || 0;
+    const percGanCob = perc.ganancias || 0;
+    const percIibbCob = (perc.iibb || []).reduce((s, e) => s + (e.monto || 0), 0);
+    const totalPercVta = percIvaCob + percGanCob + percIibbCob;
+    const neto = (inv.total || 0) - totalPercVta; // neto sin percepciones
     const totalConIva = neto + totalIva;
-    // Emisión: DB Deudores / CR Ventas + IVA Débito
+    const totalDeudor = totalConIva + totalPercVta;
+    // Emisión: DB Deudores / CR Ventas + IVA Débito + Percepciones a pagar (pasivo)
+    const lineasVta = [
+      { cuenta: "113100", debe: totalDeudor, haber: 0 },
+      { cuenta: "410100", debe: 0, haber: neto },
+      { cuenta: "214101", debe: 0, haber: totalIva },
+      ...(percIvaCob > 0 ? [{ cuenta: "214303", debe: 0, haber: percIvaCob }] : []),
+      ...(percGanCob > 0 ? [{ cuenta: "214404", debe: 0, haber: percGanCob }] : []),
+      ...((perc.iibb || []).filter(e => e.monto > 0).map(e => ({ cuenta: "214200", debe: 0, haber: e.monto }))),
+    ];
     asientos.push({
       id: `auto-vta-${inv.id}`,
       fecha: inv.date,
       glosa: `Factura venta ${docRef(inv)} — ${inv.clientName}`,
-      lineas: [
-        { cuenta: "113100", debe: totalConIva, haber: 0 },
-        { cuenta: "410100", debe: 0, haber: neto },
-        { cuenta: "214101", debe: 0, haber: totalIva },
-      ],
+      lineas: lineasVta,
       origen: "sistema"
     });
     // Cobro: DB Caja (+retenciones activo) / CR Deudores
     if (inv.status === "cobrada") {
       const ret = inv.retenciones || {};
       const totalRet = (ret.iibbCaba || 0) + (ret.iibbBsAs || 0) + (ret.ganancias || 0) + (ret.ivaRet || 0) + (ret.suss || 0);
-      const cajaMonto = totalConIva - totalRet;
+      const cajaMonto = totalDeudor - totalRet;
       const lineasCobro = [
         { cuenta: "111100", debe: cajaMonto, haber: 0 },
         ...(ret.iibbCaba > 0 ? [{ cuenta: "114203", debe: ret.iibbCaba, haber: 0 }] : []),
@@ -9939,7 +9950,7 @@ function generarAsientosAuto(saleInvoices, purchaseInvoices, products, cheques =
         ...(ret.ganancias > 0 ? [{ cuenta: "114403", debe: ret.ganancias, haber: 0 }] : []),
         ...(ret.ivaRet > 0 ? [{ cuenta: "114302", debe: ret.ivaRet, haber: 0 }] : []),
         ...(ret.suss > 0 ? [{ cuenta: "213400", debe: ret.suss, haber: 0 }] : []),
-        { cuenta: "113100", debe: 0, haber: totalConIva },
+        { cuenta: "113100", debe: 0, haber: totalDeudor },
       ];
       asientos.push({
         id: `auto-cobro-${inv.id}`,
@@ -9956,17 +9967,21 @@ function generarAsientosAuto(saleInvoices, purchaseInvoices, products, cheques =
       const prod = products.find(p => p.id === l.productId);
       return s + (l.subtotal || 0) * (prod?.iva ?? 21) / 100;
     }, 0);
-    const neto = inv.total; // ya incluye percepciones (sumadas en PurchaseBuilder)
-    // Recepción: DB Mercaderías + IVA Crédito + Percepciones IIBB / CR Proveedores
+    // percepciones sufridas (activo: crédito fiscal)
     const perc = inv.percepciones || {};
-    const totalPerc = (perc.iibbCaba || 0) + (perc.iibbBsAs || 0);
-    const netoSinPerc = neto - totalPerc;
+    const percIvaSuf = perc.iva || 0;
+    const percGanSuf = perc.ganancias || 0;
+    const percIibbSuf = (perc.iibb || []).reduce((s, e) => s + (e.monto || 0), 0);
+    const totalPerc = percIvaSuf + percGanSuf + percIibbSuf;
+    const neto = (inv.total || 0) - totalPerc; // neto sin percepciones
+    // Recepción: DB Mercaderías + IVA Crédito + Percepciones (crédito fiscal) / CR Proveedores
     const lineasCmp = [
-      { cuenta: "115103", debe: netoSinPerc, haber: 0 },
+      { cuenta: "115103", debe: neto, haber: 0 },
       { cuenta: "114301", debe: totalIva, haber: 0 },
-      ...(perc.iibbCaba > 0 ? [{ cuenta: "114204", debe: perc.iibbCaba, haber: 0 }] : []),
-      ...(perc.iibbBsAs > 0 ? [{ cuenta: "114206", debe: perc.iibbBsAs, haber: 0 }] : []),
-      { cuenta: "211100", debe: 0, haber: neto + totalIva },
+      ...(percIvaSuf > 0 ? [{ cuenta: "114303", debe: percIvaSuf, haber: 0 }] : []),
+      ...(percGanSuf > 0 ? [{ cuenta: "114404", debe: percGanSuf, haber: 0 }] : []),
+      ...((perc.iibb || []).filter(e => e.monto > 0).map(e => ({ cuenta: "114200", debe: e.monto, haber: 0 }))),
+      { cuenta: "211100", debe: 0, haber: neto + totalIva + totalPerc },
     ];
     asientos.push({
       id: `auto-cmp-${inv.id}`,
@@ -9977,13 +9992,14 @@ function generarAsientosAuto(saleInvoices, purchaseInvoices, products, cheques =
     });
     // Pago
     if (inv.status === "pagada") {
+      const totalPagado = neto + totalIva + totalPerc;
       asientos.push({
         id: `auto-pago-${inv.id}`,
         fecha: inv.dueDate || inv.date,
         glosa: `Pago factura compra ${docRef(inv)} — ${inv.supplierName || "Proveedor"}`,
         lineas: [
-          { cuenta: "211100", debe: neto + totalIva, haber: 0 },
-          { cuenta: "111100", debe: 0, haber: neto + totalIva },
+          { cuenta: "211100", debe: totalPagado, haber: 0 },
+          { cuenta: "111100", debe: 0, haber: totalPagado },
         ],
         origen: "sistema"
       });
