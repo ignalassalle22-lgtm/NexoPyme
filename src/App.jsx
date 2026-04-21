@@ -153,6 +153,7 @@ const mapSaleInvoice = r => ({
   clientCuit: r.client_cuit || '',
   cae: r.cae || '', caeVto: r.cae_vto || '', arcaNumero: r.arca_numero || null,
   retenciones: r.retenciones || null,
+  percepciones: r.percepciones || null,
 });
 const mapPurchaseInvoice = r => ({
   id: r.id, ref: r.ref, nroFactura: r.nro_factura, supplierId: r.supplier_id,
@@ -200,6 +201,7 @@ const saleInvoiceToDb = (i, cid) => ({
   observaciones: i.observaciones, moneda: i.moneda, vendedor: i.vendedor,
   metodo_pago: i.metodoPago || null,
   retenciones: i.retenciones || null,
+  percepciones: i.percepciones || null,
 });
 const purchaseInvoiceToDb = (i, cid) => ({
   id: i.id, company_id: cid, ref: i.ref || null, nro_factura: i.nroFactura,
@@ -486,6 +488,7 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   const [vendedor, setVendedor] = useState(preload?.vendedor || "");
   const [metodoPago, setMetodoPago] = useState(preload?.metodoPago || "");
   const [retenciones, setRetenciones] = useState(preload?.retenciones || { iibbCaba: "", iibbBsAs: "", ganancias: "", ivaRet: "", suss: "" });
+  const [percepciones, setPercepciones] = useState(preload?.percepciones || { iva: "", ganancias: "", iibb: [] });
   const [stockAlert, setStockAlert] = useState(null);
 
   const currSymbol = moneda === "USD" ? "US$" : "$";
@@ -533,6 +536,11 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
   const totalNeto = lines.reduce((s, l) => s + l.neto, 0);
   const totalIva = lines.reduce((s, l) => s + l.ivaImporte, 0);
   const total = totalNeto + totalIva;
+  const percIva = parseFloat(percepciones.iva) || 0;
+  const percGanancias = parseFloat(percepciones.ganancias) || 0;
+  const percIibbTotal = (percepciones.iibb || []).reduce((s, e) => s + (parseFloat(e.monto) || 0), 0);
+  const totalPercepciones = percIva + percGanancias + percIibbTotal;
+  const totalConPerc = total + totalPercepciones;
 
   const generarPDF = (docId) => {
     const win = window.open("", "_blank");
@@ -573,7 +581,10 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
       <div class="total-box">
         <div class="total-row"><span>Subtotal s/IVA</span><span>${currSymbol} ${Number(totalNeto).toLocaleString("es-AR")}</span></div>
         ${Object.entries(lines.reduce((acc, l) => { const k = l.iva; acc[k] = (acc[k] || 0) + l.ivaImporte; return acc; }, {})).map(([r, v]) => `<div class="total-row"><span>IVA ${r}%</span><span>${currSymbol} ${Number(v).toLocaleString("es-AR")}</span></div>`).join("")}
-        <div class="total-final"><span>TOTAL</span><span>${currSymbol} ${Number(total).toLocaleString("es-AR")}</span></div>
+        ${percIva > 0 ? `<div class="total-row"><span>Perc. IVA</span><span>${currSymbol} ${Number(percIva).toLocaleString("es-AR")}</span></div>` : ""}
+        ${percGanancias > 0 ? `<div class="total-row"><span>Perc. Ganancias</span><span>${currSymbol} ${Number(percGanancias).toLocaleString("es-AR")}</span></div>` : ""}
+        ${(percepciones.iibb || []).filter(e => parseFloat(e.monto) > 0).map(e => `<div class="total-row"><span>Perc. IIBB ${e.jurisdiccion}</span><span>${currSymbol} ${Number(parseFloat(e.monto)).toLocaleString("es-AR")}</span></div>`).join("")}
+        <div class="total-final"><span>TOTAL</span><span>${currSymbol} ${Number(totalConPerc).toLocaleString("es-AR")}</span></div>
       </div>
       ${observaciones ? `<div style="clear:both;margin-top:32px;border:1px solid #e0e0e0;border-radius:8px;padding:16px"><div style="font-size:11px;color:#888;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Observaciones</div><div style="font-size:13px;color:#333;line-height:1.7;white-space:pre-wrap">${observaciones}</div></div>` : ""}
       <div class="footer">Documento generado por NexoPyME · ${today}</div>
@@ -585,7 +596,8 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
 
   const doSave = () => {
     const retObj = docType === "factura" ? Object.fromEntries(Object.entries(retenciones).map(([k, v]) => [k, parseFloat(v) || 0])) : null;
-    onSave({ lines, total, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor, metodoPago, retenciones: retObj, editingId: preload?.editingId || null, oldLines: preload?.lines || null, posTicketIds: preload?.posTicketIds || null });
+    const percObj = totalPercepciones > 0 ? { iva: percIva, ganancias: percGanancias, iibb: (percepciones.iibb || []).map(e => ({ jurisdiccion: e.jurisdiccion, monto: parseFloat(e.monto) || 0 })).filter(e => e.monto > 0) } : null;
+    onSave({ lines, total: totalConPerc, totalNeto, totalIva, clientId, clientName: client.name, docType, originPresupuestoId: selectedPresupuestoId || null, originRemitoIds: selectedRemitoIds.length > 0 ? selectedRemitoIds : null, modificaStock: docType === "factura" ? true : modificaStock, imprimirPDF, generarPDF, observaciones, moneda, vendedor, metodoPago, retenciones: retObj, percepciones: percObj, editingId: preload?.editingId || null, oldLines: preload?.lines || null, posTicketIds: preload?.posTicketIds || null });
     setDone(true);
   };
 
@@ -1207,6 +1219,76 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
             </div>
           )}
 
+          {/* Percepciones impositivas */}
+          {docType === "factura" && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>
+                PERCEPCIONES IMPOSITIVAS <span style={{ fontWeight: 400, color: T.faint }}>(opcional · el cliente las paga junto con la factura)</span>
+              </label>
+              <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                  {[
+                    ["iva", "Perc. IVA", "Cta. 114303"],
+                    ["ganancias", "Perc. Ganancias", "Cta. 114404"],
+                  ].map(([key, label, cta]) => (
+                    <div key={key}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>
+                        {label} <span style={{ fontWeight: 400, color: T.faint, fontFamily: "monospace", fontSize: 9 }}>{cta}</span>
+                      </label>
+                      <input type="number" min="0" placeholder="0"
+                        value={percepciones[key]}
+                        onChange={e => setPercepciones(p => ({ ...p, [key]: e.target.value }))}
+                        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${percepciones[key] ? T.accent + "60" : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                  ))}
+                </div>
+                {/* IIBB por jurisdicción */}
+                <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8 }}>
+                      PERC. IIBB POR JURISDICCIÓN <span style={{ fontWeight: 400, color: T.faint, fontFamily: "monospace", fontSize: 9 }}>Cta. 114200</span>
+                    </span>
+                    <button onClick={() => setPercepciones(p => ({ ...p, iibb: [...(p.iibb || []), { jurisdiccion: "", monto: "" }] }))}
+                      style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, border: `1px solid ${T.accent}`, background: T.accentLight, color: T.accent, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                      + Agregar provincia
+                    </button>
+                  </div>
+                  {(percepciones.iibb || []).length === 0 && (
+                    <div style={{ fontSize: 11, color: T.faint, padding: "4px 0" }}>Sin percepciones de IIBB</div>
+                  )}
+                  {(percepciones.iibb || []).map((entry, idx) => (
+                    <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 6, alignItems: "flex-end" }}>
+                      <div>
+                        {idx === 0 && <label style={{ fontSize: 9, fontWeight: 700, color: T.faint, display: "block", marginBottom: 3, letterSpacing: 0.8 }}>JURISDICCIÓN</label>}
+                        <select value={entry.jurisdiccion}
+                          onChange={e => setPercepciones(p => ({ ...p, iibb: p.iibb.map((x, i) => i === idx ? { ...x, jurisdiccion: e.target.value } : x) }))}
+                          style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${entry.jurisdiccion ? T.accent + "60" : T.border}`, background: T.surface2, color: entry.jurisdiccion ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
+                          <option value="">Seleccionar...</option>
+                          {PROVINCIAS_ARGENTINA.map(prov => <option key={prov} value={prov}>{prov}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        {idx === 0 && <label style={{ fontSize: 9, fontWeight: 700, color: T.faint, display: "block", marginBottom: 3, letterSpacing: 0.8 }}>IMPORTE</label>}
+                        <input type="number" min="0" placeholder="0"
+                          value={entry.monto}
+                          onChange={e => setPercepciones(p => ({ ...p, iibb: p.iibb.map((x, i) => i === idx ? { ...x, monto: e.target.value } : x) }))}
+                          style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${entry.monto ? T.accent + "60" : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                      <button onClick={() => setPercepciones(p => ({ ...p, iibb: p.iibb.filter((_, i) => i !== idx) }))}
+                        style={{ padding: "7px 10px", borderRadius: 7, border: "none", background: "none", color: T.muted, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+                {totalPercepciones > 0 && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                    <span style={{ color: T.muted }}>Total percepciones</span>
+                    <span style={{ fontWeight: 700, color: T.orange, fontFamily: "monospace" }}>+{fmtM(totalPercepciones)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Observaciones */}
           <div style={{ marginBottom: 20 }}>
             <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>
@@ -1237,8 +1319,15 @@ function DocBuilder({ type, clients, products, saleInvoices, tipoCambio, preload
                     <span>IVA {rate}%</span><span style={{ color: T.yellow }}>{fmtM(imp)}</span>
                   </div>
                 ))}
+                {percIva > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}><span>Perc. IVA</span><span style={{ color: T.orange }}>{fmtM(percIva)}</span></div>}
+                {percGanancias > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}><span>Perc. Ganancias</span><span style={{ color: T.orange }}>{fmtM(percGanancias)}</span></div>}
+                {(percepciones.iibb || []).filter(e => parseFloat(e.monto) > 0).map((e, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}>
+                    <span>Perc. IIBB {e.jurisdiccion}</span><span style={{ color: T.orange }}>{fmtM(parseFloat(e.monto))}</span>
+                  </div>
+                ))}
                 <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 8, marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800 }}>
-                  <span style={{ color: T.muted }}>TOTAL</span><span style={{ color: moneda === "USD" ? T.blue : T.accent }}>{fmtM(total)}</span>
+                  <span style={{ color: T.muted }}>TOTAL</span><span style={{ color: moneda === "USD" ? T.blue : T.accent }}>{fmtM(totalConPerc)}</span>
                 </div>
               </div>
               <Btn onClick={confirm} disabled={!clientId}>✓ Confirmar {docLabel}</Btn>
@@ -1490,7 +1579,7 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
   const [codeError, setCodeError] = useState("");
   const [done, setDone] = useState(false);
   const [ordenCompraId, setOrdenCompraId] = useState("");
-  const [percepciones, setPercepciones] = useState({ iibbCaba: "", iibbBsAs: "" });
+  const [percepciones, setPercepciones] = useState({ iva: "", ganancias: "", iibb: [] });
 
   const supplier = suppliers.find(s => s.id === supplierId);
   const ocOptions = ordenesCompra.filter(o => o.supplierId === supplierId);
@@ -1589,11 +1678,17 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
   const totalNeto = lines.reduce((s, l) => s + l.neto, 0);
   const totalIva = lines.reduce((s, l) => s + l.ivaImporte, 0);
   const total = totalNeto + totalIva;
-  const percObj = { iibbCaba: parseFloat(percepciones.iibbCaba) || 0, iibbBsAs: parseFloat(percepciones.iibbBsAs) || 0 };
-  const totalPercepciones = percObj.iibbCaba + percObj.iibbBsAs;
+  const percIva = parseFloat(percepciones.iva) || 0;
+  const percGanancias = parseFloat(percepciones.ganancias) || 0;
+  const percIibbTotal = (percepciones.iibb || []).reduce((s, e) => s + (parseFloat(e.monto) || 0), 0);
+  const totalPercepciones = percIva + percGanancias + percIibbTotal;
   const totalConPerc = total + totalPercepciones;
 
-  const confirm = () => { onSave({ lines, total: totalConPerc, totalNeto, totalIva, supplierId, supplierName: supplier.name, payStatus, nroFactura, ordenCompraId: ordenCompraId || null, percepciones: percObj }); setDone(true); };
+  const confirm = () => {
+    const percObj = totalPercepciones > 0 ? { iva: percIva, ganancias: percGanancias, iibb: (percepciones.iibb || []).map(e => ({ jurisdiccion: e.jurisdiccion, monto: parseFloat(e.monto) || 0 })).filter(e => e.monto > 0) } : null;
+    onSave({ lines, total: totalConPerc, totalNeto, totalIva, supplierId, supplierName: supplier.name, payStatus, nroFactura, ordenCompraId: ordenCompraId || null, percepciones: percObj });
+    setDone(true);
+  };
 
   if (done) return (
     <Modal title="Factura registrada" onClose={onClose}>
@@ -1723,13 +1818,16 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
               ))}</tbody>
             </table>
           </div>
-          {/* Percepciones de IIBB sufridas */}
+          {/* Percepciones impositivas sufridas */}
           <div style={{ marginTop: 16, padding: "14px 16px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 10 }}>
-              PERCEPCIONES DE IIBB SUFRIDAS <span style={{ fontWeight: 400, color: T.faint }}>(opcional · el proveedor las cobra y las suma al total)</span>
+              PERCEPCIONES IMPOSITIVAS SUFRIDAS <span style={{ fontWeight: 400, color: T.faint }}>(opcional · el proveedor las cobra y las suma al total)</span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {[["iibbCaba","IIBB Percepción CABA","Cta. 114204"],["iibbBsAs","IIBB Percepción Bs. As.","Cta. 114206"]].map(([key, label, cta]) => (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              {[
+                ["iva", "Perc. IVA", "Cta. 114303"],
+                ["ganancias", "Perc. Ganancias", "Cta. 114404"],
+              ].map(([key, label, cta]) => (
                 <div key={key}>
                   <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 4, letterSpacing: 0.8 }}>
                     {label} <span style={{ fontWeight: 400, color: T.faint, fontFamily: "monospace", fontSize: 9 }}>{cta}</span>
@@ -1737,6 +1835,43 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
                   <input type="number" min="0" placeholder="0" value={percepciones[key]}
                     onChange={e => setPercepciones(p => ({ ...p, [key]: e.target.value }))}
                     style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${percepciones[key] ? T.accent + "60" : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                </div>
+              ))}
+            </div>
+            {/* IIBB por jurisdicción */}
+            <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8 }}>
+                  PERC. IIBB POR JURISDICCIÓN <span style={{ fontWeight: 400, color: T.faint, fontFamily: "monospace", fontSize: 9 }}>Cta. 114200</span>
+                </span>
+                <button onClick={() => setPercepciones(p => ({ ...p, iibb: [...(p.iibb || []), { jurisdiccion: "", monto: "" }] }))}
+                  style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, border: `1px solid ${T.accent}`, background: T.accentLight, color: T.accent, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                  + Agregar provincia
+                </button>
+              </div>
+              {(percepciones.iibb || []).length === 0 && (
+                <div style={{ fontSize: 11, color: T.faint, padding: "4px 0" }}>Sin percepciones de IIBB</div>
+              )}
+              {(percepciones.iibb || []).map((entry, idx) => (
+                <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 6, alignItems: "flex-end" }}>
+                  <div>
+                    {idx === 0 && <label style={{ fontSize: 9, fontWeight: 700, color: T.faint, display: "block", marginBottom: 3, letterSpacing: 0.8 }}>JURISDICCIÓN</label>}
+                    <select value={entry.jurisdiccion}
+                      onChange={e => setPercepciones(p => ({ ...p, iibb: p.iibb.map((x, i) => i === idx ? { ...x, jurisdiccion: e.target.value } : x) }))}
+                      style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${entry.jurisdiccion ? T.accent + "60" : T.border}`, background: T.surface2, color: entry.jurisdiccion ? T.ink : T.muted, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
+                      <option value="">Seleccionar...</option>
+                      {PROVINCIAS_ARGENTINA.map(prov => <option key={prov} value={prov}>{prov}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    {idx === 0 && <label style={{ fontSize: 9, fontWeight: 700, color: T.faint, display: "block", marginBottom: 3, letterSpacing: 0.8 }}>IMPORTE</label>}
+                    <input type="number" min="0" placeholder="0"
+                      value={entry.monto}
+                      onChange={e => setPercepciones(p => ({ ...p, iibb: p.iibb.map((x, i) => i === idx ? { ...x, monto: e.target.value } : x) }))}
+                      style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${entry.monto ? T.accent + "60" : T.border}`, background: T.surface2, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                  <button onClick={() => setPercepciones(p => ({ ...p, iibb: p.iibb.filter((_, i) => i !== idx) }))}
+                    style={{ padding: "7px 10px", borderRadius: 7, border: "none", background: "none", color: T.muted, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>✕</button>
                 </div>
               ))}
             </div>
@@ -1753,8 +1888,11 @@ function PurchaseBuilder({ suppliers, products, onSave, onClose, ordenesCompra =
                 </div>
               ))}
               {totalPercepciones > 0 && <>
-                {percObj.iibbCaba > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}><span>IIBB Perc. CABA</span><span style={{ color: T.orange }}>{fmt(percObj.iibbCaba)}</span></div>}
-                {percObj.iibbBsAs > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}><span>IIBB Perc. Bs.As.</span><span style={{ color: T.orange }}>{fmt(percObj.iibbBsAs)}</span></div>}
+                {percIva > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}><span>Perc. IVA</span><span style={{ color: T.orange }}>{fmt(percIva)}</span></div>}
+                {percGanancias > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}><span>Perc. Ganancias</span><span style={{ color: T.orange }}>{fmt(percGanancias)}</span></div>}
+                {(percepciones.iibb || []).filter(e => parseFloat(e.monto) > 0).map((e, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: T.muted, marginBottom: 6 }}><span>Perc. IIBB {e.jurisdiccion}</span><span style={{ color: T.orange }}>{fmt(parseFloat(e.monto))}</span></div>
+                ))}
               </>}
               <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 8, marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800 }}>
                 <span style={{ color: T.muted }}>TOTAL</span><span style={{ color: T.accent }}>{fmt(totalConPerc)}</span>
@@ -9566,6 +9704,15 @@ function ChequesModule({ cheques, setCheques, companyId }) {
 }
 
 // ─── CONTABILIDAD MODULE ──────────────────────────────────────────────────────
+
+// Jurisdicciones provinciales argentinas para percepciones de IIBB
+const PROVINCIAS_ARGENTINA = [
+  "CABA", "Buenos Aires", "Catamarca", "Chaco", "Chubut", "Córdoba",
+  "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja",
+  "Mendoza", "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan",
+  "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero",
+  "Tierra del Fuego", "Tucumán",
+];
 
 // Lista oficial de bancos argentinos con código BCRA
 const BANCOS_ARGENTINA = [
