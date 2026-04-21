@@ -9868,6 +9868,7 @@ function asientosAMovimientos(asientos) {
   const movs = [];
   asientos.forEach(a => {
     (a.lineas || []).forEach(l => {
+      if (!l || typeof l !== "object") return;
       if (l.debe > 0)  movs.push({ debe: l.cuenta, haber: null,    importe: l.debe,  fecha: a.fecha });
       if (l.haber > 0) movs.push({ debe: null,    haber: l.cuenta, importe: l.haber, fecha: a.fecha });
     });
@@ -10073,7 +10074,7 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, cheques,
   const getExtracto = (code) => {
     const acc = planVigente.find(a => a.code === code);
     const esDeudora = acc?.tipo === "activo" || acc?.tipo === "egreso";
-    const asientosFiltrados = todosAsientos.filter(a => a.fecha >= extractoFrom && a.fecha <= extractoTo && a.lineas.some(l => l.cuenta === code));
+    const asientosFiltrados = todosAsientos.filter(a => a.fecha >= extractoFrom && a.fecha <= extractoTo && (a.lineas || []).some(l => l && l.cuenta === code));
     let saldoAcum = 0;
     const rows = [];
     asientosFiltrados.forEach(a => {
@@ -11191,6 +11192,29 @@ const NAV = [
   { id: "contabilidad",  label: "Contabilidad",  icon: "⚖" },
 ];
 
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null, info: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("ErrorBoundary caught:", error, info); this.setState({ info }); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 40, textAlign: "center", color: T.ink }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: T.red, marginBottom: 12 }}>⚠ Error en Contabilidad</div>
+          <div style={{ fontSize: 13, color: T.muted, fontFamily: "monospace", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: 16, maxWidth: 600, margin: "0 auto 16px", textAlign: "left", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            {String(this.state.error)}
+            {this.state.info?.componentStack ? "\n\n" + this.state.info.componentStack.slice(0, 500) : ""}
+          </div>
+          <button onClick={() => this.setState({ error: null, info: null })} style={{ padding: "9px 20px", borderRadius: 8, border: `1px solid ${T.accent}`, background: T.accentLight, color: T.accent, cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 13 }}>
+            Reintentar
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App({ session, profile, onLogout }) {
   const [module, setModule] = useState("hub");
   const [products, setProducts] = useState([]);
@@ -11479,7 +11503,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} companyId={companyId} />}
         {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
-        {module === "contabilidad" && <ContabilidadModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} cheques={cheques} companyId={companyId} />}
+        {module === "contabilidad" && <ErrorBoundary><ContabilidadModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} cheques={cheques} companyId={companyId} /></ErrorBoundary>}
         {module === "pos" && isJefe && <POSJefeModule companyId={companyId} />}
         {module === "usuarios" && isJefe && <UsuariosModule companyId={companyId} profile={profile} />}
         {module === "arca" && isJefe && <ArcaConfigModule companyId={companyId} />}
