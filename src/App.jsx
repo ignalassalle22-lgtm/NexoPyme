@@ -11278,8 +11278,24 @@ export default function App({ session, profile, onLogout }) {
             new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout: ${label}`)), 10000))
           ]);
 
+        // Fetch paginado de productos (Supabase limita a 1000 filas por defecto)
+        const fetchAllProducts = async () => {
+          const PAGE = 1000;
+          let all = [];
+          let page = 0;
+          while (true) {
+            const { data: pd, error: pe } = await supabase.from('products').select('*').eq('company_id', companyId).order('name').range(page * PAGE, (page + 1) * PAGE - 1);
+            if (pe) throw new Error('products: ' + pe.message);
+            if (!pd || pd.length === 0) break;
+            all = [...all, ...pd];
+            if (pd.length < PAGE) break;
+            page++;
+          }
+          return { data: all, error: null };
+        };
+
         const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11] = await Promise.all([
-          fetchWithTimeout(supabase.from('products').select('*').eq('company_id', companyId).order('name'), 'products'),
+          fetchAllProducts(),
           fetchWithTimeout(supabase.from('clients').select('*').eq('company_id', companyId).order('name'), 'clients'),
           fetchWithTimeout(supabase.from('suppliers').select('*').eq('company_id', companyId).order('name'), 'suppliers'),
           fetchWithTimeout(supabase.from('sale_invoices').select('*').eq('company_id', companyId).order('date', { ascending: false }), 'sale_invoices'),
