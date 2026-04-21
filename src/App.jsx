@@ -9943,8 +9943,9 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, cheques,
   const cuentasImputables = planActivo.filter(a => a.imputable);
 
   // ── Cálculo de saldos ────────────────────────────────────────────────────
-  const asientosAuto = generarAsientosAuto(saleInvoices, purchaseInvoices, products, cheques);
-  const todosAsientos = [...asientosAuto, ...manualEntries].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const asientosAuto = (() => { try { return generarAsientosAuto(saleInvoices, purchaseInvoices, products, cheques); } catch(e) { console.error("Error generando asientos:", e); return []; } })();
+  const manualesValidos = (manualEntries || []).filter(a => a && typeof a === "object" && Array.isArray(a.lineas));
+  const todosAsientos = [...asientosAuto, ...manualesValidos].sort((a, b) => (a.fecha || "").localeCompare(b.fecha || ""));
   const movimientos = asientosAMovimientos(todosAsientos);
 
   const getSaldo = (code) => saldoCuenta(code, movimientos);
