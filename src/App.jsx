@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, createContext, useContext } from "react";
+import React, { useState, useMemo, useEffect, createContext, useContext } from "react";
 import * as XLSX from 'xlsx-js-style';
 import { Workbook as ExcelWorkbook } from 'exceljs';
 import { supabase } from './lib/supabase.js';
