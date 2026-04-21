@@ -2006,6 +2006,18 @@ function QuickDateFilter({ setFrom, setTo, style }) {
   );
 }
 
+// Selector de banco argentino reutilizable
+function BancoSelect({ value, onChange, style, placeholder = "Seleccionar banco..." }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} style={style}>
+      <option value="">{placeholder}</option>
+      {BANCOS_ARGENTINA.map(b => (
+        <option key={b.codigo} value={b.nombre}>{b.codigo} — {b.nombre}</option>
+      ))}
+    </select>
+  );
+}
+
 // ─── MODULE: HUB ──────────────────────────────────────────────────────────────
 function HubModule({ saleInvoices, purchaseInvoices, products, clients, suppliers, onQuickAction, tipoCambio, setTipoCambio }) {
   const thisMonth = saleInvoices.filter(i => i.date?.startsWith("2026-03") && i.type === "factura");
@@ -2739,7 +2751,7 @@ function VentasModule({ saleInvoices, setSaleInvoices, clients, setClients, prod
   const [newClient, setNewClient] = useState(null);
   const [ncForm, setNcForm] = useState({ codigo: "", name: "", cuit: "", direccion: "", email: "", phone: "", horarioAbre: "", horarioCierra: "", diasDisponibles: "Lun-Vie" });
   const [payingInv, setPayingInv] = useState(null);
-  const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
+  const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", bancoTransferencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
   const [viewingInv, setViewingInv] = useState(null);
   const [showPOSImport, setShowPOSImport] = useState(false);
   const [emailingDoc, setEmailingDoc] = useState(null);
@@ -2903,7 +2915,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     return true;
   });
 
-  const openPayModal = (inv) => { const today = new Date().toISOString().slice(0,10); setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: today, fechaVenc: "", emisorCheque: inv.clientName || "", fechaEndoso: today }); };
+  const openPayModal = (inv) => { const today = new Date().toISOString().slice(0,10); setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", bancoTransferencia: "", nroCheque: "", bancoEmisor: "", fechaPago: today, fechaVenc: "", emisorCheque: inv.clientName || "", fechaEndoso: today }); };
 
   const [arcaLoading, setArcaLoading] = useState(null); // invoice id en proceso
   const emitirARCA = async (inv) => {
@@ -2945,7 +2957,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
     const pf = payForm;
     if ((pf.metodo === "cheque_propio" || pf.metodo === "cheque_tercero") && (!pf.nroCheque || !pf.bancoEmisor || !pf.fechaPago || !pf.fechaVenc)) { alert("Completá todos los campos del cheque."); return; }
     if (pf.metodo === "cheque_tercero" && (!pf.emisorCheque || !pf.fechaEndoso)) { alert("Completá el emisor y la fecha de endoso."); return; }
-    const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.referencia ? " — " + pf.referencia : "")) : pf.metodo === "cheque_propio" ? ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor) : ("Cheque de tercero N°" + pf.nroCheque + " — " + pf.bancoEmisor + " — Emisor: " + pf.emisorCheque + " — Endosado: " + pf.fechaEndoso);
+    const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.bancoTransferencia ? " — " + pf.bancoTransferencia : "") + (pf.referencia ? " — N°" + pf.referencia : "")) : pf.metodo === "cheque_propio" ? ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor) : ("Cheque de tercero N°" + pf.nroCheque + " — " + pf.bancoEmisor + " — Emisor: " + pf.emisorCheque + " — Endosado: " + pf.fechaEndoso);
     setSaleInvoices(prev => prev.map(i => i.id === payingInv.id ? { ...i, status: "cobrada", metodoPago: metodoPagoStr } : i));
     if (companyId) supabase.from('sale_invoices').update({ status: 'cobrada', metodo_pago: metodoPagoStr }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     if (pf.metodo === "cheque_propio" || pf.metodo === "cheque_tercero") {
@@ -3427,10 +3439,17 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                   </div>
                 </div>
                 {payForm.metodo === "transferencia" && (
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO / N° TRANSFERENCIA (opcional)</label>
-                    <input value={payForm.referencia} onChange={e => setPayForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Ej: Banco Galicia / TRF-00123456"
-                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  <div style={{ marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div style={{ gridColumn: "span 2" }}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO ORIGEN <span style={{ color: T.red }}>*</span></label>
+                      <BancoSelect value={payForm.bancoTransferencia} onChange={v => setPayForm(f => ({ ...f, bancoTransferencia: v }))}
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ gridColumn: "span 2" }}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>N° TRANSFERENCIA (opcional)</label>
+                      <input value={payForm.referencia} onChange={e => setPayForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Ej: TRF-00123456"
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
                   </div>
                 )}
                 {payForm.metodo === "efectivo" && (
@@ -3450,7 +3469,7 @@ Para preguntas de tipo "general": opciones = array de opciones posibles o null p
                     </div>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO EMISOR <span style={{ color: T.red }}>*</span></label>
-                      <input value={payForm.bancoEmisor} onChange={e => setPayForm(f => ({ ...f, bancoEmisor: e.target.value }))} placeholder="Banco Galicia"
+                      <BancoSelect value={payForm.bancoEmisor} onChange={v => setPayForm(f => ({ ...f, bancoEmisor: v }))}
                         style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
                     </div>
                     <div>
@@ -4717,7 +4736,7 @@ function PriceListsTab({ products, setProducts, priceLists, setPriceLists, compa
 function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSuppliers, products, setProducts, priceLists, setPriceLists, companyId, onNewPurchase, ordenesCompra, setOrdenesCompra, cheques, setCheques, cajas, cajaMovimientos, setCajaMovimientos }) {
   const [tab, setTab] = useState("invoices");
   const [payingInv, setPayingInv] = useState(null);
-  const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
+  const [payForm, setPayForm] = useState({ metodo: "efectivo", referencia: "", bancoTransferencia: "", nroCheque: "", bancoEmisor: "", fechaPago: "", fechaVenc: "", emisorCheque: "", fechaEndoso: "" });
   const [viewingInv, setViewingInv] = useState(null);
   const [editingPurchaseInv, setEditingPurchaseInv] = useState(null);
   const [editingOC, setEditingOC] = useState(null);
@@ -4880,13 +4899,13 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
     return true;
   });
 
-  const openPayModalCompra = (inv) => { const today = new Date().toISOString().slice(0,10); setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", nroCheque: "", bancoEmisor: "", fechaPago: today, fechaVenc: "", emisorCheque: "", fechaEndoso: today }); };
+  const openPayModalCompra = (inv) => { const today = new Date().toISOString().slice(0,10); setPayingInv(inv); setPayForm({ metodo: "efectivo", referencia: "", bancoTransferencia: "", nroCheque: "", bancoEmisor: "", fechaPago: today, fechaVenc: "", emisorCheque: "", fechaEndoso: today }); };
   const confirmPayCompra = () => {
     if (!payingInv) return;
     const pf = payForm;
     if ((pf.metodo === "cheque_propio" || pf.metodo === "cheque_tercero") && (!pf.nroCheque || !pf.bancoEmisor || !pf.fechaPago || !pf.fechaVenc)) { alert("Completá todos los campos del cheque."); return; }
     if (pf.metodo === "cheque_tercero" && (!pf.emisorCheque || !pf.fechaEndoso)) { alert("Completá el emisor y la fecha de endoso."); return; }
-    const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.referencia ? " — " + pf.referencia : "")) : pf.metodo === "cheque_propio" ? ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor) : ("Cheque de tercero N°" + pf.nroCheque + " — " + pf.bancoEmisor + " — Emisor: " + pf.emisorCheque + " — Endosado: " + pf.fechaEndoso);
+    const metodoPagoStr = pf.metodo === "efectivo" ? "Efectivo" : pf.metodo === "debito" ? "Tarjeta de débito" : pf.metodo === "credito" ? "Tarjeta de crédito" : pf.metodo === "transferencia" ? ("Transferencia" + (pf.bancoTransferencia ? " — " + pf.bancoTransferencia : "") + (pf.referencia ? " — N°" + pf.referencia : "")) : pf.metodo === "cheque_propio" ? ("Cheque propio N°" + pf.nroCheque + " — " + pf.bancoEmisor) : ("Cheque de tercero N°" + pf.nroCheque + " — " + pf.bancoEmisor + " — Emisor: " + pf.emisorCheque + " — Endosado: " + pf.fechaEndoso);
     setPurchaseInvoices(prev => prev.map(i => i.id === payingInv.id ? { ...i, status: "pagada", metodoPago: metodoPagoStr } : i));
     if (companyId) supabase.from('purchase_invoices').update({ status: 'pagada' }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message, r.error) });
     if (companyId) supabase.from('purchase_invoices').update({ metodo_pago: metodoPagoStr }).eq('id', payingInv.id).then(r => { if (r?.error) console.error("DB metodo_pago Error:", r.error.message) });
@@ -5007,10 +5026,17 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                   </div>
                 </div>
                 {payForm.metodo === "transferencia" && (
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO / N° TRANSFERENCIA (opcional)</label>
-                    <input value={payForm.referencia} onChange={e => setPayForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Ej: Banco Galicia / TRF-00123456"
-                      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  <div style={{ marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div style={{ gridColumn: "span 2" }}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO DESTINO <span style={{ color: T.red }}>*</span></label>
+                      <BancoSelect value={payForm.bancoTransferencia} onChange={v => setPayForm(f => ({ ...f, bancoTransferencia: v }))}
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ gridColumn: "span 2" }}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>N° TRANSFERENCIA (opcional)</label>
+                      <input value={payForm.referencia} onChange={e => setPayForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Ej: TRF-00123456"
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
                   </div>
                 )}
                 {payForm.metodo === "efectivo" && (
@@ -5030,7 +5056,7 @@ function ComprasModule({ purchaseInvoices, setPurchaseInvoices, suppliers, setSu
                     </div>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.8, display: "block", marginBottom: 6 }}>BANCO EMISOR <span style={{ color: T.red }}>*</span></label>
-                      <input value={payForm.bancoEmisor} onChange={e => setPayForm(f => ({ ...f, bancoEmisor: e.target.value }))} placeholder="Banco Galicia"
+                      <BancoSelect value={payForm.bancoEmisor} onChange={v => setPayForm(f => ({ ...f, bancoEmisor: v }))}
                         style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
                     </div>
                     <div>
@@ -9534,6 +9560,66 @@ function ChequesModule({ cheques, setCheques, companyId }) {
 }
 
 // ─── CONTABILIDAD MODULE ──────────────────────────────────────────────────────
+
+// Lista oficial de bancos argentinos con código BCRA
+const BANCOS_ARGENTINA = [
+  // Bancos Públicos Nacionales
+  { codigo: "011", nombre: "Banco de la Nación Argentina" },
+  { codigo: "014", nombre: "Banco de la Provincia de Buenos Aires" },
+  { codigo: "020", nombre: "Banco de la Provincia de Córdoba S.A." },
+  { codigo: "029", nombre: "Banco de la Ciudad de Buenos Aires" },
+  { codigo: "044", nombre: "Banco Hipotecario S.A." },
+  { codigo: "191", nombre: "BICE - Banco de Inversión y Comercio Exterior" },
+  // Bancos Públicos Provinciales
+  { codigo: "045", nombre: "Banco de San Juan S.A." },
+  { codigo: "065", nombre: "Banco Municipal de Rosario" },
+  { codigo: "083", nombre: "Banco del Chubut S.A." },
+  { codigo: "086", nombre: "Banco de Santa Cruz S.A." },
+  { codigo: "093", nombre: "Banco de La Pampa S.E.M." },
+  { codigo: "094", nombre: "Banco de Corrientes S.A." },
+  { codigo: "097", nombre: "Banco Provincia del Neuquén S.A." },
+  { codigo: "198", nombre: "Banco de Formosa S.A." },
+  { codigo: "206", nombre: "Banco de Santiago del Estero S.A." },
+  { codigo: "213", nombre: "Banco Municipal de La Plata" },
+  { codigo: "269", nombre: "Nuevo Banco del Chaco S.A." },
+  { codigo: "294", nombre: "Banco de Tierra del Fuego S.A." },
+  // Bancos Privados Nacionales
+  { codigo: "007", nombre: "Banco de Galicia y Buenos Aires S.A.U." },
+  { codigo: "027", nombre: "Banco Supervielle S.A." },
+  { codigo: "034", nombre: "Banco Patagonia S.A." },
+  { codigo: "060", nombre: "Nuevo Banco de Santa Fe S.A." },
+  { codigo: "072", nombre: "Banco Santander Argentina S.A." },
+  { codigo: "143", nombre: "Brubank S.A.U." },
+  { codigo: "165", nombre: "Banco Credicoop Cooperativo Limitado" },
+  { codigo: "200", nombre: "Banco CMF S.A." },
+  { codigo: "215", nombre: "BACS - Banco de Crédito y Securitización S.A." },
+  { codigo: "224", nombre: "Banco Comafi S.A." },
+  { codigo: "268", nombre: "Banco del Sol S.A." },
+  { codigo: "277", nombre: "Wilobank S.A." },
+  { codigo: "281", nombre: "Reba Compañía Financiera S.A." },
+  { codigo: "285", nombre: "Banco Mariva S.A." },
+  { codigo: "286", nombre: "Banco Ualá Bis S.A." },
+  { codigo: "288", nombre: "Banco Roela S.A." },
+  { codigo: "300", nombre: "Banco de Servicios y Transacciones S.A." },
+  { codigo: "317", nombre: "BIND Banco Industrial S.A." },
+  { codigo: "322", nombre: "Naranja X S.A.U." },
+  { codigo: "330", nombre: "Banco de Valores S.A." },
+  { codigo: "338", nombre: "BEAL - Banco Europeo para América Latina S.A." },
+  { codigo: "340", nombre: "Banco Meridian S.A." },
+  { codigo: "341", nombre: "Banco Masventas S.A." },
+  // Bancos Privados Extranjeros
+  { codigo: "017", nombre: "BBVA Argentina S.A." },
+  { codigo: "046", nombre: "Banco do Brasil S.A." },
+  { codigo: "150", nombre: "HSBC Bank Argentina S.A." },
+  { codigo: "222", nombre: "ICBC - Industrial and Commercial Bank of China Argentina S.A.U." },
+  { codigo: "259", nombre: "Banco Itaú Argentina S.A." },
+  { codigo: "266", nombre: "Banco Bradesco Argentina S.A.U." },
+  { codigo: "299", nombre: "Bank of America, National Association" },
+  // Billeteras / Entidades de Pago
+  { codigo: "307", nombre: "Mercado Pago S.A." },
+  { codigo: "384", nombre: "Cuenta DNI - Banco Provincia" },
+];
+
 const PLAN_CUENTAS = [
   // ACTIVO
   { code: "1",      name: "Activo",                                        tipo: "activo", nivel: 1 },
@@ -9674,10 +9760,10 @@ function saldoCuenta(code, movimientos) {
 }
 
 // Genera asientos automáticos a partir de los datos del sistema
-function generarAsientosAuto(saleInvoices, purchaseInvoices, products) {
+function generarAsientosAuto(saleInvoices, purchaseInvoices, products, cheques = []) {
   const asientos = [];
   // Facturas de venta
-  saleInvoices.filter(i => i.type === "factura").forEach(inv => {
+  (saleInvoices || []).filter(i => i.type === "factura").forEach(inv => {
     const totalIva = (inv.lines || []).reduce((s, l) => {
       const prod = products.find(p => p.id === l.productId);
       return s + l.subtotal * (prod?.iva ?? 21) / 100;
@@ -9720,7 +9806,7 @@ function generarAsientosAuto(saleInvoices, purchaseInvoices, products) {
     }
   });
   // Facturas de compra
-  purchaseInvoices.forEach(inv => {
+  (purchaseInvoices || []).forEach(inv => {
     const totalIva = (inv.lines || []).reduce((s, l) => {
       const prod = products.find(p => p.id === l.productId);
       return s + (l.subtotal || 0) * (prod?.iva ?? 21) / 100;
@@ -9758,7 +9844,23 @@ function generarAsientosAuto(saleInvoices, purchaseInvoices, products) {
       });
     }
   });
-  return asientos.sort((a, b) => a.fecha.localeCompare(b.fecha));
+  // Cheques a cobrar pendientes → Valores a Depositar (113200)
+  // Cada cheque pendiente reclasifica el dinero de Caja (111100) a Valores a Depositar (113200)
+  // Cuando el cheque se marca cobrado, la reclasificación desaparece y el saldo queda en 111100
+  (cheques || []).filter(c => c.tipo === "cobrar" && c.estado === "pendiente").forEach(ch => {
+    const fecha = (ch.fechaPago || ch.fechaVencimiento || new Date().toISOString().slice(0, 10));
+    asientos.push({
+      id: `auto-chq-${ch.id}`,
+      fecha,
+      glosa: `Cheque a cobrar N°${ch.numero} — ${ch.emisor || ""} (pendiente depósito)`,
+      lineas: [
+        { cuenta: "113200", debe: ch.monto || 0, haber: 0 },
+        { cuenta: "111100", debe: 0, haber: ch.monto || 0 },
+      ],
+      origen: "sistema"
+    });
+  });
+  return asientos.sort((a, b) => (a.fecha || "").localeCompare(b.fecha || ""));
 }
 
 // Expande asientos en movimientos planos cuenta/debe/haber para cálculo de saldos
@@ -9773,7 +9875,7 @@ function asientosAMovimientos(asientos) {
   return movs;
 }
 
-function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyId }) {
+function ContabilidadModule({ saleInvoices, purchaseInvoices, products, cheques, companyId }) {
   // ── Estado principal ──────────────────────────────────────────────────────
   const [tab, setTab] = useState("plan");
 
@@ -9841,7 +9943,7 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
   const cuentasImputables = planActivo.filter(a => a.imputable);
 
   // ── Cálculo de saldos ────────────────────────────────────────────────────
-  const asientosAuto = generarAsientosAuto(saleInvoices, purchaseInvoices, products);
+  const asientosAuto = generarAsientosAuto(saleInvoices, purchaseInvoices, products, cheques);
   const todosAsientos = [...asientosAuto, ...manualEntries].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const movimientos = asientosAMovimientos(todosAsientos);
 
@@ -10049,6 +10151,7 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
             <span style={{ color: T.blue, fontFamily: "monospace" }}>410100</span> Ventas (neto de cada factura) ·{" "}
             <span style={{ color: T.blue, fontFamily: "monospace" }}>214101</span> IVA Débito Fiscal (IVA de ventas calculado por alícuota de producto) ·{" "}
             <span style={{ color: T.blue, fontFamily: "monospace" }}>111100</span> Caja en pesos (facturas cobradas / compras pagadas) ·{" "}
+            <span style={{ color: T.blue, fontFamily: "monospace" }}>113200</span> Valores a Depositar (<strong style={{ color: T.ink }}>cheques a cobrar pendientes del módulo Cheques</strong>) ·{" "}
             <span style={{ color: T.blue, fontFamily: "monospace" }}>115103</span> Mercaderías (neto de facturas de compra) ·{" "}
             <span style={{ color: T.blue, fontFamily: "monospace" }}>114301</span> IVA Crédito Fiscal (IVA de compras) ·{" "}
             <span style={{ color: T.blue, fontFamily: "monospace" }}>211100</span> Proveedores (facturas de compra recibidas y pagadas).{" "}
@@ -10197,7 +10300,7 @@ function ContabilidadModule({ saleInvoices, purchaseInvoices, products, companyI
                             {a.origen === "manual" && <span style={{ marginLeft: 8, fontSize: 10, color: T.accent, background: T.accentLight, padding: "1px 7px", borderRadius: 10, fontWeight: 700 }}>MANUAL</span>}
                           </td>
                         </tr>
-                        {a.lineas.map((l, li) => {
+                        {(a.lineas || []).map((l, li) => {
                           const acc = planVigente.find(x => x.code === l.cuenta);
                           return (
                             <tr key={li} style={{ borderTop: `1px solid ${T.border}` }}>
@@ -11375,7 +11478,7 @@ export default function App({ session, profile, onLogout }) {
         {module === "caja" && <CajaModule cajas={cajas} setCajas={setCajas} cajaMovimientos={cajaMovimientos} setCajaMovimientos={setCajaMovimientos} saleInvoices={saleInvoices} empleados={empleados} defaultMontoInicial={defaultMontoInicial} setDefaultMontoInicial={setDefaultMontoInicial} companyId={companyId} />}
         {module === "cheques" && <ChequesModule cheques={cheques} setCheques={setCheques} companyId={companyId} />}
         {module === "rrhh" && <RRHHModule empleados={empleados} setEmpleados={setEmpleados} companyId={companyId} />}
-        {module === "contabilidad" && <ContabilidadModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} companyId={companyId} />}
+        {module === "contabilidad" && <ContabilidadModule saleInvoices={saleInvoices} purchaseInvoices={purchaseInvoices} products={products} cheques={cheques} companyId={companyId} />}
         {module === "pos" && isJefe && <POSJefeModule companyId={companyId} />}
         {module === "usuarios" && isJefe && <UsuariosModule companyId={companyId} profile={profile} />}
         {module === "arca" && isJefe && <ArcaConfigModule companyId={companyId} />}
