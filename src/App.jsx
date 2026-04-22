@@ -11265,6 +11265,16 @@ function POSJefeModule({ companyId }) {
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
   const [ticketDetalle, setTicketDetalle] = useState(null);
 
+  // ── Historial ─────────────────────────────────────────────────────
+  const [posTab, setPosTab] = useState("hoy");
+  const [histCajas, setHistCajas] = useState([]);
+  const [loadingHist, setLoadingHist] = useState(false);
+  const [histCajaDetalle, setHistCajaDetalle] = useState(null);
+  const [histTickets, setHistTickets] = useState([]);
+  const [histMovimientos, setHistMovimientos] = useState([]);
+  const [loadingHistDetalle, setLoadingHistDetalle] = useState(false);
+  const [histTicketModal, setHistTicketModal] = useState(null);
+
   useEffect(() => { loadData(fecha); }, []);
 
   const loadData = async (f) => {
@@ -11276,6 +11286,34 @@ function POSJefeModule({ companyId }) {
     if (t.data) setTickets(t.data);
     if (c.data) setCajas(c.data);
     setLoading(false);
+  };
+
+  const loadHistorial = async () => {
+    setLoadingHist(true);
+    const { data } = await supabase.from("pos_cajas").select("*").eq("company_id", companyId).order("fecha", { ascending: false }).order("abierta_at", { ascending: false }).limit(90);
+    if (data) setHistCajas(data);
+    setLoadingHist(false);
+  };
+
+  const verDetalleHist = async (caja) => {
+    setHistCajaDetalle(caja);
+    setLoadingHistDetalle(true);
+    setHistTickets([]); setHistMovimientos([]);
+    const [ticks, movs] = await Promise.all([
+      supabase.from("pos_tickets").select("*").eq("caja_id", caja.id).order("created_at", { ascending: false }),
+      supabase.from("pos_caja_movimientos").select("*").eq("caja_id", caja.id).order("created_at"),
+    ]);
+    if (ticks.data) setHistTickets(ticks.data);
+    if (movs.data) setHistMovimientos(movs.data);
+    setLoadingHistDetalle(false);
+  };
+
+  const cerrarCajaHist = async (caja) => {
+    if (!window.confirm(`¿Cerrar la caja "${caja.nombre || caja.turno || "POS"}" del ${caja.fecha}?`)) return;
+    await supabase.from("pos_cajas").update({ estado: "cerrada", cerrada_at: new Date().toISOString() }).eq("id", caja.id);
+    await supabase.from("pos_caja_movimientos").insert({ company_id: companyId, caja_id: caja.id, tipo: "cierre", concepto: "Cierre desde vista jefe", monto: 0 });
+    setHistCajas(prev => prev.map(c => c.id === caja.id ? { ...c, estado: "cerrada", cerrada_at: new Date().toISOString() } : c));
+    if (histCajaDetalle?.id === caja.id) setHistCajaDetalle(prev => ({ ...prev, estado: "cerrada" }));
   };
 
   const vigentes = tickets.filter(t => t.estado !== "anulado");
@@ -11295,10 +11333,49 @@ function POSJefeModule({ companyId }) {
 
   const metodoLabel = { efectivo: "Efectivo", debito: "Débito", credito: "Crédito", transferencia: "Transf.", qr: "QR/MP", cuenta_corriente: "Cta. cte." };
 
-  if (loading) return <div style={{ padding: 40, color: T.muted, textAlign: "center" }}>Cargando…</div>;
+  const fmtPos = (n) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(n || 0);
+  const metodoLabelHist = { efectivo: "💵 Efectivo", debito: "💳 Débito", credito: "💳 Crédito", transferencia: "🔀 Transferencia", qr: "📱 QR/MP", cuenta_corriente: "📋 Cta. cte." };
 
   return (
     <div>
+      {/* ── Historial ticket modal ── */}
+      {histTicketModal && (
+        <Modal title={`Ticket ${histTicketModal.numero}`} onClose={() => setHistTicketModal(null)}>
+          <div style={{ fontFamily: "monospace", fontSize: 13 }}>
+            <div style={{ marginBottom: 10, color: T.muted, fontSize: 11 }}>
+              {new Date(histTicketModal.created_at).toLocaleString("es-AR")} · {histTicketModal.cajero_nombre}
+            </div>
+            {(histTicketModal.lines || []).map((l, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 }}>
+                <span>{l.qty}× {l.nombre}</span>
+                <span>{fmtPos(l.precio * l.qty)}</span>
+              </div>
+            ))}
+            <div style={{ borderTop: `1px dashed ${T.border}`, marginTop: 10, paddingTop: 10 }}>
+              {histTicketModal.descuento > 0 && <div style={{ display: "flex", justifyContent: "space-between", color: T.yellow, marginBottom: 4 }}><span>Descuento:</span><span>− {fmtPos(histTicketModal.descuento)}</span></div>}
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 15, color: T.accent, marginBottom: 8 }}><span>TOTAL</span><span>{fmtPos(histTicketModal.total)}</span></div>
+              {(histTicketModal.pagos?.length > 0 ? histTicketModal.pagos : [{ metodo: histTicketModal.metodo_pago, monto: histTicketModal.total }]).map((p, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", color: T.muted, fontSize: 11 }}><span>{metodoLabelHist[p.metodo] || p.metodo}</span><span>{fmtPos(p.monto)}</span></div>
+              ))}
+            </div>
+          </div>
+          <Btn onClick={() => setHistTicketModal(null)} style={{ marginTop: 14, width: "100%" }}>Cerrar</Btn>
+        </Modal>
+      )}
+
+      {/* ── Tab bar ── */}
+      <div style={{ display: "flex", borderBottom: `1px solid ${T.border}`, marginBottom: 28 }}>
+        {[["hoy", "📊 Hoy"], ["historial", "📋 Historial cajas"]].map(([id, label]) => (
+          <button key={id}
+            onClick={() => { setPosTab(id); if (id === "historial" && histCajas.length === 0) { setHistCajaDetalle(null); loadHistorial(); } if (id === "historial" && histCajas.length > 0) setHistCajaDetalle(null); }}
+            style={{ padding: "10px 22px", border: "none", borderBottom: `3px solid ${posTab === id ? T.accent : "transparent"}`, background: "transparent", color: posTab === id ? T.ink : T.muted, fontWeight: posTab === id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ══ TAB HOY ══ */}
+      {posTab === "hoy" && (loading ? <div style={{ padding: 40, color: T.muted, textAlign: "center" }}>Cargando…</div> : <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Punto de Venta — Vista jefe</div>
@@ -11502,6 +11579,164 @@ function POSJefeModule({ companyId }) {
           </Modal>
         );
       })()}
+    </div>)}
+
+      {/* ══ TAB HISTORIAL ══ */}
+      {posTab === "historial" && (
+        <div>
+          {!histCajaDetalle ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                <div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Historial de cajas POS</div>
+                  <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Todas las cajas — apertura, tickets y cierres</div>
+                </div>
+                <Btn v="ghost" onClick={loadHistorial}>↻ Actualizar</Btn>
+              </div>
+              {loadingHist ? (
+                <div style={{ padding: 40, color: T.muted, textAlign: "center" }}>Cargando…</div>
+              ) : histCajas.length === 0 ? (
+                <div style={{ padding: 60, color: T.muted, textAlign: "center", fontSize: 13 }}>No hay cajas POS registradas</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {histCajas.map(c => (
+                    <div key={c.id} style={{ background: T.paper, border: `1px solid ${c.estado === "abierta" ? T.accent + "50" : T.border}`, borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", gap: 16 }}>
+                      <div style={{ minWidth: 100 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{c.fecha}</div>
+                        <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{c.turno || "—"}</div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{c.nombre || "Caja POS"} <span style={{ color: T.muted, fontWeight: 400 }}>· {c.cajero_nombre || "—"}</span></div>
+                        <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
+                          Apertura: {c.abierta_at ? new Date(c.abierta_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                          {c.cerrada_at ? ` · Cierre: ${new Date(c.cerrada_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}` : ""}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", minWidth: 110 }}>
+                        {c.monto_final != null && <div style={{ fontSize: 13, fontWeight: 700, color: T.accent }}>{fmtPos(c.monto_final)}</div>}
+                        <div style={{ fontSize: 11, color: T.muted }}>Inicial: {fmtPos(c.monto_inicial || 0)}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 700, background: c.estado === "abierta" ? T.accentLight : T.surface, color: c.estado === "abierta" ? T.accent : T.muted }}>
+                          {c.estado === "abierta" ? "● Abierta" : "○ Cerrada"}
+                        </span>
+                        <Btn v="ghost" onClick={() => verDetalleHist(c)}>Ver detalle</Btn>
+                        {c.estado === "abierta" && <Btn v="danger" onClick={() => cerrarCajaHist(c)}>Cerrar</Btn>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (() => {
+            const vigHist = histTickets.filter(t => t.estado !== "anulado");
+            const totalVentasHist = vigHist.reduce((s, t) => s + (t.total || 0), 0);
+            const ventasPorMetodoHist = vigHist.reduce((acc, t) => {
+              const pgs = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }];
+              pgs.forEach(p => { acc[p.metodo] = (acc[p.metodo] || 0) + (p.monto || 0); });
+              return acc;
+            }, {});
+            const efectivoCajaHist = histMovimientos.reduce((acc, m) => {
+              if (["ingreso", "venta", "apertura"].includes(m.tipo)) return acc + (m.monto || 0);
+              if (["egreso", "anulacion"].includes(m.tipo)) return acc - Math.abs(m.monto || 0);
+              return acc;
+            }, 0);
+            return (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24, flexWrap: "wrap" }}>
+                  <button onClick={() => { setHistCajaDetalle(null); loadHistorial(); }} style={{ background: "none", border: "none", color: T.muted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Historial</button>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: T.ink }}>{histCajaDetalle.nombre || "Caja POS"} · {histCajaDetalle.turno} · {histCajaDetalle.fecha}</div>
+                  <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 700, background: histCajaDetalle.estado === "abierta" ? T.accentLight : T.surface, color: histCajaDetalle.estado === "abierta" ? T.accent : T.muted }}>
+                    {histCajaDetalle.estado === "abierta" ? "● Abierta" : "○ Cerrada"}
+                  </span>
+                  {histCajaDetalle.estado === "abierta" && <Btn v="danger" onClick={() => cerrarCajaHist(histCajaDetalle)}>Cerrar caja</Btn>}
+                </div>
+                {loadingHistDetalle ? (
+                  <div style={{ padding: 40, color: T.muted, textAlign: "center" }}>Cargando detalle…</div>
+                ) : (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
+                      {[
+                        { label: "Tickets emitidos", value: vigHist.length },
+                        { label: "Anulados", value: histTickets.filter(t => t.estado === "anulado").length },
+                        { label: "Total ventas", value: fmtPos(totalVentasHist), color: T.blue },
+                        { label: "Efectivo en caja", value: fmtPos(efectivoCajaHist), accent: true },
+                      ].map(s => (
+                        <div key={s.label} style={{ background: T.paper, border: `1px solid ${s.accent ? T.accent : s.color ? T.blue : T.border}`, borderRadius: 12, padding: "16px 18px" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 6, letterSpacing: 1 }}>{s.label.toUpperCase()}</div>
+                          <div style={{ fontSize: 20, fontWeight: 800, color: s.accent ? T.accent : s.color || T.ink }}>{s.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {Object.keys(ventasPorMetodoHist).length > 0 && (
+                      <div style={{ marginBottom: 24 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>VENTAS POR MÉTODO DE PAGO</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
+                          {Object.entries(ventasPorMetodoHist).map(([metodo, monto]) => (
+                            <div key={metodo} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px" }}>
+                              <div style={{ fontSize: 11, color: T.muted, marginBottom: 5 }}>{metodoLabelHist[metodo] || metodo}</div>
+                              <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{fmtPos(monto)}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>TICKETS ({histTickets.length})</div>
+                        {histTickets.length === 0 ? <div style={{ color: T.muted, fontSize: 13 }}>Sin tickets</div> : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                            {histTickets.map(t => {
+                              const pgs = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }];
+                              return (
+                                <div key={t.id} style={{ background: T.paper, border: `1px solid ${t.estado === "anulado" ? T.red : T.border}`, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 12, opacity: t.estado === "anulado" ? 0.6 : 1 }}>
+                                  <div style={{ minWidth: 64 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: t.estado === "anulado" ? T.red : T.accent }}>{t.numero}</div>
+                                    <div style={{ fontSize: 10, color: T.muted }}>{new Date(t.created_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</div>
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700 }}>{fmtPos(t.total)}</div>
+                                    <div style={{ fontSize: 10, color: T.muted }}>{pgs.map(p => metodoLabelHist[p.metodo] || p.metodo).join(" + ")} · {t.lines?.length || 0} ítem(s)</div>
+                                    {t.estado === "anulado" && <div style={{ fontSize: 10, color: T.red }}>Anulado</div>}
+                                  </div>
+                                  <Btn v="ghost" onClick={() => setHistTicketModal(t)}>Ver</Btn>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>MOVIMIENTOS DE CAJA</div>
+                        {histMovimientos.length === 0 ? <div style={{ color: T.muted, fontSize: 13 }}>Sin movimientos</div> : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {[...histMovimientos].reverse().map((m, i) => (
+                              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: T.paper, borderRadius: 8, padding: "9px 14px", border: `1px solid ${T.border}` }}>
+                                <div>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: ["venta", "ingreso", "apertura"].includes(m.tipo) ? T.accent : T.red, marginRight: 8 }}>
+                                    {m.tipo === "venta" ? "↑ Venta" : m.tipo === "ingreso" ? "↑ Ingreso" : m.tipo === "egreso" ? "↓ Egreso" : m.tipo === "anulacion" ? "↓ Anulación" : m.tipo === "apertura" ? "○ Apertura" : "■ Cierre"}
+                                  </span>
+                                  <span style={{ fontSize: 12, color: T.ink }}>{m.concepto}</span>
+                                </div>
+                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: ["egreso", "anulacion"].includes(m.tipo) ? T.red : T.accent }}>
+                                    {["egreso", "anulacion"].includes(m.tipo) ? "−" : "+"}{fmtPos(Math.abs(m.monto || 0))}
+                                  </span>
+                                  <span style={{ fontSize: 10, color: T.muted }}>{new Date(m.created_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }
