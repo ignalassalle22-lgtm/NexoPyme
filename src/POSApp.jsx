@@ -171,6 +171,15 @@ export default function POSApp({ profile, onLogout }) {
   // ── Stock ─────────────────────────────────────────────────────────
   const [stockSearch, setStockSearch] = useState('')
 
+  // ── Historial de cajas ───────────────────────────────────────────
+  const [cajasHistorial, setCajasHistorial] = useState([])
+  const [loadingHistorial, setLoadingHistorial] = useState(false)
+  const [cajaDetalle, setCajaDetalle] = useState(null)
+  const [ticketsCajaDetalle, setTicketsCajaDetalle] = useState([])
+  const [movimientosCajaDetalle, setMovimientosCajaDetalle] = useState([])
+  const [loadingDetalle, setLoadingDetalle] = useState(false)
+  const [ticketDetalleHistorial, setTicketDetalleHistorial] = useState(null)
+
   // ── Config métodos de pago ───────────────────────────────────────
   const [showMetodosConfig, setShowMetodosConfig] = useState(false)
   const [nuevoMetodoLabel, setNuevoMetodoLabel] = useState('')
@@ -415,6 +424,38 @@ export default function POSApp({ profile, onLogout }) {
     setAnulando(null); setAnulandoMotivo('')
   }
 
+  // ── Historial de cajas ───────────────────────────────────────────
+  const loadHistorial = async () => {
+    setLoadingHistorial(true)
+    const { data } = await supabase.from('pos_cajas').select('*').eq('company_id', companyId).order('fecha', { ascending: false }).order('abierta_at', { ascending: false }).limit(90)
+    if (data) setCajasHistorial(data)
+    setLoadingHistorial(false)
+  }
+
+  const verDetalleCaja = async (caja) => {
+    setLoadingDetalle(true)
+    setCajaDetalle(caja)
+    setTicketsCajaDetalle([])
+    setMovimientosCajaDetalle([])
+    const [ticks, movs] = await Promise.all([
+      supabase.from('pos_tickets').select('*').eq('caja_id', caja.id).order('created_at', { ascending: false }),
+      supabase.from('pos_caja_movimientos').select('*').eq('caja_id', caja.id).order('created_at'),
+    ])
+    if (ticks.data) setTicketsCajaDetalle(ticks.data)
+    if (movs.data) setMovimientosCajaDetalle(movs.data)
+    setLoadingDetalle(false)
+  }
+
+  const cerrarCajaHistorial = async (caja) => {
+    if (!window.confirm(`¿Cerrar la caja ${caja.nombre || caja.turno} del ${caja.fecha}?`)) return
+    const { error } = await supabase.from('pos_cajas').update({ estado: 'cerrada', cerrada_at: new Date().toISOString() }).eq('id', caja.id)
+    if (error) { alert('Error: ' + error.message); return }
+    await supabase.from('pos_caja_movimientos').insert({ company_id: companyId, caja_id: caja.id, tipo: 'cierre', concepto: 'Cierre manual desde historial', monto: 0 })
+    setCajasHistorial(prev => prev.map(c => c.id === caja.id ? { ...c, estado: 'cerrada', cerrada_at: new Date().toISOString() } : c))
+    if (cajaDetalle?.id === caja.id) setCajaDetalle(prev => ({ ...prev, estado: 'cerrada' }))
+    if (cajaActual?.id === caja.id) { setCajaActual(null); setMovimientos([]) }
+  }
+
   // ── Excel de stock ───────────────────────────────────────────────
   const downloadStock = () => {
     const rows = [
@@ -492,8 +533,8 @@ export default function POSApp({ profile, onLogout }) {
 
       {/* ── TABS ───────────────────────────────────────────────────── */}
       <div style={{ background: T.paper, borderBottom: `1px solid ${T.border}`, padding: '0 20px', display: 'flex', flexShrink: 0 }}>
-        {[{ id: 'venta', label: '🏪 Venta' }, { id: 'tickets', label: '🧾 Tickets' }, { id: 'caja', label: '💰 Caja' }, { id: 'stock', label: '📦 Stock' }].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
+        {[{ id: 'venta', label: '🏪 Venta' }, { id: 'tickets', label: '🧾 Tickets' }, { id: 'caja', label: '💰 Caja' }, { id: 'historial', label: '📋 Historial' }, { id: 'stock', label: '📦 Stock' }].map(t => (
+          <button key={t.id} onClick={() => { setTab(t.id); if (t.id === 'historial') { setCajaDetalle(null); loadHistorial(); } }} style={{
             background: 'transparent', border: 'none', borderBottom: `3px solid ${tab === t.id ? T.accent : 'transparent'}`,
             color: tab === t.id ? T.ink : T.muted, padding: '11px 18px', cursor: 'pointer', fontFamily: 'inherit',
             fontSize: 13, fontWeight: tab === t.id ? 700 : 500,
@@ -795,6 +836,189 @@ export default function POSApp({ profile, onLogout }) {
           </div>
         )}
 
+        {/* ══ HISTORIAL TAB ══════════════════════════════════════════ */}
+        {tab === 'historial' && (
+          <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+            {!cajaDetalle ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <div style={{ fontSize: 17, fontWeight: 700 }}>Historial de cajas</div>
+                  <button onClick={loadHistorial} style={{ ...btnPrimary, padding: '7px 14px', fontSize: 12, background: T.surface, border: `1px solid ${T.border}`, color: T.muted }}>↻ Actualizar</button>
+                </div>
+                {loadingHistorial ? (
+                  <div style={{ color: T.muted, padding: 40, textAlign: 'center' }}>Cargando…</div>
+                ) : cajasHistorial.length === 0 ? (
+                  <div style={{ color: T.muted, padding: 40, textAlign: 'center', fontSize: 13 }}>No hay cajas registradas</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxWidth: 860 }}>
+                    {cajasHistorial.map(c => (
+                      <div key={c.id} style={{ background: T.paper, border: `1px solid ${c.estado === 'abierta' ? T.accent : T.border}`, borderRadius: 10, padding: '13px 18px', display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <div style={{ minWidth: 90 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{c.fecha}</div>
+                          <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{c.turno}</div>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{c.nombre || 'Caja'} · <span style={{ color: T.muted, fontWeight: 400 }}>{c.cajero_nombre || '—'}</span></div>
+                          <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
+                            Apertura: {c.abierta_at ? new Date(c.abierta_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                            {c.cerrada_at ? ` · Cierre: ${new Date(c.cerrada_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right', minWidth: 110 }}>
+                          {c.monto_final != null && <div style={{ fontSize: 13, fontWeight: 700, color: T.accent }}>{fmt(c.monto_final)}</div>}
+                          <div style={{ fontSize: 11, color: T.muted }}>Inicial: {fmt(c.monto_inicial || 0)}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, background: c.estado === 'abierta' ? T.accentLight : T.surface, color: c.estado === 'abierta' ? T.accent : T.muted }}>
+                            {c.estado === 'abierta' ? '● Abierta' : '○ Cerrada'}
+                          </span>
+                          <button onClick={() => verDetalleCaja(c)} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 12px', color: T.ink, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Ver detalle</button>
+                          {c.estado === 'abierta' && (
+                            <button onClick={() => cerrarCajaHistorial(c)} style={{ background: T.redLight, border: `1px solid ${T.red}`, borderRadius: 6, padding: '6px 12px', color: T.red, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Cerrar</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              /* ── DETALLE DE CAJA ── */
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+                  <button onClick={() => { setCajaDetalle(null); loadHistorial(); }} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>← Volver</button>
+                  <div style={{ fontSize: 17, fontWeight: 700 }}>
+                    {cajaDetalle.nombre || 'Caja'} · {cajaDetalle.turno} · {cajaDetalle.fecha}
+                  </div>
+                  <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, background: cajaDetalle.estado === 'abierta' ? T.accentLight : T.surface, color: cajaDetalle.estado === 'abierta' ? T.accent : T.muted }}>
+                    {cajaDetalle.estado === 'abierta' ? '● Abierta' : '○ Cerrada'}
+                  </span>
+                  {cajaDetalle.estado === 'abierta' && (
+                    <button onClick={() => cerrarCajaHistorial(cajaDetalle)} style={{ background: T.redLight, border: `1px solid ${T.red}`, borderRadius: 6, padding: '5px 12px', color: T.red, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>Cerrar caja</button>
+                  )}
+                </div>
+
+                {loadingDetalle ? (
+                  <div style={{ color: T.muted, padding: 40, textAlign: 'center' }}>Cargando detalle…</div>
+                ) : (() => {
+                  const vigentes = ticketsCajaDetalle.filter(t => t.estado !== 'anulado')
+                  const totalVentas = vigentes.reduce((s, t) => s + (t.total || 0), 0)
+                  const ventasPorMetodo = vigentes.reduce((acc, t) => {
+                    const pgs = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }]
+                    pgs.forEach(p => { acc[p.metodo] = (acc[p.metodo] || 0) + (p.monto || 0) })
+                    return acc
+                  }, {})
+                  const efectivoCaja = movimientosCajaDetalle.reduce((acc, m) => {
+                    if (['ingreso', 'venta', 'apertura'].includes(m.tipo)) return acc + (m.monto || 0)
+                    if (['egreso', 'anulacion'].includes(m.tipo)) return acc - Math.abs(m.monto || 0)
+                    return acc
+                  }, 0)
+
+                  return (
+                    <>
+                      {/* Stats */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20, maxWidth: 860 }}>
+                        {[
+                          { label: 'Tickets emitidos', value: vigentes.length },
+                          { label: 'Anulados', value: ticketsCajaDetalle.filter(t => t.estado === 'anulado').length },
+                          { label: 'Total ventas', value: fmt(totalVentas), color: T.blue },
+                          { label: 'Efectivo en caja', value: fmt(efectivoCaja), accent: true },
+                        ].map(s => (
+                          <div key={s.label} style={{ background: T.paper, border: `1px solid ${s.accent ? T.accent : s.color ? T.blue : T.border}`, borderRadius: 10, padding: '14px 16px' }}>
+                            <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.5, marginBottom: 5 }}>{s.label.toUpperCase()}</div>
+                            <div style={{ fontSize: 17, fontWeight: 800, color: s.accent ? T.accent : s.color || T.ink }}>{s.value}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Desglose por método de pago */}
+                      {Object.keys(ventasPorMetodo).length > 0 && (
+                        <div style={{ marginBottom: 20, maxWidth: 860 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 10 }}>VENTAS POR MÉTODO DE PAGO</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+                            {Object.entries(ventasPorMetodo).map(([metodo, monto]) => (
+                              <div key={metodo} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 8, padding: '12px 14px' }}>
+                                <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>{getMetodoLabel(metodo)}</div>
+                                <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{fmt(monto)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxWidth: 1060 }}>
+                        {/* Tickets */}
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 10 }}>TICKETS ({ticketsCajaDetalle.length})</div>
+                          {ticketsCajaDetalle.length === 0
+                            ? <div style={{ color: T.muted, fontSize: 13 }}>Sin tickets</div>
+                            : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {ticketsCajaDetalle.map(t => {
+                                  const pgs = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }]
+                                  return (
+                                    <div key={t.id} style={{ background: T.paper, border: `1px solid ${t.estado === 'anulado' ? T.red : T.border}`, borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, opacity: t.estado === 'anulado' ? 0.6 : 1 }}>
+                                      <div style={{ minWidth: 60 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: t.estado === 'anulado' ? T.red : T.accent }}>{t.numero}</div>
+                                        <div style={{ fontSize: 10, color: T.muted }}>{new Date(t.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
+                                      </div>
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 700 }}>{fmt(t.total)}</div>
+                                        <div style={{ fontSize: 10, color: T.muted }}>{pgs.map(p => getMetodoLabel(p.metodo)).join(' + ')} · {t.lines?.length || 0} ítem(s)</div>
+                                        {t.estado === 'anulado' && <div style={{ fontSize: 10, color: T.red }}>Anulado</div>}
+                                      </div>
+                                      <button onClick={() => setTicketDetalleHistorial(t)} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: '4px 10px', color: T.muted, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Ver</button>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          }
+                        </div>
+
+                        {/* Movimientos */}
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 10 }}>MOVIMIENTOS DE CAJA</div>
+                          {movimientosCajaDetalle.length === 0
+                            ? <div style={{ color: T.muted, fontSize: 13 }}>Sin movimientos</div>
+                            : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                {[...movimientosCajaDetalle].reverse().map((m, i) => (
+                                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.paper, borderRadius: 7, padding: '8px 12px', border: `1px solid ${T.border}` }}>
+                                    <div>
+                                      <span style={{ fontSize: 11, fontWeight: 700, color: ['venta', 'ingreso', 'apertura'].includes(m.tipo) ? T.accent : T.red, marginRight: 7 }}>
+                                        {m.tipo === 'venta' ? '↑ Venta' : m.tipo === 'ingreso' ? '↑ Ingreso' : m.tipo === 'egreso' ? '↓ Egreso' : m.tipo === 'anulacion' ? '↓ Anulación' : m.tipo === 'apertura' ? '○ Apertura' : '■ Cierre'}
+                                      </span>
+                                      <span style={{ fontSize: 12, color: T.ink }}>{m.concepto}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                                      <span style={{ fontSize: 12, fontWeight: 700, color: ['egreso', 'anulacion'].includes(m.tipo) ? T.red : T.accent }}>
+                                        {['egreso', 'anulacion'].includes(m.tipo) ? '−' : '+'}{fmt(Math.abs(m.monto || 0))}
+                                      </span>
+                                      <span style={{ fontSize: 10, color: T.muted }}>{new Date(m.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          }
+                        </div>
+                      </div>
+
+                      {cajaDetalle.observaciones && (
+                        <div style={{ marginTop: 20, maxWidth: 860, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: '12px 16px' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 0.5, marginBottom: 6 }}>OBSERVACIONES DE CIERRE</div>
+                          <div style={{ fontSize: 13, color: T.ink }}>{cajaDetalle.observaciones}</div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </>
+            )}
+          </div>
+        )}
+
         {/* ══ STOCK TAB ══════════════════════════════════════════════ */}
         {tab === 'stock' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
@@ -946,6 +1170,14 @@ export default function POSApp({ profile, onLogout }) {
           <button onClick={() => setTicketDetalle(null)} style={{ ...btnPrimary, width: '100%', marginTop: 14 }}>
             Cerrar
           </button>
+        </Modal>
+      )}
+
+      {/* Ticket detalle desde historial */}
+      {ticketDetalleHistorial && (
+        <Modal title={`Ticket ${ticketDetalleHistorial.numero}`} onClose={() => setTicketDetalleHistorial(null)} width={400}>
+          <TicketView ticket={ticketDetalleHistorial} companyName={profile.company_name} metodosPago={metodosPago} />
+          <button onClick={() => setTicketDetalleHistorial(null)} style={{ ...btnPrimary, width: '100%', marginTop: 14 }}>Cerrar</button>
         </Modal>
       )}
 
