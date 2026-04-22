@@ -9114,6 +9114,19 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
   const [movEmpleado, setMovEmpleado] = useState("");
   const [movObs, setMovObs] = useState("");
 
+  // ── Tabs del módulo ──────────────────────────────────────────────
+  const [cajaTab, setCajaTab] = useState("caja");
+
+  // ── Historial POS ────────────────────────────────────────────────
+  const [posCajas, setPosCajas] = useState([]);
+  const [loadingPosCajas, setLoadingPosCajas] = useState(false);
+  const [posCajaDetalle, setPosCajaDetalle] = useState(null);
+  const [posTicketsDetalle, setPosTicketsDetalle] = useState([]);
+  const [posMovimientosDetalle, setPosMovimientosDetalle] = useState([]);
+  const [loadingPosDetalle, setLoadingPosDetalle] = useState(false);
+  const [posTicketModal, setPosTicketModal] = useState(null);
+  const [posMetodosPago, setPosMetodosPago] = useState([]);
+
   const selectedCaja = cajas.find(c => c.id === selectedCajaId);
   const fmt$ = (n) => `$${Number(n || 0).toLocaleString("es-AR")}`;
 
@@ -9184,140 +9197,98 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
     XLSX.writeFile(wb, `Caja-${caja.id}-${caja.date}.xlsx`);
   };
 
-  // ── VISTA DETALLE DE UNA CAJA ──
-  if (selectedCaja) {
-    const movs = getAllMovimientos(selectedCaja);
-    const totalIngresos = movs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + m.monto, 0);
-    const totalGastos = movs.filter(m => m.tipo === "gasto").reduce((s, m) => s + m.monto, 0);
-    const saldo = selectedCaja.montoInicial + totalIngresos - totalGastos;
-    const estaAbierta = selectedCaja.estado === "abierta";
-    return (
-      <div>
-        {showMovModal && (
-          <Modal title="Nuevo movimiento manual" onClose={() => setShowMovModal(false)}>
-            <div style={{ display: "grid", gap: 14 }}>
-              <div>
-                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 8, letterSpacing: 1 }}>TIPO DE MOVIMIENTO</label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {[["ingreso", T.accent, T.accentLight, "▲ Ingreso"], ["gasto", T.red, T.redLight, "▼ Gasto"]].map(([v, col, bg, lbl]) => (
-                    <button key={v} onClick={() => setMovTipo(v)} style={{ flex: 1, padding: "10px", borderRadius: 8, border: `2px solid ${movTipo === v ? col : T.border}`, background: movTipo === v ? bg : T.surface, color: movTipo === v ? col : T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <Input label="MONTO ($)" type="number" value={movMonto} onChange={setMovMonto} placeholder="0.00" />
-                <div>
-                  <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>EMPLEADO (opcional)</label>
-                  <select value={movEmpleado} onChange={e => setMovEmpleado(e.target.value)} style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
-                    <option value="">— Sin asignar —</option>
-                    {(empleados || []).filter(e => e.estado === "activo").map(e => <option key={e.id} value={e.id}>{e.nombre} {e.apellido}</option>)}
-                  </select>
-                </div>
-              </div>
-              <Input label="MOTIVO" value={movMotivo} onChange={setMovMotivo} placeholder="ej: Compra de materiales de limpieza" />
-              <Input label="HORA" type="time" value={movHora} onChange={setMovHora} />
-              <div>
-                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>OBSERVACIONES (opcional)</label>
-                <textarea value={movObs} onChange={e => setMovObs(e.target.value)} rows={2} style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
-              </div>
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
-                <Btn v="ghost" onClick={() => setShowMovModal(false)}>Cancelar</Btn>
-                <Btn onClick={() => guardarMovimiento(selectedCaja.id)} disabled={!movMonto || !movMotivo}>Agregar movimiento</Btn>
-              </div>
-            </div>
-          </Modal>
-        )}
+  // ── Historial POS: funciones ─────────────────────────────────────
+  const POS_METODOS_DEFAULT = [
+    { id: "efectivo", label: "💵 Efectivo" }, { id: "debito", label: "💳 Débito" },
+    { id: "credito", label: "💳 Crédito" }, { id: "transferencia", label: "🔀 Transferencia" },
+    { id: "qr", label: "📱 QR / MP" }, { id: "cuenta_corriente", label: "📋 Cta. corriente" },
+  ];
+  const getPosMetodoLabel = (id) => [...POS_METODOS_DEFAULT, ...posMetodosPago].find(m => m.id === id)?.label || id;
+  const fmtPos = (n) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(n || 0);
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
-          <div>
-            <button onClick={() => setSelectedCajaId(null)} style={{ background: "none", border: "none", color: T.muted, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 8 }}>← Cajas</button>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>{selectedCaja.id}</div>
-              <span style={{ background: estaAbierta ? T.accentLight : T.surface, color: estaAbierta ? T.accent : T.muted, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{estaAbierta ? "ABIERTA" : "CERRADA"}</span>
-              {selectedCaja.turno && <span style={{ background: T.blueLight, color: T.blue, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Turno {selectedCaja.turno}</span>}
-            </div>
-            <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Fecha: {selectedCaja.date} · Monto inicial: {fmt$(selectedCaja.montoInicial)}</div>
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <Btn v="ghost" onClick={() => exportarExcel(selectedCaja)}>↓ Excel</Btn>
-            {estaAbierta ? (
-              <>
-                <Btn onClick={() => { setMovFecha(hoy); setMovHora(new Date().toTimeString().slice(0, 5)); setShowMovModal(true); }}>+ Movimiento</Btn>
-                <Btn v="danger" onClick={() => { setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "cerrada" } : c)); if (companyId) supabase.from('cajas').update({ estado: 'cerrada' }).eq('id', selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); }}>Cerrar caja</Btn>
-              </>
-            ) : (
-              <Btn v="ghost" onClick={() => { setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "abierta" } : c)); if (companyId) supabase.from('cajas').update({ estado: 'abierta' }).eq('id', selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); }}>Reabrir caja</Btn>
-            )}
-            <Btn v="danger" onClick={() => { if (window.confirm(`¿Eliminar la caja ${selectedCaja.id} y todos sus movimientos? Esta acción no se puede deshacer.`)) { setCajaMovimientos(prev => prev.filter(m => m.cajaId !== selectedCaja.id)); setCajas(prev => prev.filter(c => c.id !== selectedCaja.id)); setSelectedCajaId(null); if (companyId) { supabase.from('caja_movimientos').delete().eq('caja_id', selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); supabase.from('cajas').delete().eq('id', selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); } } }}>Eliminar caja</Btn>
-          </div>
-        </div>
+  const loadPosCajas = async () => {
+    setLoadingPosCajas(true);
+    const [cajasRes, configRes] = await Promise.all([
+      supabase.from("pos_cajas").select("*").eq("company_id", companyId).order("fecha", { ascending: false }).order("abierta_at", { ascending: false }).limit(90),
+      supabase.from("pos_config").select("*").eq("company_id", companyId).maybeSingle(),
+    ]);
+    if (cajasRes.data) setPosCajas(cajasRes.data);
+    if (configRes.data?.metodos_pago) setPosMetodosPago(configRes.data.metodos_pago);
+    setLoadingPosCajas(false);
+  };
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
-          {[["Monto inicial", fmt$(selectedCaja.montoInicial), T.muted], ["Total ingresos", fmt$(totalIngresos), T.accent], ["Total gastos", fmt$(totalGastos), T.red], ["Saldo actual", fmt$(saldo), saldo >= 0 ? T.blue : T.red]].map(([lbl, val, col]) => (
-            <div key={lbl} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 6, letterSpacing: 1 }}>{lbl.toUpperCase()}</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: col }}>{val}</div>
-            </div>
-          ))}
-        </div>
+  const verDetallePosCaja = async (caja) => {
+    setLoadingPosDetalle(true);
+    setPosCajaDetalle(caja);
+    setPosTicketsDetalle([]); setPosMovimientosDetalle([]);
+    const [ticks, movs] = await Promise.all([
+      supabase.from("pos_tickets").select("*").eq("caja_id", caja.id).order("created_at", { ascending: false }),
+      supabase.from("pos_caja_movimientos").select("*").eq("caja_id", caja.id).order("created_at"),
+    ]);
+    if (ticks.data) setPosTicketsDetalle(ticks.data);
+    if (movs.data) setPosMovimientosDetalle(movs.data);
+    setLoadingPosDetalle(false);
+  };
 
-        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Movimientos ({movs.length})</div>
-            <div style={{ fontSize: 11, color: T.muted }}>AUTO = desde facturas/presupuestos con pago efectivo</div>
-          </div>
-          {movs.length === 0 ? (
-            <div style={{ padding: 40, textAlign: "center", color: T.muted, fontSize: 13 }}>
-              No hay movimientos para este día.
-              {estaAbierta && <div style={{ marginTop: 12 }}><Btn v="ghost" onClick={() => setShowMovModal(true)}>+ Agregar movimiento manual</Btn></div>}
-            </div>
-          ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr style={{ background: T.surface }}>
-                {["N°", "Tipo", "Motivo", "Monto", "Fecha / Hora", "Origen", "Obs.", ""].map(h => (
-                  <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+  const cerrarPosCaja = async (caja) => {
+    if (!window.confirm(`¿Cerrar la caja "${caja.nombre || caja.turno}" del ${caja.fecha}?`)) return;
+    const { error } = await supabase.from("pos_cajas").update({ estado: "cerrada", cerrada_at: new Date().toISOString() }).eq("id", caja.id);
+    if (error) { alert("Error: " + error.message); return; }
+    await supabase.from("pos_caja_movimientos").insert({ company_id: companyId, caja_id: caja.id, tipo: "cierre", concepto: "Cierre desde módulo Jefe", monto: 0 });
+    setPosCajas(prev => prev.map(c => c.id === caja.id ? { ...c, estado: "cerrada", cerrada_at: new Date().toISOString() } : c));
+    if (posCajaDetalle?.id === caja.id) setPosCajaDetalle(prev => ({ ...prev, estado: "cerrada" }));
+  };
+
+  const abrirPosCaja = async ({ nombre, turno, montoInicial }) => {
+    const { data, error } = await supabase.from("pos_cajas").insert({
+      company_id: companyId, fecha: hoy, turno, nombre: nombre || null,
+      cajero_nombre: "Jefe", monto_inicial: montoInicial, estado: "abierta", abierta_at: new Date().toISOString(),
+    }).select().single();
+    if (error) { alert("Error: " + error.message); return; }
+    await supabase.from("pos_caja_movimientos").insert({ company_id: companyId, caja_id: data.id, tipo: "apertura", concepto: "Apertura de caja (jefe)", monto: montoInicial });
+    setPosCajas(prev => [data, ...prev]);
+  };
+
+  // ── RETURN UNIFICADO CON TABS ──
+  const cajaTabItems = [["caja", "💰 Caja"], ["pos_historial", "📋 Historial POS"]];
+
+  // Modales siempre disponibles
+  const modalesCaja = (
+    <>
+      {showMovModal && (
+        <Modal title="Nuevo movimiento manual" onClose={() => setShowMovModal(false)}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 8, letterSpacing: 1 }}>TIPO DE MOVIMIENTO</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[["ingreso", T.accent, T.accentLight, "▲ Ingreso"], ["gasto", T.red, T.redLight, "▼ Gasto"]].map(([v, col, bg, lbl]) => (
+                  <button key={v} onClick={() => setMovTipo(v)} style={{ flex: 1, padding: "10px", borderRadius: 8, border: `2px solid ${movTipo === v ? col : T.border}`, background: movTipo === v ? bg : T.surface, color: movTipo === v ? col : T.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{lbl}</button>
                 ))}
-              </tr></thead>
-              <tbody>
-                {movs.map(m => {
-                  const emp = m.empleadoId ? (empleados || []).find(e => e.id === m.empleadoId) : null;
-                  const isIng = m.tipo === "ingreso";
-                  return (
-                    <tr key={m.id} style={{ borderTop: `1px solid ${T.border}` }}>
-                      <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.muted }}>#{m.numero}</td>
-                      <td style={{ padding: "12px 16px" }}>
-                        <span style={{ background: isIng ? T.accentLight : T.redLight, color: isIng ? T.accent : T.red, padding: "2px 10px", borderRadius: 12, fontSize: 11, fontWeight: 700 }}>{isIng ? "▲ INGRESO" : "▼ GASTO"}</span>
-                        {m.isAuto && <span style={{ marginLeft: 6, background: T.blueLight, color: T.blue, padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700 }}>AUTO</span>}
-                      </td>
-                      <td style={{ padding: "12px 16px", fontSize: 13, color: T.ink }}>
-                        {m.motivo}
-                        {emp && <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Empleado: {emp.nombre} {emp.apellido}</div>}
-                      </td>
-                      <td style={{ padding: "12px 16px", fontSize: 15, fontWeight: 800, color: isIng ? T.accent : T.red }}>{isIng ? "+" : "-"}{fmt$(m.monto)}</td>
-                      <td style={{ padding: "12px 16px", fontSize: 12, color: T.muted }}>{m.fecha}<br />{m.hora !== "—" ? m.hora : ""}</td>
-                      <td style={{ padding: "12px 16px", fontSize: 12, color: m.origenId ? T.blue : T.muted, fontFamily: "monospace" }}>{m.origenId || "Manual"}</td>
-                      <td style={{ padding: "12px 16px", fontSize: 12, color: T.muted, maxWidth: 160 }}>{m.observaciones || "—"}</td>
-                      <td style={{ padding: "12px 16px" }}>
-                        {!m.isAuto && estaAbierta && (
-                          <button onClick={() => { if (window.confirm("¿Eliminar este movimiento? Esta acción no se puede deshacer.")) { setCajaMovimientos(prev => prev.filter(x => x.id !== m.id)); if (companyId) supabase.from('caja_movimientos').delete().eq('id', m.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); } }} style={{ background: "none", border: "none", color: T.muted, fontSize: 16, cursor: "pointer", padding: "2px 6px", borderRadius: 4 }} title="Eliminar movimiento">×</button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ── VISTA LISTA DE CAJAS ──
-  return (
-    <div>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Input label="MONTO ($)" type="number" value={movMonto} onChange={setMovMonto} placeholder="0.00" />
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>EMPLEADO (opcional)</label>
+                <select value={movEmpleado} onChange={e => setMovEmpleado(e.target.value)} style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                  <option value="">— Sin asignar —</option>
+                  {(empleados || []).filter(e => e.estado === "activo").map(e => <option key={e.id} value={e.id}>{e.nombre} {e.apellido}</option>)}
+                </select>
+              </div>
+            </div>
+            <Input label="MOTIVO" value={movMotivo} onChange={setMovMotivo} placeholder="ej: Compra de materiales de limpieza" />
+            <Input label="HORA" type="time" value={movHora} onChange={setMovHora} />
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 5, letterSpacing: 1 }}>OBSERVACIONES (opcional)</label>
+              <textarea value={movObs} onChange={e => setMovObs(e.target.value)} rows={2} style={{ width: "100%", padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
+              <Btn v="ghost" onClick={() => setShowMovModal(false)}>Cancelar</Btn>
+              <Btn onClick={() => guardarMovimiento(selectedCaja?.id)} disabled={!movMonto || !movMotivo}>Agregar movimiento</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
       {showAbrirModal && (
         <Modal title="Abrir nueva caja" onClose={() => setShowAbrirModal(false)}>
           <div style={{ display: "grid", gap: 14 }}>
@@ -9342,68 +9313,378 @@ function CajaModule({ cajas, setCajas, cajaMovimientos, setCajaMovimientos, sale
           </div>
         </Modal>
       )}
-
       {showConfigModal && (
         <Modal title="Configurar monto inicial predeterminado" onClose={() => setShowConfigModal(false)}>
           <div style={{ display: "grid", gap: 14 }}>
             <Input label="MONTO INICIAL PREDETERMINADO ($)" type="number" value={String(defaultMontoInicial)} onChange={v => setDefaultMontoInicial(parseFloat(v) || 0)} placeholder="0" />
-            <div style={{ fontSize: 12, color: T.muted }}>Este monto se usará como valor por defecto al abrir nuevas cajas. Podés modificarlo para cada caja individualmente.</div>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Btn onClick={() => setShowConfigModal(false)}>Guardar</Btn>
-            </div>
+            <div style={{ fontSize: 12, color: T.muted }}>Este monto se usará como valor por defecto al abrir nuevas cajas.</div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn onClick={() => setShowConfigModal(false)}>Guardar</Btn></div>
           </div>
         </Modal>
       )}
+      {posTicketModal && (
+        <Modal title={`Ticket ${posTicketModal.numero}`} onClose={() => setPosTicketModal(null)}>
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: T.ink }}>
+            <div style={{ textAlign: "center", marginBottom: 12, borderBottom: `1px dashed ${T.border}`, paddingBottom: 12 }}>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>NEXOPOS</div>
+              <div style={{ color: T.muted, fontSize: 11, marginTop: 4 }}>{new Date(posTicketModal.created_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: T.accent, marginTop: 4 }}>{posTicketModal.numero}</div>
+              {posTicketModal.estado === "anulado" && <div style={{ color: T.red, fontWeight: 800, marginTop: 4 }}>★ ANULADO ★</div>}
+            </div>
+            {(posTicketModal.lines || []).map((l, i) => (
+              <div key={i} style={{ marginBottom: 7 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ flex: 1 }}>{l.nombre}</span><span style={{ fontWeight: 700 }}>{fmtPos(l.precio * l.qty)}</span></div>
+                <div style={{ color: T.muted, fontSize: 10 }}>{l.qty} × {fmtPos(l.precio)} · IVA {l.iva}%</div>
+              </div>
+            ))}
+            <div style={{ borderTop: `1px dashed ${T.border}`, marginTop: 10, paddingTop: 10 }}>
+              {posTicketModal.descuento > 0 && <div style={{ display: "flex", justifyContent: "space-between", color: T.yellow, marginBottom: 4 }}><span>Descuento:</span><span>− {fmtPos(posTicketModal.descuento)}</span></div>}
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 15, color: T.accent, marginBottom: 10 }}><span>TOTAL</span><span>{fmtPos(posTicketModal.total)}</span></div>
+              {(posTicketModal.pagos?.length > 0 ? posTicketModal.pagos : [{ metodo: posTicketModal.metodo_pago, monto: posTicketModal.total }]).map((p, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", color: T.muted, fontSize: 11 }}><span>{getPosMetodoLabel(p.metodo)}</span><span>{fmtPos(p.monto)}</span></div>
+              ))}
+              <div style={{ textAlign: "center", color: T.muted, fontSize: 10, marginTop: 8 }}>{posTicketModal.cajero_nombre}</div>
+            </div>
+          </div>
+          <Btn onClick={() => setPosTicketModal(null)} style={{ marginTop: 14, width: "100%" }}>Cerrar</Btn>
+        </Modal>
+      )}
+    </>
+  );
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Caja</div>
-          <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Control de flujo de efectivo diario</div>
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <Btn v="ghost" onClick={() => setShowConfigModal(true)}>Configurar monto inicial</Btn>
-          <Btn onClick={() => { setFormFecha(hoy); setFormMonto(String(defaultMontoInicial)); setFormTurno(""); setShowAbrirModal(true); }}>+ Abrir caja</Btn>
-        </div>
+  return (
+    <div>
+      {modalesCaja}
+
+      {/* ── TABS ── */}
+      <div style={{ display: "flex", borderBottom: `1px solid ${T.border}`, marginBottom: 28 }}>
+        {cajaTabItems.map(([id, label]) => (
+          <button key={id}
+            onClick={() => { setCajaTab(id); if (id === "pos_historial") { setPosCajaDetalle(null); loadPosCajas(); } if (id === "caja") setSelectedCajaId(null); }}
+            style={{ padding: "10px 22px", border: "none", borderBottom: `3px solid ${cajaTab === id ? T.accent : "transparent"}`, background: "transparent", color: cajaTab === id ? T.ink : T.muted, fontWeight: cajaTab === id ? 700 : 500, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "color 0.15s" }}>
+            {label}
+          </button>
+        ))}
       </div>
 
-      {cajas.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "80px 20px", color: T.muted }}>
-          <div style={{ fontSize: 48, marginBottom: 16, color: T.faint }}>◈</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Sin cajas registradas</div>
-          <div style={{ fontSize: 13, marginBottom: 24 }}>Abrí la primera caja del día para comenzar a registrar el flujo de efectivo.</div>
-          <Btn onClick={() => { setFormFecha(hoy); setFormMonto(String(defaultMontoInicial)); setFormTurno(""); setShowAbrirModal(true); }}>+ Abrir caja</Btn>
-        </div>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {cajas.map(caja => {
-            const movs = getAllMovimientos(caja);
-            const totalIngresos = movs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + m.monto, 0);
-            const totalGastos = movs.filter(m => m.tipo === "gasto").reduce((s, m) => s + m.monto, 0);
-            const saldo = caja.montoInicial + totalIngresos - totalGastos;
-            const estaAbierta = caja.estado === "abierta";
-            return (
-              <div key={caja.id} onClick={() => setSelectedCajaId(caja.id)}
-                style={{ background: T.paper, border: `1px solid ${estaAbierta ? T.accent + "50" : T.border}`, borderRadius: 12, padding: "18px 22px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", transition: "border-color 0.15s" }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = estaAbierta ? T.accent + "50" : T.border; }}>
+      {/* ══ CAJA TAB ══ */}
+      {cajaTab === "caja" && (() => {
+        if (selectedCaja) {
+          const movs = getAllMovimientos(selectedCaja);
+          const totalIngresos = movs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + m.monto, 0);
+          const totalGastos = movs.filter(m => m.tipo === "gasto").reduce((s, m) => s + m.monto, 0);
+          const saldo = selectedCaja.montoInicial + totalIngresos - totalGastos;
+          const estaAbierta = selectedCaja.estado === "abierta";
+          return (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-                    <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: T.accent }}>{caja.id}</span>
-                    <span style={{ fontSize: 13, color: T.ink, fontWeight: 600 }}>{caja.date}</span>
-                    {caja.turno && <span style={{ background: T.blueLight, color: T.blue, padding: "2px 8px", borderRadius: 12, fontSize: 10, fontWeight: 700 }}>Turno {caja.turno}</span>}
-                    <span style={{ background: estaAbierta ? T.accentLight : T.surface, color: estaAbierta ? T.accent : T.muted, padding: "2px 8px", borderRadius: 12, fontSize: 10, fontWeight: 700 }}>{estaAbierta ? "ABIERTA" : "CERRADA"}</span>
+                  <button onClick={() => setSelectedCajaId(null)} style={{ background: "none", border: "none", color: T.muted, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 8 }}>← Cajas</button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>{selectedCaja.id}</div>
+                    <span style={{ background: estaAbierta ? T.accentLight : T.surface, color: estaAbierta ? T.accent : T.muted, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{estaAbierta ? "ABIERTA" : "CERRADA"}</span>
+                    {selectedCaja.turno && <span style={{ background: T.blueLight, color: T.blue, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Turno {selectedCaja.turno}</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: T.muted }}>
-                    Inicial: {fmt$(caja.montoInicial)} · {movs.length} movimiento(s) · Ingresos: {fmt$(totalIngresos)} · Gastos: {fmt$(totalGastos)}
-                  </div>
+                  <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Fecha: {selectedCaja.date} · Monto inicial: {fmt$(selectedCaja.montoInicial)}</div>
                 </div>
-                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 20 }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: saldo >= 0 ? T.blue : T.red }}>{fmt$(saldo)}</div>
-                  <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Saldo actual</div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <Btn v="ghost" onClick={() => exportarExcel(selectedCaja)}>↓ Excel</Btn>
+                  {estaAbierta ? (
+                    <>
+                      <Btn onClick={() => { setMovFecha(hoy); setMovHora(new Date().toTimeString().slice(0, 5)); setShowMovModal(true); }}>+ Movimiento</Btn>
+                      <Btn v="danger" onClick={() => { setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "cerrada" } : c)); if (companyId) supabase.from("cajas").update({ estado: "cerrada" }).eq("id", selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); }}>Cerrar caja</Btn>
+                    </>
+                  ) : (
+                    <Btn v="ghost" onClick={() => { setCajas(prev => prev.map(c => c.id === selectedCaja.id ? { ...c, estado: "abierta" } : c)); if (companyId) supabase.from("cajas").update({ estado: "abierta" }).eq("id", selectedCaja.id).then(r => { if (r?.error) console.error("DB Error:", r.error.message) }); }}>Reabrir caja</Btn>
+                  )}
+                  <Btn v="danger" onClick={() => { if (window.confirm(`¿Eliminar la caja ${selectedCaja.id}?`)) { setCajaMovimientos(prev => prev.filter(m => m.cajaId !== selectedCaja.id)); setCajas(prev => prev.filter(c => c.id !== selectedCaja.id)); setSelectedCajaId(null); if (companyId) { supabase.from("caja_movimientos").delete().eq("caja_id", selectedCaja.id); supabase.from("cajas").delete().eq("id", selectedCaja.id); } } }}>Eliminar caja</Btn>
                 </div>
               </div>
-            );
-          })}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
+                {[["Monto inicial", fmt$(selectedCaja.montoInicial), T.muted], ["Total ingresos", fmt$(totalIngresos), T.accent], ["Total gastos", fmt$(totalGastos), T.red], ["Saldo actual", fmt$(saldo), saldo >= 0 ? T.blue : T.red]].map(([lbl, val, col]) => (
+                  <div key={lbl} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 6, letterSpacing: 1 }}>{lbl.toUpperCase()}</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: col }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Movimientos ({movs.length})</div>
+                  <div style={{ fontSize: 11, color: T.muted }}>AUTO = desde facturas/presupuestos con pago efectivo</div>
+                </div>
+                {movs.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: "center", color: T.muted, fontSize: 13 }}>
+                    No hay movimientos para este día.
+                    {estaAbierta && <div style={{ marginTop: 12 }}><Btn v="ghost" onClick={() => setShowMovModal(true)}>+ Agregar movimiento manual</Btn></div>}
+                  </div>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr style={{ background: T.surface }}>
+                      {["N°", "Tipo", "Motivo", "Monto", "Fecha / Hora", "Origen", "Obs.", ""].map(h => (
+                        <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, color: T.muted, fontWeight: 700, letterSpacing: 0.8 }}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {movs.map(m => {
+                        const emp = m.empleadoId ? (empleados || []).find(e => e.id === m.empleadoId) : null;
+                        const isIng = m.tipo === "ingreso";
+                        return (
+                          <tr key={m.id} style={{ borderTop: `1px solid ${T.border}` }}>
+                            <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: T.muted }}>#{m.numero}</td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <span style={{ background: isIng ? T.accentLight : T.redLight, color: isIng ? T.accent : T.red, padding: "2px 10px", borderRadius: 12, fontSize: 11, fontWeight: 700 }}>{isIng ? "▲ INGRESO" : "▼ GASTO"}</span>
+                              {m.isAuto && <span style={{ marginLeft: 6, background: T.blueLight, color: T.blue, padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700 }}>AUTO</span>}
+                            </td>
+                            <td style={{ padding: "12px 16px", fontSize: 13, color: T.ink }}>{m.motivo}{emp && <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Empleado: {emp.nombre} {emp.apellido}</div>}</td>
+                            <td style={{ padding: "12px 16px", fontSize: 15, fontWeight: 800, color: isIng ? T.accent : T.red }}>{isIng ? "+" : "-"}{fmt$(m.monto)}</td>
+                            <td style={{ padding: "12px 16px", fontSize: 12, color: T.muted }}>{m.fecha}<br />{m.hora !== "—" ? m.hora : ""}</td>
+                            <td style={{ padding: "12px 16px", fontSize: 12, color: m.origenId ? T.blue : T.muted, fontFamily: "monospace" }}>{m.origenId || "Manual"}</td>
+                            <td style={{ padding: "12px 16px", fontSize: 12, color: T.muted, maxWidth: 160 }}>{m.observaciones || "—"}</td>
+                            <td style={{ padding: "12px 16px" }}>
+                              {!m.isAuto && estaAbierta && (
+                                <button onClick={() => { if (window.confirm("¿Eliminar este movimiento?")) { setCajaMovimientos(prev => prev.filter(x => x.id !== m.id)); if (companyId) supabase.from("caja_movimientos").delete().eq("id", m.id); } }} style={{ background: "none", border: "none", color: T.muted, fontSize: 16, cursor: "pointer", padding: "2px 6px", borderRadius: 4 }} title="Eliminar">×</button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          );
+        }
+        // ── Lista de cajas ──
+        return (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Caja</div>
+                <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Control de flujo de efectivo diario</div>
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn v="ghost" onClick={() => setShowConfigModal(true)}>Configurar monto inicial</Btn>
+                <Btn onClick={() => { setFormFecha(hoy); setFormMonto(String(defaultMontoInicial)); setFormTurno(""); setShowAbrirModal(true); }}>+ Abrir caja</Btn>
+              </div>
+            </div>
+            {cajas.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "80px 20px", color: T.muted }}>
+                <div style={{ fontSize: 48, marginBottom: 16, color: T.faint }}>◈</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Sin cajas registradas</div>
+                <div style={{ fontSize: 13, marginBottom: 24 }}>Abrí la primera caja del día para comenzar a registrar el flujo de efectivo.</div>
+                <Btn onClick={() => { setFormFecha(hoy); setFormMonto(String(defaultMontoInicial)); setFormTurno(""); setShowAbrirModal(true); }}>+ Abrir caja</Btn>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                {cajas.map(caja => {
+                  const movs = getAllMovimientos(caja);
+                  const totalIngresos = movs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + m.monto, 0);
+                  const totalGastos = movs.filter(m => m.tipo === "gasto").reduce((s, m) => s + m.monto, 0);
+                  const saldo = caja.montoInicial + totalIngresos - totalGastos;
+                  const estaAbierta = caja.estado === "abierta";
+                  return (
+                    <div key={caja.id} onClick={() => setSelectedCajaId(caja.id)}
+                      style={{ background: T.paper, border: `1px solid ${estaAbierta ? T.accent + "50" : T.border}`, borderRadius: 12, padding: "18px 22px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = T.accent; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = estaAbierta ? T.accent + "50" : T.border; }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: T.accent }}>{caja.id}</span>
+                          <span style={{ fontSize: 13, color: T.ink, fontWeight: 600 }}>{caja.date}</span>
+                          {caja.turno && <span style={{ background: T.blueLight, color: T.blue, padding: "2px 8px", borderRadius: 12, fontSize: 10, fontWeight: 700 }}>Turno {caja.turno}</span>}
+                          <span style={{ background: estaAbierta ? T.accentLight : T.surface, color: estaAbierta ? T.accent : T.muted, padding: "2px 8px", borderRadius: 12, fontSize: 10, fontWeight: 700 }}>{estaAbierta ? "ABIERTA" : "CERRADA"}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: T.muted }}>Inicial: {fmt$(caja.montoInicial)} · {movs.length} movimiento(s) · Ingresos: {fmt$(totalIngresos)} · Gastos: {fmt$(totalGastos)}</div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 20 }}>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: saldo >= 0 ? T.blue : T.red }}>{fmt$(saldo)}</div>
+                        <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Saldo actual</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ══ HISTORIAL POS TAB ══ */}
+      {cajaTab === "pos_historial" && (
+        <div>
+          {!posCajaDetalle ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                <div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Historial POS</div>
+                  <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Cajas del punto de venta — apertura, tickets y cierres</div>
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <Btn v="ghost" onClick={loadPosCajas}>↻ Actualizar</Btn>
+                  <Btn onClick={() => {
+                    const nombre = window.prompt("Nombre de la caja (opcional):", "") ?? "";
+                    const turno = window.prompt("Turno (mañana / tarde / noche):", "mañana") ?? "mañana";
+                    const monto = parseFloat(window.prompt("Monto inicial:", "0") || "0");
+                    abrirPosCaja({ nombre: nombre.trim(), turno: turno.trim(), montoInicial: monto }).then(loadPosCajas);
+                  }}>+ Abrir caja POS</Btn>
+                </div>
+              </div>
+              {loadingPosCajas ? (
+                <div style={{ color: T.muted, padding: 40, textAlign: "center" }}>Cargando…</div>
+              ) : posCajas.length === 0 ? (
+                <div style={{ color: T.muted, padding: 60, textAlign: "center", fontSize: 13 }}>No hay cajas POS registradas</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {posCajas.map(c => (
+                    <div key={c.id} style={{ background: T.paper, border: `1px solid ${c.estado === "abierta" ? T.accent + "50" : T.border}`, borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", gap: 16 }}>
+                      <div style={{ minWidth: 100 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{c.fecha}</div>
+                        <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{c.turno || "—"}</div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{c.nombre || "Caja POS"} <span style={{ color: T.muted, fontWeight: 400 }}>· {c.cajero_nombre || "—"}</span></div>
+                        <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>
+                          Apertura: {c.abierta_at ? new Date(c.abierta_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                          {c.cerrada_at ? ` · Cierre: ${new Date(c.cerrada_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}` : ""}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", minWidth: 110 }}>
+                        {c.monto_final != null && <div style={{ fontSize: 13, fontWeight: 700, color: T.accent }}>{fmtPos(c.monto_final)}</div>}
+                        <div style={{ fontSize: 11, color: T.muted }}>Inicial: {fmtPos(c.monto_inicial || 0)}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 700, background: c.estado === "abierta" ? T.accentLight : T.surface, color: c.estado === "abierta" ? T.accent : T.muted }}>
+                          {c.estado === "abierta" ? "● Abierta" : "○ Cerrada"}
+                        </span>
+                        <Btn v="ghost" onClick={() => verDetallePosCaja(c)}>Ver detalle</Btn>
+                        {c.estado === "abierta" && <Btn v="danger" onClick={() => cerrarPosCaja(c)}>Cerrar</Btn>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            /* ── DETALLE CAJA POS ── */
+            (() => {
+              const vigentes = posTicketsDetalle.filter(t => t.estado !== "anulado");
+              const totalVentas = vigentes.reduce((s, t) => s + (t.total || 0), 0);
+              const ventasPorMetodo = vigentes.reduce((acc, t) => {
+                const pgs = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }];
+                pgs.forEach(p => { acc[p.metodo] = (acc[p.metodo] || 0) + (p.monto || 0); });
+                return acc;
+              }, {});
+              const efectivoCaja = posMovimientosDetalle.reduce((acc, m) => {
+                if (["ingreso", "venta", "apertura"].includes(m.tipo)) return acc + (m.monto || 0);
+                if (["egreso", "anulacion"].includes(m.tipo)) return acc - Math.abs(m.monto || 0);
+                return acc;
+              }, 0);
+              return (
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24, flexWrap: "wrap" }}>
+                    <button onClick={() => { setPosCajaDetalle(null); loadPosCajas(); }} style={{ background: "none", border: "none", color: T.muted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Historial POS</button>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: T.ink }}>{posCajaDetalle.nombre || "Caja POS"} · {posCajaDetalle.turno} · {posCajaDetalle.fecha}</div>
+                    <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 700, background: posCajaDetalle.estado === "abierta" ? T.accentLight : T.surface, color: posCajaDetalle.estado === "abierta" ? T.accent : T.muted }}>
+                      {posCajaDetalle.estado === "abierta" ? "● Abierta" : "○ Cerrada"}
+                    </span>
+                    {posCajaDetalle.estado === "abierta" && <Btn v="danger" onClick={() => cerrarPosCaja(posCajaDetalle)}>Cerrar caja</Btn>}
+                  </div>
+                  {loadingPosDetalle ? (
+                    <div style={{ color: T.muted, padding: 40, textAlign: "center" }}>Cargando detalle…</div>
+                  ) : (
+                    <>
+                      {/* Stats */}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
+                        {[
+                          { label: "Tickets emitidos", value: vigentes.length },
+                          { label: "Anulados", value: posTicketsDetalle.filter(t => t.estado === "anulado").length },
+                          { label: "Total ventas", value: fmtPos(totalVentas), color: T.blue },
+                          { label: "Efectivo en caja", value: fmtPos(efectivoCaja), accent: true },
+                        ].map(s => (
+                          <div key={s.label} style={{ background: T.paper, border: `1px solid ${s.accent ? T.accent : s.color ? T.blue : T.border}`, borderRadius: 12, padding: "16px 18px" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, marginBottom: 6, letterSpacing: 1 }}>{s.label.toUpperCase()}</div>
+                            <div style={{ fontSize: 20, fontWeight: 800, color: s.accent ? T.accent : s.color || T.ink }}>{s.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Métodos de pago */}
+                      {Object.keys(ventasPorMetodo).length > 0 && (
+                        <div style={{ marginBottom: 24 }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>VENTAS POR MÉTODO DE PAGO</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>
+                            {Object.entries(ventasPorMetodo).map(([metodo, monto]) => (
+                              <div key={metodo} style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px" }}>
+                                <div style={{ fontSize: 11, color: T.muted, marginBottom: 5 }}>{getPosMetodoLabel(metodo)}</div>
+                                <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{fmtPos(monto)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {/* Tickets + Movimientos en grid */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>TICKETS ({posTicketsDetalle.length})</div>
+                          {posTicketsDetalle.length === 0 ? <div style={{ color: T.muted, fontSize: 13 }}>Sin tickets</div> : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                              {posTicketsDetalle.map(t => {
+                                const pgs = t.pagos?.length > 0 ? t.pagos : [{ metodo: t.metodo_pago, monto: t.total }];
+                                return (
+                                  <div key={t.id} style={{ background: T.paper, border: `1px solid ${t.estado === "anulado" ? T.red : T.border}`, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 12, opacity: t.estado === "anulado" ? 0.6 : 1 }}>
+                                    <div style={{ minWidth: 64 }}>
+                                      <div style={{ fontSize: 13, fontWeight: 700, color: t.estado === "anulado" ? T.red : T.accent }}>{t.numero}</div>
+                                      <div style={{ fontSize: 10, color: T.muted }}>{new Date(t.created_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</div>
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontSize: 13, fontWeight: 700 }}>{fmtPos(t.total)}</div>
+                                      <div style={{ fontSize: 10, color: T.muted }}>{pgs.map(p => getPosMetodoLabel(p.metodo)).join(" + ")} · {t.lines?.length || 0} ítem(s)</div>
+                                      {t.estado === "anulado" && <div style={{ fontSize: 10, color: T.red }}>Anulado</div>}
+                                    </div>
+                                    <Btn v="ghost" onClick={() => setPosTicketModal(t)}>Ver</Btn>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 12 }}>MOVIMIENTOS DE CAJA</div>
+                          {posMovimientosDetalle.length === 0 ? <div style={{ color: T.muted, fontSize: 13 }}>Sin movimientos</div> : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                              {[...posMovimientosDetalle].reverse().map((m, i) => (
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: T.paper, borderRadius: 8, padding: "9px 14px", border: `1px solid ${T.border}` }}>
+                                  <div>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: ["venta", "ingreso", "apertura"].includes(m.tipo) ? T.accent : T.red, marginRight: 8 }}>
+                                      {m.tipo === "venta" ? "↑ Venta" : m.tipo === "ingreso" ? "↑ Ingreso" : m.tipo === "egreso" ? "↓ Egreso" : m.tipo === "anulacion" ? "↓ Anulación" : m.tipo === "apertura" ? "○ Apertura" : "■ Cierre"}
+                                    </span>
+                                    <span style={{ fontSize: 12, color: T.ink }}>{m.concepto}</span>
+                                  </div>
+                                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: ["egreso", "anulacion"].includes(m.tipo) ? T.red : T.accent }}>
+                                      {["egreso", "anulacion"].includes(m.tipo) ? "−" : "+"}{fmtPos(Math.abs(m.monto || 0))}
+                                    </span>
+                                    <span style={{ fontSize: 10, color: T.muted }}>{new Date(m.created_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {posCajaDetalle.observaciones && (
+                        <div style={{ marginTop: 20, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 16px" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: T.muted, letterSpacing: 1, marginBottom: 6 }}>OBSERVACIONES DE CIERRE</div>
+                          <div style={{ fontSize: 13, color: T.ink }}>{posCajaDetalle.observaciones}</div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()
+          )}
         </div>
       )}
     </div>
