@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import * as XLSX from 'xlsx-js-style'
 
-const T = {
+const T_DARK = {
   bg: "#0d1117", paper: "#161b22", surface: "#1c2333",
   surface2: "#212836", border: "#2a3441", border2: "#1e2d3d",
   ink: "#e6edf3", muted: "#7d8590", faint: "#3d4a5c",
@@ -12,13 +12,25 @@ const T = {
   blue: "#58a6ff", blueLight: "#0c1d33",
   purple: "#a371f7", purpleLight: "#1e1240",
 }
+const T_LIGHT = {
+  bg: "#f6f8fa", paper: "#ffffff", surface: "#f6f8fa",
+  surface2: "#eaeef2", border: "#d0d7de", border2: "#d8dee4",
+  ink: "#1f2328", muted: "#656d76", faint: "#d0d7de",
+  accent: "#1a7f37", accentLight: "#d1f0d9",
+  yellow: "#9a6700", yellowLight: "#fffcd0",
+  red: "#d1242f", redLight: "#ffebe9",
+  blue: "#0969da", blueLight: "#ddf4ff",
+  purple: "#8250df", purpleLight: "#fbefff",
+}
+const T = { ...T_DARK }
+function applyThemePOS(isDark) { Object.assign(T, isDark ? T_DARK : T_LIGHT) }
 
 const fmt = (n) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }).format(n || 0)
 const todayStr = () => new Date().toISOString().slice(0, 10)
 
-const labelStyle = { fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, display: 'block', marginBottom: 6 }
-const inputStyle = { width: '100%', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: '10px 12px', color: T.ink, fontSize: 14, outline: 'none', fontFamily: 'inherit' }
-const btnPrimary = { background: T.accent, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 18px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 13 }
+const getLabelStyle = () => ({ fontSize: 11, fontWeight: 700, color: T.muted, letterSpacing: 0.5, display: 'block', marginBottom: 6 })
+const getInputStyle = () => ({ width: '100%', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: '10px 12px', color: T.ink, fontSize: 14, outline: 'none', fontFamily: 'inherit' })
+const btnPrimary = { background: '#1a7f37', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 18px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 13 }
 
 const DEFAULT_METODOS = [
   { id: 'efectivo', label: '💵 Efectivo' },
@@ -126,6 +138,11 @@ function TicketView({ ticket, companyName, metodosPago }) {
 // ─── POS APP ──────────────────────────────────────────────────────────────────
 export default function POSApp({ profile, onLogout }) {
   const companyId = profile.company_id
+
+  // ── Tema ─────────────────────────────────────────────────────────
+  const [isDark, setIsDark] = useState(() => localStorage.getItem('nexo_theme') !== 'light')
+  applyThemePOS(isDark)
+  const toggleTheme = () => { const n = !isDark; setIsDark(n); localStorage.setItem('nexo_theme', n ? 'dark' : 'light') }
 
   // ── Data ─────────────────────────────────────────────────────────
   const [productos, setProductos] = useState([])
@@ -525,6 +542,9 @@ export default function POSApp({ profile, onLogout }) {
             ⚙ Métodos de pago
           </button>
           <span style={{ fontSize: 12, color: T.muted }}>{profile.display_name || profile.email}</span>
+          <button onClick={toggleTheme} style={{ background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 12px', color: T.muted, fontSize: 11, cursor: 'pointer' }}>
+            {isDark ? '☀ Claro' : '☾ Oscuro'}
+          </button>
           <button onClick={onLogout} style={{ background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 12px', color: T.muted, fontSize: 11, cursor: 'pointer' }}>
             Salir
           </button>
@@ -565,7 +585,7 @@ export default function POSApp({ profile, onLogout }) {
                 <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.border}` }}>
                   <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
                     placeholder="Buscar por nombre, SKU o categoría…" autoFocus
-                    style={{ ...inputStyle, padding: '9px 14px' }} />
+                    style={{ ...getInputStyle(), padding: '9px 14px' }} />
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 8, alignContent: 'start' }}>
                   {filteredProducts.map(prod => (
@@ -1027,7 +1047,7 @@ export default function POSApp({ profile, onLogout }) {
               <button onClick={downloadStock} style={btnPrimary}>⬇ Bajar Excel</button>
             </div>
             <input value={stockSearch} onChange={e => setStockSearch(e.target.value)} placeholder="Buscar producto…"
-              style={{ ...inputStyle, maxWidth: 380, padding: '9px 14px', marginBottom: 16 }} />
+              style={{ ...getInputStyle(), maxWidth: 380, padding: '9px 14px', marginBottom: 16 }} />
             <div style={{ maxWidth: 860, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 90px 80px 100px', background: T.surface }}>
                 {['Producto', 'Categoría', 'Stock', 'Mínimo', 'Precio POS'].map(h => (
@@ -1056,20 +1076,20 @@ export default function POSApp({ profile, onLogout }) {
         <Modal title="Abrir caja" onClose={() => setShowAbrirCaja(false)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label style={labelStyle}>NOMBRE DE LA CAJA (opcional)</label>
-              <input value={cajaNombre} onChange={e => setCajaNombre(e.target.value)} placeholder="Ej: Caja principal, Caja 1, Mostrador…" style={inputStyle} autoFocus />
+              <label style={getLabelStyle()}>NOMBRE DE LA CAJA (opcional)</label>
+              <input value={cajaNombre} onChange={e => setCajaNombre(e.target.value)} placeholder="Ej: Caja principal, Caja 1, Mostrador…" style={getInputStyle()} autoFocus />
             </div>
             <div>
-              <label style={labelStyle}>TURNO</label>
-              <select value={turno} onChange={e => setTurno(e.target.value)} style={inputStyle}>
+              <label style={getLabelStyle()}>TURNO</label>
+              <select value={turno} onChange={e => setTurno(e.target.value)} style={getInputStyle()}>
                 <option value="mañana">Mañana</option>
                 <option value="tarde">Tarde</option>
                 <option value="noche">Noche</option>
               </select>
             </div>
             <div>
-              <label style={labelStyle}>MONTO INICIAL (efectivo)</label>
-              <input type="number" value={montoInicial} onChange={e => setMontoInicial(e.target.value)} style={inputStyle} min="0" step="0.01" />
+              <label style={getLabelStyle()}>MONTO INICIAL (efectivo)</label>
+              <input type="number" value={montoInicial} onChange={e => setMontoInicial(e.target.value)} style={getInputStyle()} min="0" step="0.01" />
             </div>
             <button onClick={abrirCaja} style={{ ...btnPrimary, marginTop: 4 }}>Abrir caja →</button>
           </div>
@@ -1096,12 +1116,12 @@ export default function POSApp({ profile, onLogout }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label style={labelStyle}>MONTO FINAL EN CAJA (efectivo contado)</label>
-              <input type="number" value={montoFinal} onChange={e => setMontoFinal(e.target.value)} style={inputStyle} min="0" step="0.01" placeholder="0.00" />
+              <label style={getLabelStyle()}>MONTO FINAL EN CAJA (efectivo contado)</label>
+              <input type="number" value={montoFinal} onChange={e => setMontoFinal(e.target.value)} style={getInputStyle()} min="0" step="0.01" placeholder="0.00" />
             </div>
             <div>
-              <label style={labelStyle}>OBSERVACIONES</label>
-              <textarea value={obsCierre} onChange={e => setObsCierre(e.target.value)} style={{ ...inputStyle, height: 72, resize: 'vertical' }} />
+              <label style={getLabelStyle()}>OBSERVACIONES</label>
+              <textarea value={obsCierre} onChange={e => setObsCierre(e.target.value)} style={{ ...getInputStyle(), height: 72, resize: 'vertical' }} />
             </div>
             <button onClick={cerrarCaja} style={{ ...btnPrimary, background: T.red, marginTop: 4 }}>Cerrar caja</button>
           </div>
@@ -1113,7 +1133,7 @@ export default function POSApp({ profile, onLogout }) {
         <Modal title="Movimiento manual" onClose={() => setShowMovimiento(false)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label style={labelStyle}>TIPO</label>
+              <label style={getLabelStyle()}>TIPO</label>
               <div style={{ display: 'flex', gap: 8 }}>
                 {[['ingreso', '↑ Ingreso', T.accent, T.accentLight], ['egreso', '↓ Egreso', T.red, T.redLight], ['ajuste', '≈ Ajuste', T.yellow, T.yellowLight]].map(([v, l, c, bg]) => (
                   <button key={v} onClick={() => setMovTipo(v)} style={{ flex: 1, background: movTipo === v ? bg : T.surface, border: `1px solid ${movTipo === v ? c : T.border}`, borderRadius: 6, padding: '9px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: movTipo === v ? c : T.muted, fontWeight: 600 }}>
@@ -1123,12 +1143,12 @@ export default function POSApp({ profile, onLogout }) {
               </div>
             </div>
             <div>
-              <label style={labelStyle}>CONCEPTO</label>
-              <input value={movConcepto} onChange={e => setMovConcepto(e.target.value)} placeholder="Ej: Compra de insumos, retiro…" style={inputStyle} autoFocus />
+              <label style={getLabelStyle()}>CONCEPTO</label>
+              <input value={movConcepto} onChange={e => setMovConcepto(e.target.value)} placeholder="Ej: Compra de insumos, retiro…" style={getInputStyle()} autoFocus />
             </div>
             <div>
-              <label style={labelStyle}>MONTO</label>
-              <input type="number" value={movMonto} onChange={e => setMovMonto(e.target.value)} style={inputStyle} min="0.01" step="0.01" placeholder="0.00" />
+              <label style={getLabelStyle()}>MONTO</label>
+              <input type="number" value={movMonto} onChange={e => setMovMonto(e.target.value)} style={getInputStyle()} min="0.01" step="0.01" placeholder="0.00" />
             </div>
             <button onClick={agregarMovimiento} disabled={!movConcepto.trim() || !movMonto}
               style={{ ...btnPrimary, marginTop: 4, opacity: (!movConcepto.trim() || !movMonto) ? 0.5 : 1, cursor: (!movConcepto.trim() || !movMonto) ? 'not-allowed' : 'pointer' }}>
@@ -1144,8 +1164,8 @@ export default function POSApp({ profile, onLogout }) {
           <div style={{ background: T.redLight, borderRadius: 8, padding: '12px', marginBottom: 16, fontSize: 13, color: T.red }}>
             ⚠ Esta acción anulará <strong>{fmt(anulando.total)}</strong> y restaurará el stock. No se puede deshacer.
           </div>
-          <label style={labelStyle}>MOTIVO DE ANULACIÓN *</label>
-          <input value={anulandoMotivo} onChange={e => setAnulandoMotivo(e.target.value)} placeholder="Describí el motivo" style={inputStyle} autoFocus />
+          <label style={getLabelStyle()}>MOTIVO DE ANULACIÓN *</label>
+          <input value={anulandoMotivo} onChange={e => setAnulandoMotivo(e.target.value)} placeholder="Describí el motivo" style={getInputStyle()} autoFocus />
           <button onClick={anularTicket} disabled={!anulandoMotivo.trim()}
             style={{ ...btnPrimary, background: T.red, marginTop: 16, width: '100%', opacity: !anulandoMotivo.trim() ? 0.5 : 1, cursor: !anulandoMotivo.trim() ? 'not-allowed' : 'pointer' }}>
             Confirmar anulación
@@ -1207,7 +1227,7 @@ export default function POSApp({ profile, onLogout }) {
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <input value={nuevoMetodoLabel} onChange={e => setNuevoMetodoLabel(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addMetodo()}
-                placeholder="Ej: Banco Galicia, Naranja X, Cuenta DNI…" style={{ ...inputStyle, flex: 1 }} />
+                placeholder="Ej: Banco Galicia, Naranja X, Cuenta DNI…" style={{ ...getInputStyle(), flex: 1 }} />
               <button onClick={addMetodo} style={{ ...btnPrimary, flexShrink: 0 }}>+ Agregar</button>
             </div>
           </div>

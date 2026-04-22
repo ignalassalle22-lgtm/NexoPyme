@@ -4,7 +4,7 @@ import { Workbook as ExcelWorkbook } from 'exceljs';
 import { supabase } from './lib/supabase.js';
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
-const T = {
+const T_DARK = {
   bg: "#0d1117", sidebar: "#0a0e14", paper: "#161b22", surface: "#1c2333",
   surface2: "#212836", border: "#2a3441", border2: "#1e2d3d",
   ink: "#e6edf3", muted: "#7d8590", faint: "#3d4a5c",
@@ -15,6 +15,19 @@ const T = {
   yellow: "#e3b341", yellowLight: "#2b2008",
   purple: "#a371f7", purpleLight: "#1e1240",
 };
+const T_LIGHT = {
+  bg: "#f6f8fa", sidebar: "#ffffff", paper: "#ffffff", surface: "#f6f8fa",
+  surface2: "#eaeef2", border: "#d0d7de", border2: "#d8dee4",
+  ink: "#1f2328", muted: "#656d76", faint: "#d0d7de",
+  accent: "#1a7f37", accentLight: "#d1f0d9", accentGlow: "#1a7f3730",
+  blue: "#0969da", blueLight: "#ddf4ff",
+  orange: "#bc4c00", orangeLight: "#fff1e5",
+  red: "#d1242f", redLight: "#ffebe9",
+  yellow: "#9a6700", yellowLight: "#fffcd0",
+  purple: "#8250df", purpleLight: "#fbefff",
+};
+const T = { ...T_DARK };
+function applyTheme(isDark) { Object.assign(T, isDark ? T_DARK : T_LIGHT); }
 
 // ─── INITIAL DATA ─────────────────────────────────────────────────────────────
 const initPriceLists = [
@@ -11893,6 +11906,10 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function App({ session, profile, onLogout }) {
+  const [isDark, setIsDark] = useState(() => localStorage.getItem('nexo_theme') !== 'light');
+  applyTheme(isDark);
+  const toggleTheme = () => { const n = !isDark; setIsDark(n); localStorage.setItem('nexo_theme', n ? 'dark' : 'light'); };
+
   const [module, setModule] = useState("hub");
   const [products, setProducts] = useState([]);
   const [clients, setClients] = useState([]);
@@ -12167,6 +12184,9 @@ export default function App({ session, profile, onLogout }) {
           <div style={{ fontSize: 10, color: T.muted, marginBottom: 3 }}>EMPRESA</div>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{companyDisplayName}</div>
           <div style={{ fontSize: 11, color: T.muted, marginBottom: 10 }}>{profile?.display_name || profile?.email || ''}</div>
+          <button onClick={toggleTheme} style={{ width: "100%", background: "transparent", border: `1px solid ${T.border}`, borderRadius: 6, padding: "6px 10px", color: T.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            {isDark ? "☀ Modo claro" : "☾ Modo oscuro"}
+          </button>
           <button onClick={onLogout} style={{ width: "100%", background: "transparent", border: `1px solid ${T.border}`, borderRadius: 6, padding: "6px 10px", color: T.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s" }}
             onMouseEnter={e => { e.target.style.borderColor = T.red; e.target.style.color = T.red; }}
             onMouseLeave={e => { e.target.style.borderColor = T.border; e.target.style.color = T.muted; }}>
