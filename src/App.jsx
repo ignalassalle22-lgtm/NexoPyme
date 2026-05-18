@@ -11744,12 +11744,6 @@ function ArcaConfigModule({ companyId }) {
   const [msg, setMsg] = useState(null);
   const [form, setForm] = useState({ cuit: "", ptoVta: "", ambiente: "homologacion", cert: "", key: "" });
 
-  // ── IA Config ─────────────────────────────────────────────────────────────
-  const [iaConfigured, setIaConfigured] = useState(false);
-  const [iaKeyInput, setIaKeyInput] = useState("");
-  const [iaSaving, setIaSaving] = useState(false);
-  const [iaMsg, setIaMsg] = useState(null);
-
   useEffect(() => {
     if (!companyId) return;
     fetch(`/api/arca-config?company_id=${companyId}`)
@@ -11760,33 +11754,7 @@ function ArcaConfigModule({ companyId }) {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-    fetch(`/api/claude-key?company_id=${companyId}`)
-      .then(r => r.json())
-      .then(d => setIaConfigured(d.configured || false))
-      .catch(() => {});
   }, [companyId]);
-
-  const saveIaKey = async () => {
-    if (!iaKeyInput.trim()) return;
-    setIaSaving(true); setIaMsg(null);
-    const res = await fetch("/api/claude-key", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_id: companyId, key: iaKeyInput.trim() })
-    });
-    const data = await res.json();
-    setIaSaving(false);
-    if (res.ok) { setIaMsg({ ok: true, text: "API Key guardada correctamente." }); setIaConfigured(true); setIaKeyInput(""); }
-    else setIaMsg({ ok: false, text: data.error });
-  };
-
-  const removeIaKey = async () => {
-    if (!window.confirm("¿Eliminar la API Key de IA? Las funciones de IA dejarán de funcionar.")) return;
-    const res = await fetch("/api/claude-key", {
-      method: "DELETE", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_id: companyId })
-    });
-    if (res.ok) { setIaConfigured(false); setIaMsg({ ok: true, text: "API Key eliminada." }); }
-  };
 
   const save = async () => {
     setSaving(true); setMsg(null);
@@ -11879,49 +11847,6 @@ function ArcaConfigModule({ companyId }) {
         5. Usá "Probar conexión WSAA" para verificar que todo funciona.
       </div>
 
-      {/* ── Sección IA ─────────────────────────────────────────────────────── */}
-      <div style={{ marginTop: 32 }}>
-        <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginBottom: 6 }}>✦ Configuración IA</div>
-        <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>
-          Configurá la API Key de Anthropic para habilitar las funciones de inteligencia artificial (lectura de PDF, presupuestos, asistente comercial, optimización de rutas).
-        </div>
-
-        {iaMsg && (
-          <div style={{ background: iaMsg.ok ? T.accentLight : T.redLight, border: `1px solid ${iaMsg.ok ? T.accent : T.red}40`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: iaMsg.ok ? T.accent : T.red }}>
-            {iaMsg.text}
-          </div>
-        )}
-
-        <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 12, padding: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: iaConfigured ? "#22c55e" : T.muted }} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: iaConfigured ? "#22c55e" : T.muted }}>
-              {iaConfigured ? "API Key configurada" : "Sin configurar"}
-            </span>
-          </div>
-
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: "block", marginBottom: 6, letterSpacing: 1 }}>
-              {iaConfigured ? "REEMPLAZAR API KEY" : "API KEY DE ANTHROPIC"}
-            </label>
-            <input
-              type="password"
-              value={iaKeyInput}
-              onChange={e => setIaKeyInput(e.target.value)}
-              placeholder="sk-ant-api03-..."
-              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${iaKeyInput ? T.accent : T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
-            />
-            <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>
-              Obtené tu key en <strong>console.anthropic.com</strong> → API Keys. Requiere crédito cargado en la cuenta.
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            {iaConfigured && <Btn v="ghost" onClick={removeIaKey} style={{ color: T.red }}>Eliminar key</Btn>}
-            <Btn onClick={saveIaKey} disabled={iaSaving || !iaKeyInput.trim()}>{iaSaving ? "Guardando..." : iaConfigured ? "Reemplazar" : "Guardar key"}</Btn>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

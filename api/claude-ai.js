@@ -10,20 +10,19 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const { company_id, messages, system, model, max_tokens } = req.body
-  if (!company_id) return res.status(400).json({ error: 'company_id requerido' })
-  if (!messages)   return res.status(400).json({ error: 'messages requerido' })
+  if (!messages) return res.status(400).json({ error: 'messages requerido' })
 
-  // Leer la API key desde la tabla companies (service role para bypasear RLS)
+  // Leer la API key global desde platform_config, con fallback a variable de entorno
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   const { data } = await supabase
-    .from('companies')
-    .select('anthropic_key')
-    .eq('id', company_id)
+    .from('platform_config')
+    .select('value')
+    .eq('key', 'anthropic_key')
     .single()
 
-  const apiKey = data?.anthropic_key || process.env.ANTHROPIC_API_KEY
+  const apiKey = data?.value || process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
-    return res.status(500).json({ error: 'API Key de IA no configurada. El administrador debe configurarla en ARCA → sección IA.' })
+    return res.status(500).json({ error: 'API Key de IA no configurada. El administrador debe configurarla en el Panel Administrativo.' })
   }
 
   try {

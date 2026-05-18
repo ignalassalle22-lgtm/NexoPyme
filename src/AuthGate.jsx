@@ -49,6 +49,12 @@ function AdminPanel({ profile, onLogout }) {
   // Activity log
   const [activityLog, setActivityLog] = useState([])
 
+  // IA Config
+  const [iaConfigured, setIaConfigured] = useState(false)
+  const [iaKeyInput, setIaKeyInput] = useState('')
+  const [iaSaving, setIaSaving] = useState(false)
+  const [iaMsg, setIaMsg] = useState(null)
+
   const loadActivityLog = async () => {
     const { data } = await supabase.from('activity_log').select('*').order('created_at', { ascending: false }).limit(60)
     if (data) setActivityLog(data)
@@ -72,6 +78,30 @@ function AdminPanel({ profile, onLogout }) {
   useEffect(() => { loadCompanies(); loadActivityLog() }, [])
   useEffect(() => { if (tab === 'usuarios') loadUserRequests() }, [tab])
   useEffect(() => { if (tab === 'gestion') loadCompanies() }, [tab])
+  useEffect(() => {
+    if (tab === 'configuracion') {
+      fetch('/api/claude-key').then(r => r.json()).then(d => setIaConfigured(d.configured || false)).catch(() => {})
+    }
+  }, [tab])
+
+  const saveIaKey = async () => {
+    if (!iaKeyInput.trim()) return
+    setIaSaving(true); setIaMsg(null)
+    const res = await fetch('/api/claude-key', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: iaKeyInput.trim() })
+    })
+    const data = await res.json()
+    setIaSaving(false)
+    if (res.ok) { setIaMsg({ ok: true, text: '✓ API Key guardada. Las funciones de IA ya están activas.' }); setIaConfigured(true); setIaKeyInput('') }
+    else setIaMsg({ ok: false, text: data.error })
+  }
+
+  const removeIaKey = async () => {
+    if (!window.confirm('¿Eliminar la API Key? Las funciones de IA dejarán de funcionar para todos los usuarios.')) return
+    const res = await fetch('/api/claude-key', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    if (res.ok) { setIaConfigured(false); setIaMsg({ ok: true, text: 'API Key eliminada.' }) }
+  }
 
   const loadCompanies = async () => {
     setLoading(true)
@@ -330,6 +360,7 @@ function AdminPanel({ profile, onLogout }) {
             ['empresas', `Solicitudes empresas (${pending.length})`],
             ['usuarios', `Solicitudes usuarios (${userRequests.filter(r => r.status === 'pending').length})`],
             ['gestion', 'Gestión'],
+            ['configuracion', '⚙ Configuración'],
           ].map(([v, l]) => (
             <button key={v} onClick={() => setTab(v)}
               style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: tab === v ? T.paper : 'transparent', color: tab === v ? T.ink : T.muted, fontWeight: tab === v ? 700 : 500, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -696,6 +727,69 @@ function AdminPanel({ profile, onLogout }) {
             )
           )
         )}
+        {/* ── TAB: Configuración ── */}
+        {tab === 'configuracion' && (
+          <div style={{ maxWidth: 560 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginBottom: 6 }}>✦ API Key de Inteligencia Artificial</div>
+            <div style={{ fontSize: 13, color: T.muted, marginBottom: 24, lineHeight: 1.6 }}>
+              Esta key habilita las funciones de IA para <strong style={{ color: T.ink }}>todos los usuarios de la plataforma</strong>: lectura de facturas PDF, generación de presupuestos con IA, asistente comercial y optimización de rutas.
+            </div>
+
+            {iaMsg && (
+              <div style={{ background: iaMsg.ok ? T.accentLight : T.redLight, border: `1px solid ${iaMsg.ok ? T.accent : T.red}40`, borderRadius: 8, padding: '10px 16px', marginBottom: 20, fontSize: 13, color: iaMsg.ok ? T.accent : T.red }}>
+                {iaMsg.text}
+              </div>
+            )}
+
+            <div style={{ background: T.paper, border: `1px solid ${T.border}`, borderRadius: 14, padding: 24 }}>
+              {/* Estado actual */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, paddingBottom: 20, borderBottom: `1px solid ${T.border}` }}>
+                <div style={{ width: 12, height: 12, borderRadius: '50%', background: iaConfigured ? '#22c55e' : T.muted, flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: iaConfigured ? '#22c55e' : T.muted }}>
+                    {iaConfigured ? 'API Key configurada y activa' : 'Sin configurar — IA desactivada'}
+                  </div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>
+                    {iaConfigured ? 'Todos los usuarios pueden usar las funciones de IA.' : 'Cargá una key para activar las funciones de IA.'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Input nueva key */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 10, fontWeight: 700, color: T.muted, display: 'block', marginBottom: 6, letterSpacing: 1 }}>
+                  {iaConfigured ? 'REEMPLAZAR API KEY' : 'API KEY DE ANTHROPIC'}
+                </label>
+                <input
+                  type="password"
+                  value={iaKeyInput}
+                  onChange={e => setIaKeyInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && saveIaKey()}
+                  placeholder="sk-ant-api03-..."
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${iaKeyInput ? T.accent : T.border}`, background: T.surface, color: T.ink, fontSize: 13, fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box' }}
+                />
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 6, lineHeight: 1.5 }}>
+                  Conseguila en <strong style={{ color: T.ink }}>console.anthropic.com</strong> → API Keys.<br/>
+                  Necesitás tener crédito cargado en la cuenta para que funcione.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                {iaConfigured && (
+                  <button onClick={removeIaKey}
+                    style={{ padding: '8px 18px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.red, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Eliminar key
+                  </button>
+                )}
+                <button onClick={saveIaKey} disabled={iaSaving || !iaKeyInput.trim()}
+                  style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: (iaSaving || !iaKeyInput.trim()) ? T.surface : T.accent, color: (iaSaving || !iaKeyInput.trim()) ? T.muted : '#fff', fontSize: 13, fontWeight: 700, cursor: (iaSaving || !iaKeyInput.trim()) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                  {iaSaving ? 'Guardando...' : iaConfigured ? 'Reemplazar' : 'Guardar key'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         </div>{/* fin contenido principal */}
 
         {/* ── Activity Feed ── */}
